@@ -42,7 +42,7 @@ printer driver) go.
 - **Our own file format only** (project owner, 2026-10-18). It carries no
   legacy. Modules that import and export other formats (OOXML, ODF, CSV, PDF)
   come later. They live outside the core and convert to and from our model;
-  the model never bends to fit them.
+  the model never bends to fit them. Markdown is the one exception (below).
 - **Operation-based core; collaboration later** (project owner, 2026-10-18).
   Every change is an operation in a transaction. Operations are what undo,
   history, autosave and scripting work on, and later what live multi-user
@@ -72,6 +72,8 @@ These were settled in review session pamnqej6 (project owner, 2026-10-18):
 - **Five substrates** (story, canvas, grid, records, cube), with document
   types as views over them, as an advisory way to organize the code, not a
   product requirement (section 4).
+- **Markdown files open and save as themselves,** early, in the Story track,
+  while the story stays structure-only (section 6).
 
 ## 3. System overview
 
@@ -289,6 +291,17 @@ peer-to-peer sync are not goals.
 
 One file per document, with the extension `.xw`, the same for every kind of
 part. The kind is recorded inside the file.
+
+**Markdown files stay Markdown** (project owner, 2026-10-18). A `.md` file
+opens as a structure-only story and saves back as `.md`, CommonMark with
+tables, without loss. This comes early, in the Story track, not with the
+later interchange modules, because a large share of documents written today
+are Markdown. If someone adds something Markdown can't hold, such as a styled
+run or an embedded sheet, xWorks asks before turning the document into an
+`.xw` file; a Markdown file never changes format silently. A `.md` file has
+no room for history, so continuous saving writes the whole file (atomically,
+through a rename), and undo history and named versions last only as long as
+the document is open.
 
 **Container: SQLite** (project owner, 2026-10-18). A document is an SQLite
 database with a fixed, versioned schema: objects, the transaction log, embedded

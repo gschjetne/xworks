@@ -47,7 +47,7 @@ or a spreadsheet. Like the substrates themselves, this split is advisory
 
 | Track | Owns | Needs | Delivers |
 |---|---|---|---|
-| **S1 Story** | `story` | F1, F3 | The block tree, named styles, structure-only stories, the outline and draft views, Markdown reading and writing |
+| **S1 Story** | `story` | F1, F3 | The block tree, named styles, structure-only stories, the outline and draft views; `.md` files opened and saved as themselves (project owner, 2026-10-18) |
 | **S2 Canvas** | `canvas` | F1, F3, F4 | Pages, masters and the open pasteboard; frames, and stories threaded through them; shapes, paths, connectors, groups, alignment and distribution; automatic pagination as a layout mode |
 | **S3 Grid** | `grid` | F1, F6 | Cells, positional references, filling, the grid view, sheets of millions of cells |
 | **S4 Records** | `records` | F1, F2, F6 | Typed tables, relations, indexes, queries in the formula language; the table, form, list and card views |
@@ -73,7 +73,7 @@ These are planned for, but come after the core is dialed in.
 
 | Track | Scope |
 |---|---|
-| **L1 Interchange** | Import and export: OOXML, ODF, CSV, Markdown, PDF import. Each is a separate crate, converting to and from the model, differentially tested against reference documents |
+| **L1 Interchange** | Import and export: OOXML, ODF, CSV, PDF import. Markdown comes earlier, in S1 Story. Each is a separate crate, converting to and from the model, differentially tested against reference documents |
 | **L2 Collaboration** | The ordering server, client rebasing, presence, comments in real time |
 | **L3 Scripting** | The macro language (D8), its capability sandbox, macro recording from commands, the agent interface |
 | **L4 macOS port** | AppKit chrome from the chrome model, Metal surfaces, the system's services |
