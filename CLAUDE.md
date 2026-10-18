@@ -12,6 +12,84 @@ office suite built from scratch to be usable, fast and correct.
 - [docs/ROADMAP.md](docs/ROADMAP.md): milestones, their stages and exit
   criteria.
 
+## Status and checks
+
+M0 (architecture) is done. M1, the walking skeleton, is under way: stage 1
+(the workspace and the test harness) is in place, and the other crates are
+empty until their stages fill them ([docs/ROADMAP.md](docs/ROADMAP.md)).
+
+Every change must pass, from the repository root:
+
+```sh
+cargo fmt --all --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo nextest run --workspace
+cargo deny check
+```
+
+and the pure crates must build for WebAssembly (bash; CI runs the same):
+
+```sh
+pkgs=(); for d in crates/*/; do [ -f "$d/clippy.toml" ] || pkgs+=(-p "$(basename "$d")"); done
+cargo build --target wasm32-unknown-unknown "${pkgs[@]}"
+```
+
+CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs Clippy and
+the tests on Linux, Windows and macOS.
+
+- `cargo run -p shot -- [SCENE...]` renders scenes to `target/shot/`;
+  `--list` lists them. Look at what you render.
+- Golden records and how they're approved: [spec/golden/README.md](spec/golden/README.md).
+
+## Pure crates
+
+Foundations, substrates and views are pure (docs/ARCHITECTURE.md, section
+3): they do no I/O, open no threads, read no clocks or environment, and
+print nothing. `crates/clippy.toml` forbids those calls, and Clippy applies
+it to every crate under `crates/` that has no `clippy.toml` of its own. The
+impure crates are `store`, `app`, `render-gpu` and `testkit`, each with its
+own `clippy.toml`; `shells/` and `tools/` are impure too. Making another
+crate impure needs the project owner's approval. A pure crate that needs
+something from outside takes it as an argument.
+
+## Engineering rules
+
+1. **Tests first.** Acceptance tests, golden images or specs exist before
+   the implementation. Don't weaken, skip or delete a test to make a change
+   pass.
+2. **Headless, with the same output every run.** Everything runs without a
+   display or GPU, and produces identical output each time. Use `shot` to
+   render results to PNG, and look at them.
+3. **Plain, explicit Rust.**
+   - Use the toolchain pinned in `rust-toolchain.toml`, edition 2024, with
+     no nightly features.
+   - No async runtime. The app runs work on a worker pool.
+   - Prefer plain structs, enums and functions over macro or trait
+     cleverness.
+4. **`unsafe` is forbidden** workspace-wide. If a shell or renderer backend
+   ever needs it, list the crate here first, with the owner's approval, and
+   give every `unsafe` block a `// SAFETY:` comment. No crates are listed.
+5. **Dependencies:**
+   - Keep them few, well known and pinned, and prefer pure-Rust crates.
+   - A new dependency needs a stated reason, in a comment beside it in the
+     workspace's `Cargo.toml` and in the commit.
+   - Licenses must be permissive; `deny.toml` lists them.
+   - Read the pinned version's source and docs rather than recalling its
+     API from memory.
+6. **Small crates with narrow public APIs.** Each crate's `lib.rs` doc
+   comment states its purpose and invariants.
+7. **Specs are data.** Commands, functions, styles, limits and layout cases
+   live in `spec/` as RON files, read by both code and tests. Never
+   hard-code the same value in two places.
+8. **Every reader of outside input gets a fuzz target:** files, fonts,
+   Markdown and pasted data.
+9. **Errors and logging:** `thiserror` in libraries, `anyhow` only in tools,
+   `tracing` for logging, and serde with RON for data.
+10. **Test data without a clear license** is fetched by CI, never committed.
+11. **Golden images** are approved renders of our own output, recorded in
+    `spec/golden/` as hashes of their pixels. Updating one needs a person's
+    approval.
+
 ## Writing docs
 
 - **Diagrams are Mermaid,** in fenced `mermaid` blocks, never box-drawing or
