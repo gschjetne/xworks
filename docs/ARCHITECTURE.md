@@ -81,14 +81,9 @@ flowchart TD
     web["web (later)"]
   end
   app["app: windows, documents, command registry, scheduler, autosave"]
-  subgraph tracks["Track crates: model (pure) and view (layout, input)"]
-    write[write]
-    sheet[sheet]
-    slides[slides]
-    model[model]
-    base[base]
-    chart[chart]
-    draw[draw]
+  subgraph tracks["Substrates and products: model (pure) and views (layout, input)"]
+    substrates["story, canvas, grid, records, cube"]
+    products["write, slides, sheet, model, base, chart"]
   end
   subgraph foundations["Foundations (pure)"]
     doc["doc: objects, operations, undo"]
@@ -118,15 +113,121 @@ Arrows point from a layer to the layers it depends on.
 - **The app and the shells** own everything impure: windows, files, threads,
   timers, the clipboard, the GPU and the platform's widgets.
 
-## 4. One app, many kinds of part
+## 4. Substrates, views and parts
 
 xWorks is **one application** that opens every kind of document, as
-ClarisWorks did. It is not a bundle of separate programs.
+ClarisWorks did (project owner, 2026-10-18). It is not a bundle of separate
+programs.
 
-The unit of reuse is the **part**. A word-processing document, a sheet, a
-slide deck, a model and a database are each a top-level part, and any part
-can embed others: a chart in a report, a live sheet range on a slide, a model
-view in a memo. Every part implements one interface:
+### Substrates
+
+*Proposal, review pamnqej6, from the owner's answer to decision 8.* Many
+familiar document types are special cases of each other. A presentation is a
+pasteboard of landscape pages. A text document is a few big text frames per
+page, and a drawing is small scattered frames, if any. An outline is a terse
+text document, and a Markdown file is a text document with structure and no
+styling. So xWorks has a small number of **substrates**: kinds of content,
+each with its own data model and its own way of addressing things. Every
+document type people know is one or two substrates seen through a **view**.
+
+| Substrate | What it holds | Things are addressed by | Views |
+|---|---|---|---|
+| **Story** | a tree of blocks: headings, paragraphs, lists, quotes, tables, embedded parts | block IDs and text anchors | outline; draft (structure, no pages); poured into frames on a canvas |
+| **Canvas** | pages or an open pasteboard, with masters, holding positioned objects: text frames showing stories, shapes, images, embedded parts | object IDs and coordinates | pages; slide sorter; presenter; drawing |
+| **Grid** | an open-ended sheet of cells, with formulas that refer to positions | row and column | the grid |
+| **Records** | typed tables, relations and queries | table, key and field | table; form; list; card; calendar; report |
+| **Cube** | Improv's model: categories of named items, and formulas over them | category items, by name | pivot views, rearranged by dragging categories |
+
+Story and canvas are the substrates of documents. Grid, records and cube are
+the substrates of data. Each of those three is a type of its own because its
+addressing is: a spreadsheet *is* positional references, a database *is* keys,
+and a model *is* names.
+
+Some things are views rather than substrates:
+
+- **Charts** read live, by reference, from a grid range, a records query or a
+  cube view, and go wherever a part can be embedded.
+- **Forms and reports** are canvases whose frames are bound to records.
+
+### Document types as substrates and views
+
+```mermaid
+flowchart LR
+  story[Story]
+  canvas[Canvas]
+  grid[Grid]
+  records[Records]
+  cube[Cube]
+
+  outline["Outline"]
+  markdown["Markdown document"]
+  wp["Word-processing document"]
+  dtp["Page layout"]
+  deck["Presentation"]
+  drawing["Drawing"]
+  sheet["Spreadsheet"]
+  model["Model"]
+  base["Database, forms and reports"]
+  pim["Contacts, calendar, tasks"]
+  mail["Email"]
+  chart["Chart"]
+
+  story --> outline & markdown & wp & dtp & deck & mail
+  canvas --> wp & dtp & deck & drawing & base
+  grid --> sheet & chart
+  records --> base & pim & mail & sheet & chart
+  cube --> model & chart
+```
+
+- **Outline:** a story, in the outline view.
+- **Markdown document:** a *structure-only* story. It has no direct
+  formatting; its look comes only from the stylesheet. That maps one to one
+  onto CommonMark with tables.
+- **Word-processing document:** a story poured into a canvas whose pages are
+  generated automatically from page styles. Automatic pagination, with
+  footnotes, floats and tables that break across pages, is a layout mode of
+  the canvas, not a separate engine.
+- **Page layout (DTP):** a canvas with pages laid out by hand and stories
+  threaded through frames.
+- **Presentation:** a canvas of slide-sized pages in sequence, with masters.
+  Each slide's text is a small story. Its outline view edits all of them as
+  one outline.
+- **Drawing:** a canvas, usually one large page or an open pasteboard, mostly
+  of shapes.
+- **Spreadsheet:** a grid. A table inside a sheet, with typed columns and
+  structured references, is a records table living in the grid, and a
+  database table can be opened in a grid view.
+- **Model:** a cube. A cube can be fed from a records query, and a pivot of a
+  table is a cube derived from it.
+- **Database:** records, with forms and reports on canvases.
+- **Contacts, calendar and tasks:** records with built-in schemas and
+  purpose-made views.
+- **Email:** a mailbox is a records table, a message body is a story, and
+  writing a message is editing a story. The mail protocols belong to the app
+  layer, outside the pure core.
+
+**What this buys:**
+
+- **One outline, many outputs.** Ideas typed into an outline can be laid out
+  as a document or as slides by changing the view, not by exporting.
+- **Write, Slides, page layout and Draw share one canvas engine.** Each adds
+  only what makes it different: automatic pagination, slide sequence and
+  presenting, threading and typographic control, or drawing tools.
+- **Markdown is exact.** A structure-only story reads and writes Markdown
+  without loss.
+- **Data flows by reference.** Charts, record tables and cube feeds all point
+  at their source, so one change updates every place it shows.
+
+**What a file is.** A `.xw` file holds any number of substrate objects and
+views. Its "kind" is just the view it opens in, which also decides the
+commands the shell shows. A report with a chart from a sheet holds a story, a
+canvas, a grid and a chart view, all in one file.
+
+### Parts
+
+The unit of embedding is the **part**: a view of a substrate object, placed
+inside another. Examples are a chart in a report, a live sheet range on a
+slide, and a model view in a memo. Every part implements one interface:
 
 - lay out within constraints (a width, or a page box), producing a display
   list
@@ -435,7 +536,8 @@ crates/
   chrome/       commands and the chrome model
   toolkit/      the generic shell's toolkit, drawing the chrome model
   app/          documents, windows, scheduler, autosave; no platform code
-  write/  sheet/  slides/  model/  base/  chart/  draw/    track crates
+  story/  canvas/  grid/  records/  cube/    substrates: model and views
+  write/  slides/  sheet/  model/  base/  chart/   product features over them
   testkit/      golden images, scripted sessions, document dumps
 shells/
   generic/      winit + wgpu

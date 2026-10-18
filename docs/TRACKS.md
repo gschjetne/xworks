@@ -19,10 +19,16 @@ I/O. So the work goes in three phases:
    renderer (D7) with measurements instead of guesses. The owner approved
    building it first (project owner, 2026-10-18).
 2. **Foundation tracks** harden the skeleton's interfaces into the contracts
-   the product tracks build on. They overlap with phase 3: a product track
-   starts once the foundations it needs have stable contracts.
-3. **Product tracks** run in parallel, each owning its crates, specs and
-   tests.
+   everything else builds on.
+3. **Substrate tracks, then product tracks,** run in parallel, each owning
+   its crates, specs and tests. A track starts once the tracks it needs have
+   stable contracts, so the phases overlap.
+
+*Proposal, review pamnqej6:* the substrate and product tracks below follow
+the substrates in [ARCHITECTURE.md](ARCHITECTURE.md) section 4. Story,
+canvas, grid, records and cube are each built once, and the products are the
+features that make a view of them a word processor, a presentation program
+or a spreadsheet.
 
 ## Foundation tracks
 
@@ -36,20 +42,29 @@ I/O. So the work goes in three phases:
 | **F6 Calculation** | `calc` | Typed values, decimal numbers, the formula language, the function library as data, incremental parallel recalculation |
 | **F7 Test infrastructure** | `testkit`, `tools/` | `shot`, golden hashes, scripted sessions, performance budgets in CI |
 
+## Substrate tracks
+
+| Track | Owns | Needs | Delivers |
+|---|---|---|---|
+| **S1 Story** | `story` | F1, F3 | The block tree, named styles, structure-only stories, the outline and draft views, Markdown reading and writing |
+| **S2 Canvas** | `canvas` | F1, F3, F4 | Pages, masters and the open pasteboard; frames, and stories threaded through them; shapes, paths, connectors, groups, alignment and distribution; automatic pagination as a layout mode |
+| **S3 Grid** | `grid` | F1, F6 | Cells, positional references, filling, the grid view, sheets of millions of cells |
+| **S4 Records** | `records` | F1, F2, F6 | Typed tables, relations, indexes, queries in the formula language; the table, form, list and card views |
+| **S5 Cube** | `cube` | F1, F6 | Categories and items, formulas over names, pivot views rearranged by dragging categories |
+
 ## Product tracks
 
 | Track | Needs | Scope |
 |---|---|---|
-| **T1 Write**, word processing | F1, F3, F4, F5 | Styles first: paragraph, character, list and page styles. Sections, headers and footers, footnotes, tables, fields, cross-references, an outline view, track changes, comments |
-| **T2 Sheet**, spreadsheets | F1, F5, F6 | The grid, typed cells, formulas, names, tables with structured references, sorting and filtering, conditional formats, pivots |
-| **T3 Slides**, presentations | T7, F3 | Masters and layouts, slide sorter, outline, speaker notes, presenter view, transitions kept tasteful |
-| **T4 Model**, multidimensional modeling | F6, the T2 grid | Lotus Improv's model: named categories and items instead of cell addresses, formulas over categories, views that pivot by dragging category tiles, several views of one model |
-| **T5 Base**, office databases | F2, F6, T7 | Tables, relations, forms and reports laid out with T7, queries in the formula language, import from CSV, up to millions of records |
-| **T6 Chart** | F4, F6 | Charts as parts, fed from sheets, models and databases; good defaults in the spirit of Tufte |
-| **T7 Draw** | F1, F4 | Shapes, paths, connectors, groups, alignment and distribution, the shared layer under slides, forms and diagrams |
+| **T1 Write**, word processing | S1, S2 | Automatic pages from page styles, sections, headers and footers, footnotes, floats, fields, cross-references, track changes, comments |
+| **T2 Slides**, presentations | S1, S2 | Slide sequence, layouts on masters, the slide sorter, the outline view across slides, speaker notes, the presenter view, transitions kept tasteful |
+| **T3 Sheet**, spreadsheets | S3, S4 | Names, record tables in sheets with structured references, sorting and filtering, conditional formats, pivots |
+| **T4 Model**, multidimensional modeling | S5 | Lotus Improv's way of working: category tiles, several views of one model, models fed from records queries |
+| **T5 Base**, office databases | S4, S2 | Forms and reports laid out on canvases and bound to records, import from CSV, up to millions of records |
+| **T6 Chart** | F4, S3, S4, S5 | Charts as parts, reading live from grid ranges, records queries and cube views; good defaults in the spirit of Tufte |
 
-T6 and T7 aren't documents people open on their own as often, but slides, forms,
-reports and embedded charts all stand on them, so they're tracks of their own.
+Drawing has no product track: a drawing is a canvas of shapes, and S2 Canvas
+delivers the drawing tools.
 
 ## Later tracks
 
@@ -74,7 +89,8 @@ the incumbents to make it worth doing (project owner, 2026-10-18).
 |---|---|
 | **Email** | Raised by the owner, 2026-10-18 |
 | **PIM:** contacts, calendar, tasks | Raised by the owner, 2026-10-18 |
-| **Outliner** | Raised by the owner, 2026-10-18. People use outlines to feed their documents and presentations |
+| **Outliner** | Raised by the owner, 2026-10-18. People use outlines to feed their documents and presentations. If the substrate proposal is approved, S1 Story's outline view covers it, and laying an outline out as a document or as slides is a change of view |
+| **Page layout (DTP)** | Typographic and prepress features beyond what Write and Slides need. S2 Canvas already holds pages laid out by hand and threaded stories |
 
 ## Dependency order
 
@@ -91,20 +107,29 @@ flowchart LR
   F5["F5 Shell and toolkit"]
   F6["F6 Calculation"]
   F7["F7 Test infrastructure"]
+  S1["S1 Story"]
+  S2["S2 Canvas"]
+  S3["S3 Grid"]
+  S4["S4 Records"]
+  S5["S5 Cube"]
   T1["T1 Write"]
-  T2["T2 Sheet"]
-  T3["T3 Slides"]
+  T2["T2 Slides"]
+  T3["T3 Sheet"]
   T4["T4 Model"]
   T5["T5 Base"]
   T6["T6 Chart"]
-  T7["T7 Draw"]
 
   M1 --> F1 & F2 & F3 & F4 & F5 & F6 & F7
-  F1 & F3 & F4 & F5 --> T1
-  F1 & F5 & F6 --> T2
-  T2 & F6 --> T4
-  F1 & F4 --> T7
-  T7 & F3 --> T3
-  F2 & F6 & T7 --> T5
-  F4 & F6 --> T6
+  F1 & F3 --> S1
+  F1 & F3 & F4 --> S2
+  F1 & F6 --> S3
+  F1 & F2 & F6 --> S4
+  F1 & F6 --> S5
+  S1 & S2 --> T1 & T2
+  S3 & S4 --> T3
+  S5 --> T4
+  S4 & S2 --> T5
+  F4 & S3 & S4 & S5 --> T6
 ```
+
+Every track with a view also needs F5, the shell; those arrows are left out.
