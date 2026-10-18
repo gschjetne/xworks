@@ -1,0 +1,57 @@
+[workspace]
+resolver = "3"
+members = ["crates/*", "shells/*", "tools/*"]
+
+[workspace.package]
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/gschjetne/xworks"
+publish = false
+
+[workspace.dependencies]
+# Our crates.
+app = { path = "crates/app" }
+calc = { path = "crates/calc" }
+canvas = { path = "crates/canvas" }
+chrome = { path = "crates/chrome" }
+doc = { path = "crates/doc" }
+locale = { path = "crates/locale" }
+render-cpu = { path = "crates/render-cpu" }
+render-gpu = { path = "crates/render-gpu" }
+render-pdf = { path = "crates/render-pdf" }
+scene = { path = "crates/scene" }
+store = { path = "crates/store" }
+story = { path = "crates/story" }
+testkit = { path = "crates/testkit" }
+text = { path = "crates/text" }
+toolkit = { path = "crates/toolkit" }
+shot = { path = "tools/shot" }
+
+# External crates. Each one needs a stated reason (CLAUDE.md, rule 5).
+anyhow = "1.0.104"      # error handling in tools only
+png = "0.18.1"          # writing test renders as PNG
+ron = "0.12.2"          # specs and golden records are RON data
+serde = { version = "1.0.229", features = ["derive"] }
+sha2 = { version = "0.11.0", default-features = false }  # golden images are recorded as SHA-256 hashes of their pixels
+thiserror = "2.0.21"    # error types in libraries
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+unreachable_pub = "warn"
+rust_2018_idioms = { level = "warn", priority = -1 }
+
+[workspace.lints.clippy]
+dbg_macro = "warn"
+todo = "warn"
+unimplemented = "warn"
+
+[profile.release]
+debug = "line-tables-only"
+
+# Dependencies are optimized in debug builds too, so tests and debug runs
+# of layout and rendering aren't many times slower than release.
+[profile.dev.package."*"]
+opt-level = 2

@@ -1,0 +1,7 @@
+[toolchain]
+channel = "1.99.0"
+components = ["rustfmt", "clippy"]
+# Pure crates are built for WebAssembly in CI (docs/ARCHITECTURE.md,
+# section 3).
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

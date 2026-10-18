@@ -1,0 +1,48 @@
+# cargo-deny configuration: `cargo deny check` must pass for every change.
+# See https://embarkstudios.github.io/cargo-deny/ for the format.
+
+[graph]
+all-features = true
+
+[advisories]
+# Security advisories and unmaintained crates from the RustSec database.
+yanked = "deny"
+# Advisories that don't apply or can't be fixed yet, each with its reason.
+ignore = []
+
+[licenses]
+# xWorks is MIT OR Apache-2.0 (docs/ARCHITECTURE.md, section 11). Only
+# permissive licenses are allowed in the dependency graph; copyleft
+# licenses (GPL, LGPL, AGPL, MPL, ...) are not. Adding a license here needs
+# the project owner's approval.
+allow = [
+    "0BSD",
+    "Apache-2.0",
+    "Apache-2.0 WITH LLVM-exception",
+    "BSD-2-Clause",
+    "BSD-3-Clause",
+    "ISC",
+    "MIT",
+    "Unicode-3.0",
+    "Zlib",
+]
+confidence-threshold = 0.9
+unused-allowed-license = "allow"
+
+[licenses.private]
+ignore = true
+
+[bans]
+multiple-versions = "warn"
+wildcards = "deny"
+allow-wildcard-paths = true
+deny = [
+    # Archived in July 2026; text shaping uses HarfRust
+    # (docs/ARCHITECTURE.md, section 9).
+    { crate = "rustybuzz", reason = "archived; use harfrust" },
+]
+
+[sources]
+unknown-registry = "deny"
+unknown-git = "deny"
+allow-registry = ["https://github.com/rust-lang/crates.io-index"]
