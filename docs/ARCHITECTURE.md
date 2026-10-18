@@ -54,6 +54,22 @@ printer driver) go.
   toolbars, panels and dialogs. That comes late, once the core functionality
   is dialed in, but the shell is designed for it from the start (section 8).
 
+These were settled in review session pamnqej6 (project owner, 2026-10-18):
+
+- **One integrated app,** in which every kind of document is a part and
+  parts embed in each other (section 4).
+- **SQLite as the file container,** with a fixed, versioned schema
+  (section 6).
+- **Continuous autosave into the file,** with named versions; Save marks a
+  version (section 6).
+- **Fonts embedded in documents,** subset where the font's license requires
+  (section 6).
+- **128-bit decimal numbers,** to be confirmed by an M1 prototype against the
+  budgets (section 7).
+- **MIT / Apache-2.0** licensing (section 11).
+- **A walking skeleton (M1) before the tracks fan out**
+  ([TRACKS.md](TRACKS.md)).
+
 ## 3. System overview
 
 ```mermaid
@@ -164,7 +180,7 @@ peer-to-peer sync are not goals.
 One file per document, with the extension `.xw`, the same for every kind of
 part. The kind is recorded inside the file.
 
-**Container: SQLite** (proposal; decision D2). A document is an SQLite
+**Container: SQLite** (project owner, 2026-10-18). A document is an SQLite
 database with a fixed, versioned schema: objects, the transaction log, embedded
 fonts and images, and metadata. The reasons:
 
@@ -177,7 +193,13 @@ fonts and images, and metadata. The reasons:
 - **It is the best-tested storage engine there is,** it runs in WebAssembly,
   and the database track needs an engine anyway.
 
-The cost is one C dependency (bundled through rusqlite) and files that aren't
+**Saving is continuous** (project owner, 2026-10-18). Every transaction is
+written to the file as it happens; there is no "Save changes?" dialog and no
+recovery file. Save names a version, which the user can go back to or copy
+out as a document of its own. Undo history and named versions survive closing
+the file.
+
+The cost of SQLite is one C dependency (bundled through rusqlite) and files that aren't
 text. To make up for the second, `xworks dump` writes any document in a
 canonical text form, and tests and goldens use that form.
 
@@ -185,7 +207,7 @@ canonical text form, and tests and goldens use that form.
 than after it. A reader that sees a newer schema version opens the file
 read-only and says so; it never guesses.
 
-**Documents carry their fonts** (proposal; decision D6). The fonts a
+**Documents carry their fonts** (project owner, 2026-10-18). The fonts a
 document uses are embedded, subset where the font's license requires it, so it
 lays out the same on every machine. Missing-font substitution, and the reflow
 it causes, is one of the commonest ways office documents break.
@@ -201,7 +223,8 @@ checker, evaluator and function library are shared.
 date-time, duration, error, empty, or array. Dates are dates, not serial
 numbers: there is no 1900 leap-year bug and no 1900/1904 epoch switch.
 
-**Numbers are decimal** (proposal; decision D3). Arithmetic uses 128-bit
+**Numbers are decimal** (project owner, 2026-10-18, to be confirmed by
+the M1 prototype). Arithmetic uses 128-bit
 decimal floating point (34 significant digits), so `0.1 + 0.2 = 0.3` and money
 adds up to the cent. Binary floating point causes the commonest "the
 spreadsheet is wrong" complaints, and Excel hides them with display rounding
@@ -306,7 +329,13 @@ it:
 The renderer choice inside render-cpu and render-gpu (Vello and its CPU
 variant, or tiny-skia plus our own wgpu pipeline) is decision D7.
 
-## 11. Security and robustness
+## 11. Security, robustness and licensing
+
+- **License:** MIT / Apache-2.0, at the user's option (project owner,
+  2026-10-18). As for Fauré, copyright in largely AI-generated code is
+  uncertain in some jurisdictions and copyleft depends on it, so a permissive
+  license is the safer fit. Dependencies must be permissively licensed too;
+  `cargo deny` checks it.
 
 - **No macros run on open.** Scripts in a document run only after the user
   allows them, and then only with the capabilities they declare (this
@@ -361,19 +390,14 @@ writing it, is the bottleneck. The rules follow from that:
 
 ## 14. Open decisions
 
-Each needs the project owner's call. The first option is the recommendation.
+D2 to D6 and D9 were settled in review session pamnqej6 (section 2). These
+remain:
 
 | # | Decision | Recommendation | Alternatives |
 |---|---|---|---|
-| D1 | Language | Rust, stable, edition 2024, the same toolchain as Fauré | — |
-| D2 | File container | SQLite with a fixed schema (section 6) | own chunked binary format; zip of data files (ODF/OOXML style: slow and not incremental) |
-| D3 | Number type | 128-bit decimal, confirmed by a prototype against the budgets (section 7) | binary f64, as every other spreadsheet does |
-| D4 | Product shape | one integrated app with embeddable parts (section 4) | separate apps per track sharing libraries |
-| D5 | License | MIT / Apache-2.0, as Fauré | copyleft; proprietary |
-| D6 | Fonts in documents | embedded, subset where licenses require (section 6) | referenced by name, with substitution |
-| D7 | 2D renderer | Vello (GPU) with its CPU variant as reference, behind our own `scene` | tiny-skia for CPU plus our own wgpu pipeline |
+| D1 | Language | Rust, stable, edition 2024, the same toolchain as Fauré; assumed in review pamnqej6 without objection | — |
+| D7 | 2D renderer | chosen by measurement in M1: Vello (GPU) with its CPU variant as reference, behind our own `scene` | tiny-skia for CPU plus our own wgpu pipeline |
 | D8 | Macro and scripting language | decide later, with the scripting track; commands are its foundation either way | — |
-| D9 | Saving model | continuous autosave to the file, with named versions; "Save" marks a version | classic explicit Save, with autosave to a side file |
 
 ## 15. Tech stack (proposed)
 
@@ -388,7 +412,7 @@ Each needs the project owner's call. The first option is the recommendation.
 | Unicode and locale | ICU4X |
 | Accessibility | AccessKit |
 | Storage | SQLite through rusqlite (bundled) |
-| Decimal arithmetic | to be chosen with the D3 prototype |
+| Decimal arithmetic | to be chosen with the M1 decimal prototype |
 | Persistent data | imbl, or our own chunked structures for tables |
 | Parallelism | rayon; no async runtime |
 | macOS port (later) | objc2 bindings to AppKit |

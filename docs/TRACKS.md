@@ -15,8 +15,9 @@ I/O. So the work goes in three phases:
    means a window, a page, typing styled text, undo, save and reopen, print to
    PDF, drawn by both the CPU and the GPU renderer, with the budgets
    measured. Every interface is crude, but it's real and it's tested. M1
-   proves the architecture and settles D2, D3 and D7 with measurements
-   instead of guesses.
+   proves the architecture, confirms decimal numbers and chooses the
+   renderer (D7) with measurements instead of guesses. The owner approved
+   building it first (project owner, 2026-10-18).
 2. **Foundation tracks** harden the skeleton's interfaces into the contracts
    the product tracks build on. They overlap with phase 3: a product track
    starts once the foundations it needs have stable contracts.
