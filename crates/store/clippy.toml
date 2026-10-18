@@ -1,0 +1,2 @@
+# An impure crate (CLAUDE.md, "Pure crates"): this file takes the place of
+# crates/clippy.toml, whose rules for pure crates don't apply here.

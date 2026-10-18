@@ -1,0 +1,44 @@
+# The pure crates' rule (docs/ARCHITECTURE.md, section 3): foundations,
+# substrates and views do no I/O, open no threads and read no clocks. Clippy
+# reads the nearest clippy.toml up from each crate, so every crate under
+# crates/ gets this one, except the impure crates, which have their own:
+# store, app, render-gpu and testkit (CLAUDE.md, "Pure crates").
+disallowed-methods = [
+    { path = "std::fs::read", reason = "pure crates do no I/O" },
+    { path = "std::fs::read_to_string", reason = "pure crates do no I/O" },
+    { path = "std::fs::write", reason = "pure crates do no I/O" },
+    { path = "std::fs::read_dir", reason = "pure crates do no I/O" },
+    { path = "std::fs::metadata", reason = "pure crates do no I/O" },
+    { path = "std::fs::create_dir", reason = "pure crates do no I/O" },
+    { path = "std::fs::create_dir_all", reason = "pure crates do no I/O" },
+    { path = "std::fs::remove_file", reason = "pure crates do no I/O" },
+    { path = "std::fs::remove_dir_all", reason = "pure crates do no I/O" },
+    { path = "std::fs::rename", reason = "pure crates do no I/O" },
+    { path = "std::fs::copy", reason = "pure crates do no I/O" },
+    { path = "std::thread::spawn", reason = "pure crates open no threads; the app schedules work" },
+    { path = "std::thread::scope", reason = "pure crates open no threads; the app schedules work" },
+    { path = "std::thread::sleep", reason = "pure crates read no clocks" },
+    { path = "std::time::Instant::now", reason = "pure crates read no clocks" },
+    { path = "std::time::SystemTime::now", reason = "pure crates read no clocks" },
+    { path = "std::env::var", reason = "pure crates read no environment" },
+    { path = "std::env::var_os", reason = "pure crates read no environment" },
+    { path = "std::env::vars", reason = "pure crates read no environment" },
+    { path = "std::env::args", reason = "pure crates read no environment" },
+    { path = "std::env::current_dir", reason = "pure crates read no environment" },
+    { path = "std::process::exit", reason = "pure crates return errors" },
+]
+disallowed-types = [
+    { path = "std::fs::File", reason = "pure crates do no I/O" },
+    { path = "std::fs::OpenOptions", reason = "pure crates do no I/O" },
+    { path = "std::net::TcpStream", reason = "pure crates do no I/O" },
+    { path = "std::net::TcpListener", reason = "pure crates do no I/O" },
+    { path = "std::net::UdpSocket", reason = "pure crates do no I/O" },
+    { path = "std::process::Command", reason = "pure crates do no I/O" },
+    { path = "std::thread::Builder", reason = "pure crates open no threads; the app schedules work" },
+]
+disallowed-macros = [
+    { path = "std::println", reason = "pure crates do no I/O; return data, or log with tracing" },
+    { path = "std::print", reason = "pure crates do no I/O; return data, or log with tracing" },
+    { path = "std::eprintln", reason = "pure crates do no I/O; return data, or log with tracing" },
+    { path = "std::eprint", reason = "pure crates do no I/O; return data, or log with tracing" },
+]
