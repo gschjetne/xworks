@@ -16,3 +16,12 @@ Designing. The architecture and the tracks of work are drafts for review.
 - [Tracks](docs/TRACKS.md): the tracks of work, what each owns, and the
   order they start in.
 - [CLAUDE.md](CLAUDE.md): working rules for contributors and coding agents.
+
+## License
+
+Licensed under either of
+
+- Apache License, Version 2.0 ([LICENSE-APACHE](LICENSE-APACHE))
+- MIT license ([LICENSE-MIT](LICENSE-MIT))
+
+at your option.
