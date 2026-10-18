@@ -16,6 +16,7 @@ step is planning M1, the walking skeleton.
   structure, tech stack and the open decisions.
 - [Tracks](docs/TRACKS.md): the tracks of work, what each owns, and the
   order they start in.
+- [Roadmap](docs/ROADMAP.md): milestones, their stages and exit criteria.
 - [CLAUDE.md](CLAUDE.md): working rules for contributors and coding agents.
 
 ## License

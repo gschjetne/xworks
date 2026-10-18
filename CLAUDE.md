@@ -9,6 +9,8 @@ office suite built from scratch to be usable, fast and correct.
   stack. Settled decisions are marked with who settled them and when. To
   change one, raise it with the project owner first; don't work around it.
 - [docs/TRACKS.md](docs/TRACKS.md): the tracks of work and their order.
+- [docs/ROADMAP.md](docs/ROADMAP.md): milestones, their stages and exit
+  criteria.
 
 ## Writing docs
 
