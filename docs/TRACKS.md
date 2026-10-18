@@ -64,6 +64,18 @@ These are planned for, but come after the core is dialed in.
 | **L5 Fauré port** | Fauré's toolkit and menus, commands as a scripting dictionary on Fauré's broker |
 | **L6 Web** | The core in WebAssembly, WebGPU or canvas rendering, storage in the browser |
 
+## Candidate tracks
+
+xWorks doesn't aim to cover everything. Track ideas are written down here as
+they come up, and work on one starts when we've found enough pain points with
+the incumbents to make it worth doing (project owner, 2026-10-18).
+
+| Candidate | Why it might earn a track |
+|---|---|
+| **Email** | Raised by the owner, 2026-10-18 |
+| **PIM:** contacts, calendar, tasks | Raised by the owner, 2026-10-18 |
+| **Outliner** | Raised by the owner, 2026-10-18. People use outlines to feed their documents and presentations |
+
 ## Dependency order
 
 An arrow means "must have stable contracts before the next can start".
