@@ -175,6 +175,21 @@ flowchart LR
     to the display itself needs a camera and is out of scope. The measured
     numbers replace the placeholders in ARCHITECTURE.md section 12.
 
+### Progress
+
+**Stage 1 is done (2026-10-18).** The workspace, testkit, `shot`, the
+purity rules and CI; the checks pass on Linux, Windows and macOS, and the
+owner approved the first golden (review 3w3kya1p).
+
+**Stage 2 is built; its decision is in review (2026-10-19).** Neither
+candidate fit: `fastnum` isn't decimal128 (it rounds at 38 or 39 digits),
+and libdecNumber is C that can't build for WebAssembly. So calc has its own
+decimal128 in pure Rust, `calc::decimal`. It passes every applicable
+decimal128 test case and agrees with libdecNumber on ten million random
+results. It adds in 31 ns and multiplies in 13 ns, and recalculates a
+million cells in 160 ms, about twelve times `f64`'s time. The measurements
+are in [prototypes/decimal/README.md](../prototypes/decimal/README.md).
+
 ### Exit criteria
 
 - A scripted session types a document of several pages, with headings, bold
