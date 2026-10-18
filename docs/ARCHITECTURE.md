@@ -473,8 +473,12 @@ variant, or tiny-skia plus our own wgpu pipeline) is decision D7.
 ## 12. Performance budgets
 
 These numbers are proposals, to be fixed once the walking skeleton (milestone
-M1 in [TRACKS.md](TRACKS.md)) measures what's achievable. Each is checked in
-CI on fixed hardware, and a regression fails the build.
+M1 in [ROADMAP.md](ROADMAP.md)) measures what's achievable. For now they
+are measured by hand on the project owner's workstation at each milestone's
+exit, with a benchmark harness that any machine can run (project owner,
+2026-10-18). Later, a self-hosted CI runner on a fixed machine with a GPU
+will check them on every push, and a regression will fail the build; that
+runner is a noted to-do, not yet planned.
 
 | Interaction | Budget |
 |---|---|

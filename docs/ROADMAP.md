@@ -13,7 +13,17 @@ language (D8), chosen with the scripting track.
 
 ## M1: Walking skeleton
 
-*Proposed; for the project owner's review.*
+*Plan in review session yyhb2j3d.* The project owner chose (2026-10-18):
+- **Platforms at the exit:** M1 is used live on Linux and Windows. macOS is
+  built and tested headless in CI only.
+- **Budgets:** measured by hand on the owner's workstation at the exit. A
+  self-hosted CI runner that checks them on every push comes later (see
+  Later, below).
+- **Scripts:** Latin, Arabic, Hebrew and CJK from M1. Greek and Cyrillic
+  join the test cases too. They lay out as Latin does, but their language
+  tag must reach the shaper: Bulgarian and Serbian Cyrillic take their own
+  letterforms through OpenType's `locl` feature, and Greek capitals drop
+  their accents in case mapping.
 
 One thin path through every layer, so every later track builds on real,
 tested interfaces instead of inventing its own. M1 is a word-processing
@@ -107,8 +117,9 @@ flowchart LR
    readers of each script expect it. Layout uses fixed-point units, and
    carets and selections are hit-tested against the lines. *Tests:* layout
    cases as data under `spec/text/` (paragraph, width, expected line breaks
-   and positions), in Latin, Arabic, Hebrew and CJK, and caret movement
-   through mixed-direction lines.
+   and positions), in Latin, Greek, Cyrillic, Arabic, Hebrew and CJK, with
+   the language tag reaching the shaper, and caret movement through
+   mixed-direction lines.
 
 6. **Display list and output** (`scene`, `render-cpu`, `render-pdf`). The
    display list, a CPU renderer on the library stage 3 recommends, and PDF
@@ -153,10 +164,12 @@ flowchart LR
    *Tests:* scripted sessions, played headless, compared by document dump
    and by frames.
 
-10. **Budgets and exit.** The budgets that apply to M1, measured on the
-    fixed hardware chosen in review: cold start, keystroke to glyph, opening
-    a 500-page document, saving after a small edit, scrolling, and memory
-    for an empty window. A regression fails CI. Keystroke-to-glyph is
+10. **Budgets and exit.** A benchmark harness (`tools/budgets`) for the
+    budgets that apply to M1: cold start, keystroke to glyph, opening a
+    500-page document, saving after a small edit, scrolling, and memory for
+    an empty window. It runs on any machine and prints each measurement
+    against its budget; at the exit the owner runs it on their workstation,
+    on Linux and on Windows. Keystroke-to-glyph is
     measured from the event arriving to the frame being presented; latency
     to the display itself needs a camera and is out of scope. The measured
     numbers replace the placeholders in ARCHITECTURE.md section 12.
@@ -164,7 +177,8 @@ flowchart LR
 ### Exit criteria
 
 - A scripted session types a document of several pages, with headings, bold
-  and italic text in Latin, Arabic and CJK, and undoes and redoes through it.
+  and italic text in Latin, Greek, Cyrillic, Arabic, Hebrew and CJK, and
+  undoes and redoes through it.
   Its dump and its renders match the approved goldens.
 - A crash at any point loses nothing committed: the crash test passes a
   thousand runs.
@@ -172,6 +186,15 @@ flowchart LR
   the same pages, with the text extractable.
 - Every pure crate builds for WebAssembly in CI.
 - The decimal and renderer decisions are made, on the reports' numbers.
-- The budgets are measured and enforced, and any that M1 misses has a plan.
-- The project owner uses it live on the platforms chosen in review: types a
-  document, quits, reopens and prints it.
+- The budgets are measured on the owner's workstation, and any that M1
+  misses has a plan.
+- The project owner uses it live on Linux and Windows: types a document,
+  quits, reopens and prints it. macOS passes CI headless.
+
+## Later
+
+Noted for after M1, not yet planned:
+
+- **A self-hosted CI runner** on a fixed machine with a GPU, so the budgets
+  are checked on every push and a regression fails the build (project owner,
+  2026-10-18, review yyhb2j3d).
