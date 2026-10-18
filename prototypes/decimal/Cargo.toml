@@ -1,0 +1,25 @@
+# The decimal prototype (docs/ROADMAP.md, M1 stage 2): compares candidates
+# for calc's number type. A standalone project, outside the workspace, so
+# candidates under review don't enter the workspace's dependency graph
+# before a decision admits them.
+[package]
+name = "decimal-prototype"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[features]
+default = ["fastnum", "dec", "calc"]
+
+[dependencies]
+fastnum = { version = "=0.7.5", optional = true }
+dec = { version = "=0.4.11", optional = true }
+# Our own decimal128, the third candidate: built when neither of the others fit.
+calc = { path = "../../crates/calc", optional = true }
+
+[profile.release]
+debug = "line-tables-only"
+
+[workspace]

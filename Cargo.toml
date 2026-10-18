@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "shells/*", "tools/*"]
+# Prototypes are standalone projects that measure a choice before it is made.
+exclude = ["prototypes"]
 
 [workspace.package]
 version = "0.0.0"
