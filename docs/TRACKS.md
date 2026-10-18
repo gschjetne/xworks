@@ -1,9 +1,9 @@
 # Tracks
 
-**Status: draft for the project owner's review.** This lists the tracks of
-work, what each owns, and the order they can start in. Each track gets its own
-plan, with acceptance tests and stages, once the owner approves the
-[architecture](ARCHITECTURE.md).
+**Status: approved by the project owner in review session pamnqej6
+(2026-10-18).** This lists the tracks of work, what each owns, and the order
+they can start in. Each track gets its own plan, with acceptance tests and
+stages, when it starts; M1 comes first.
 
 ## How the work is staged
 

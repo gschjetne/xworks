@@ -7,7 +7,8 @@ one file format.
 
 ## Status
 
-Designing. The architecture and the tracks of work are drafts for review.
+Designing. The architecture and the tracks of work are approved; the next
+step is planning M1, the walking skeleton.
 
 ## Documentation
 

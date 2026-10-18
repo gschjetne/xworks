@@ -1,10 +1,9 @@
 # Architecture
 
-**Status: draft for the project owner's review.** Decisions marked
-*(project owner, date)* are settled. Everything else is a proposal until the
-owner approves it; section 14 lists the open decisions with a recommendation
-for each. Once a decision is settled, change it only after discussing it with
-the project owner, then update this document.
+**Status: approved by the project owner in review session pamnqej6
+(2026-10-18).** Treat the decisions here as settled; those still open are in
+section 14. To change a decision, discuss it with the project owner first,
+then update this document.
 
 ## 1. Goals
 
@@ -513,12 +512,12 @@ writing it, is the bottleneck. The rules follow from that:
 
 ## 14. Open decisions
 
-D2 to D6 and D9 were settled in review session pamnqej6 (section 2). These
-remain:
+Review session pamnqej6 settled D2 to D6 and D9 (section 2), and D1, Rust,
+stable, edition 2024 on Fauré's toolchain, which it assumed without
+objection (project owner, 2026-10-18). These remain:
 
 | # | Decision | Recommendation | Alternatives |
 |---|---|---|---|
-| D1 | Language | Rust, stable, edition 2024, the same toolchain as Fauré; assumed in review pamnqej6 without objection | — |
 | D7 | 2D renderer | chosen by measurement in M1: Vello (GPU) with its CPU variant as reference, behind our own `scene` | tiny-skia for CPU plus our own wgpu pipeline |
 | D8 | Macro and scripting language | decide later, with the scripting track; commands are its foundation either way | — |
 
