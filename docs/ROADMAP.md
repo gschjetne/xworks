@@ -13,7 +13,8 @@ language (D8), chosen with the scripting track.
 
 ## M1: Walking skeleton
 
-*Plan in review session yyhb2j3d.* The project owner chose (2026-10-18):
+*Plan approved by the project owner in review session yyhb2j3d
+(2026-10-18).* The owner chose:
 - **Platforms at the exit:** M1 is used live on Linux and Windows. macOS is
   built and tested headless in CI only.
 - **Budgets:** measured by hand on the owner's workstation at the exit. A
