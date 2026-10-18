@@ -69,6 +69,9 @@ These were settled in review session pamnqej6 (project owner, 2026-10-18):
 - **MIT / Apache-2.0** licensing (section 11).
 - **A walking skeleton (M1) before the tracks fan out**
   ([TRACKS.md](TRACKS.md)).
+- **Five substrates** (story, canvas, grid, records, cube), with document
+  types as views over them, as an advisory way to organize the code, not a
+  product requirement (section 4).
 
 ## 3. System overview
 
@@ -121,7 +124,13 @@ programs.
 
 ### Substrates
 
-*Proposal, review pamnqej6, from the owner's answer to decision 8.* Many
+**Advisory** (project owner, 2026-10-18). This is how the code is
+organized, not a concept users see or a requirement of the product. It holds
+only while it keeps the code well organized and maintainable. Where forcing
+something into a substrate would make the code worse, give that thing its own
+model and record why here.
+
+The idea comes from the owner's answer to decision 8 of review pamnqej6. Many
 familiar document types are special cases of each other. A presentation is a
 pasteboard of landscape pages. A text document is a few big text frames per
 page, and a drawing is small scattered frames, if any. An outline is a terse

@@ -24,11 +24,12 @@ I/O. So the work goes in three phases:
    its crates, specs and tests. A track starts once the tracks it needs have
    stable contracts, so the phases overlap.
 
-*Proposal, review pamnqej6:* the substrate and product tracks below follow
+The substrate and product tracks below follow
 the substrates in [ARCHITECTURE.md](ARCHITECTURE.md) section 4. Story,
 canvas, grid, records and cube are each built once, and the products are the
 features that make a view of them a word processor, a presentation program
-or a spreadsheet.
+or a spreadsheet. Like the substrates themselves, this split is advisory
+(project owner, 2026-10-18): it holds while it keeps the code well organized.
 
 ## Foundation tracks
 
@@ -89,7 +90,7 @@ the incumbents to make it worth doing (project owner, 2026-10-18).
 |---|---|
 | **Email** | Raised by the owner, 2026-10-18 |
 | **PIM:** contacts, calendar, tasks | Raised by the owner, 2026-10-18 |
-| **Outliner** | Raised by the owner, 2026-10-18. People use outlines to feed their documents and presentations. If the substrate proposal is approved, S1 Story's outline view covers it, and laying an outline out as a document or as slides is a change of view |
+| **Outliner** | Raised by the owner, 2026-10-18. People use outlines to feed their documents and presentations. S1 Story's outline view covers it, and laying an outline out as a document or as slides is a change of view |
 | **Page layout (DTP)** | Typographic and prepress features beyond what Write and Slides need. S2 Canvas already holds pages laid out by hand and threaded stories |
 
 ## Dependency order
