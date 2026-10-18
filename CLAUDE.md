@@ -18,6 +18,13 @@ office suite built from scratch to be usable, fast and correct.
 - When the owner settles a decision, record it in the document it belongs
   to, attributed: *(project owner, YYYY-MM-DD)*.
 
+## Commits
+
+Commit as you go, in small steps that each make sense on their own, straight
+to `master`. Don't push unless asked. A subject names the area and what
+changed (`calc: decimal division rounds half to even`), and the body says
+why when it isn't obvious.
+
 ## Decisions and reviews
 
 The owner gives decisions in review sessions made with `rt` (review-tools),
