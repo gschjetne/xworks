@@ -63,8 +63,9 @@ These were settled in review session pamnqej6 (project owner, 2026-10-18):
   version (section 6).
 - **Fonts embedded in documents,** subset where the font's license requires
   (section 6).
-- **128-bit decimal numbers,** to be confirmed by an M1 prototype against the
-  budgets (section 7).
+- **128-bit decimal numbers** (section 7), confirmed by M1's prototype
+  (review h6nsn9xm, 2026-10-19): calc's own decimal128 in pure Rust, with
+  exact equality.
 - **MIT / Apache-2.0** licensing (section 11).
 - **A walking skeleton (M1) before the tracks fan out**
   ([TRACKS.md](TRACKS.md)).
@@ -345,16 +346,27 @@ checker, evaluator and function library are shared.
 date-time, duration, error, empty, or array. Dates are dates, not serial
 numbers: there is no 1900 leap-year bug and no 1900/1904 epoch switch.
 
-**Numbers are decimal** (project owner, 2026-10-18, to be confirmed by
-the M1 prototype). Arithmetic uses 128-bit
-decimal floating point (34 significant digits), so `0.1 + 0.2 = 0.3` and money
-adds up to the cent. Binary floating point causes the commonest "the
-spreadsheet is wrong" complaints, and Excel hides them with display rounding
-that breaks equality tests. Transcendental and statistical functions compute
-in binary and round to decimal at a documented boundary. This costs speed
-(software decimal is several times slower than hardware binary). The budgets in
-section 12 decide whether that's acceptable, measured on a prototype before
-the decision is final.
+**Numbers are decimal** (project owner, 2026-10-18; confirmed 2026-10-19,
+review h6nsn9xm). Arithmetic is IEEE 754 decimal128's: 34 significant
+digits, rounded half to even, so `0.1 + 0.2 = 0.3` and money adds up to the
+cent. Binary floating point causes the commonest "the spreadsheet is wrong"
+complaints, and Excel hides them with display rounding that breaks equality
+tests. Transcendental and statistical functions compute in binary and round
+to decimal at a documented boundary.
+
+- **The implementation is calc's own** (`calc::decimal`), in pure Rust, so
+  the core stays pure and builds for WebAssembly. Neither library fitted:
+  `fastnum` isn't decimal128, and libdecNumber is C. It passes decimal128's
+  test cases and agrees with libdecNumber on ten million random results
+  (`prototypes/decimal/`).
+- **The cost is speed:** about 30 ns to add and 13 ns to multiply, where
+  binary takes about one. A million-cell recalculation takes 160 ms on one
+  thread, and one frame covers a chain of about 100,000 dependent cells.
+- **Equality is exact** (project owner, 2026-10-19). `=` compares values as
+  the arithmetic computes them, with no tolerance: `(1/3)*3 = 1` is false,
+  because the left side is 0.999…9 to 34 digits. Number formats show it as
+  1, and `ROUND` makes it 1. Comparing with a tolerance would break
+  transitivity, and with it sorting and lookups.
 
 **Recalculation** is incremental, over a dependency graph, on worker threads,
 against snapshots. Its results don't depend on thread count or scheduling:
@@ -538,7 +550,7 @@ objection (project owner, 2026-10-18). These remain:
 | Unicode and locale | ICU4X |
 | Accessibility | AccessKit |
 | Storage | SQLite through rusqlite (bundled) |
-| Decimal arithmetic | to be chosen with the M1 decimal prototype |
+| Decimal arithmetic | our own decimal128, `calc::decimal` (review h6nsn9xm) |
 | Persistent data | imbl, or our own chunked structures for tables |
 | Parallelism | rayon; no async runtime |
 | macOS port (later) | objc2 bindings to AppKit |

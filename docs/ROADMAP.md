@@ -179,9 +179,10 @@ flowchart LR
 
 **Stage 1 is done (2026-10-18).** The workspace, testkit, `shot`, the
 purity rules and CI; the checks pass on Linux, Windows and macOS, and the
-owner approved the first golden (review 3w3kya1p).
+owner approved the first golden and accepted the stage (review 3w3kya1p).
 
-**Stage 2 is built; its decision is in review (2026-10-19).** Neither
+**Stage 2 is done (2026-10-19).** The owner confirmed decimal numbers with
+calc's own decimal128, and exact equality (review h6nsn9xm). Neither
 candidate fit: `fastnum` isn't decimal128 (it rounds at 38 or 39 digits),
 and libdecNumber is C that can't build for WebAssembly. So calc has its own
 decimal128 in pure Rust, `calc::decimal`. It passes every applicable
