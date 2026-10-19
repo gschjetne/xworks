@@ -1,0 +1,43 @@
+# M1 stage 3's renderer comparison (prototypes/renderers): whether the CPU
+# renderers draw the same pixels on Linux and Windows (x86-64) and macOS
+# (Arm). Runs when the prototype changes, or by hand.
+name: Renderer prototype
+
+on:
+  push:
+    branches: [master]
+    paths: ["prototypes/renderers/**", ".github/workflows/renderer-prototype.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  hashes:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-2025, macos-15]
+    runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
+        working-directory: prototypes/renderers
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - run: rustup toolchain install
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: prototypes/renderers
+      - run: ./fetch-fonts.sh
+      - name: Hash the CPU renders
+        run: |
+          {
+            echo "## ${{ matrix.os }} ($(uname -m))"
+            echo
+            cargo run --release -q --features fallback -- hashes
+          } | tee -a "$GITHUB_STEP_SUMMARY"
