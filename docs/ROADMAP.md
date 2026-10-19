@@ -201,6 +201,18 @@ times slower. GPU measurements run as a Windows build from WSL. The
 measurements are in
 [prototypes/renderers/README.md](../prototypes/renderers/README.md).
 
+**Stage 4 is done (2026-10-19).** `doc` holds documents as objects by
+stable ID in a persistent map of its own, a 32-way trie, since the
+persistent-collection crates are all MPL-licensed. A clone is an O(1)
+snapshot. Its six operations (insert and delete text, split and join
+paragraphs, set a character or a paragraph property) apply with
+validation, return their inverses, and rebase over each other. Property
+tests over random documents in several scripts check the stage's three
+properties, and transactions, undo and serialization besides. Tests of
+each tie rule pin the conventions convergence alone can't, and deliberately
+broken rules showed the tests catch them. Rebasing a sequence of operations
+over another, which collaboration needs, waits for that track.
+
 ### Exit criteria
 
 - A scripted session types a document of several pages, with headings, bold
