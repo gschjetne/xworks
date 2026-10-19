@@ -8,8 +8,8 @@ writing its acceptance tests. The tracks of work and their order are in
 
 **Status (2026-10-18): done.** The project owner approved
 [ARCHITECTURE.md](ARCHITECTURE.md) and [TRACKS.md](TRACKS.md) in review
-session pamnqej6. Open: the 2D renderer (D7), chosen in M1; the macro
-language (D8), chosen with the scripting track.
+session pamnqej6. Open: the macro language (D8), chosen with the
+scripting track. The 2D renderer (D7) was chosen in M1's stage 3.
 
 ## M1: Walking skeleton
 
@@ -190,6 +190,16 @@ decimal128 test case and agrees with libdecNumber on ten million random
 results. It adds in 31 ns and multiplies in 13 ns, and recalculates a
 million cells in 160 ms, about twelve times `f64`'s time. The measurements
 are in [prototypes/decimal/README.md](../prototypes/decimal/README.md).
+
+**Stage 3 is done (2026-10-19).** The owner chose Vello's sparse-strips
+renderers for D7: `vello_cpu` for render-cpu and `vello_gpu` for
+render-gpu. They draw nearly the same pixels (within 1 to 6 of 255), and
+with their glyph cache a full A4 page of text takes 3.5 ms on the GPU and
+6.6 ms on eight CPU threads. Vello's compute renderer is as fast but draws
+differently and starts slowly on DirectX 12, and tiny-skia is two to three
+times slower. GPU measurements run as a Windows build from WSL. The
+measurements are in
+[prototypes/renderers/README.md](../prototypes/renderers/README.md).
 
 ### Exit criteria
 

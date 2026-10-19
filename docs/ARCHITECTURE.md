@@ -66,6 +66,9 @@ These were settled in review session pamnqej6 (project owner, 2026-10-18):
 - **128-bit decimal numbers** (section 7), confirmed by M1's prototype
   (review h6nsn9xm, 2026-10-19): calc's own decimal128 in pure Rust, with
   exact equality.
+- **Vello's sparse-strips renderers** for drawing (D7, project owner,
+  2026-10-19): `vello_cpu` in render-cpu and `vello_gpu` in render-gpu
+  (section 10).
 - **MIT / Apache-2.0** licensing (section 11).
 - **A walking skeleton (M1) before the tracks fan out**
   ([TRACKS.md](TRACKS.md)).
@@ -460,8 +463,32 @@ it:
 - **render-pdf:** PDF output, for print and export. Printing is "render to
   PDF, hand it to the system", so what prints is what's on screen.
 
-The renderer choice inside render-cpu and render-gpu (Vello and its CPU
-variant, or tiny-skia plus our own wgpu pipeline) is decision D7.
+**The renderers are Vello's sparse-strips pair** (D7, project owner,
+2026-10-19): `vello_cpu` inside render-cpu and `vello_gpu` inside
+render-gpu, behind our own `scene`. M1's comparison
+(`prototypes/renderers/`) chose them over Vello's compute renderer and over
+tiny-skia:
+
+- **They agree.** The two share one architecture and one drawing API, and
+  `vello_gpu`'s pixels are within 1 of `vello_cpu`'s on text and 6 on
+  gradients, out of 255. Goldens rendered on the CPU hold for the GPU.
+  Vello's compute renderer differs by up to 60 on a few percent of pixels.
+- **They're fast enough.** With their glyph cache, a full A4 page of text
+  takes 3.5 ms on a GTX 1070, and 6.6 ms on eight CPU threads.
+- **They start fast.** `vello_gpu` compiles its shaders in 0.6 s on a cold
+  DirectX 12, against 4.8 s for the compute renderer.
+- **They reach the web** through WebGL as well as WebGPU.
+
+What follows from them:
+
+- **The glyph cache is experimental** in both crates, and it changes glyph
+  pixels compared with uncached drawing. Cached CPU and GPU renders still
+  agree. If it fails us, text is twice as slow until we cache glyphs
+  ourselves.
+- **`vello_cpu`'s output depends on the SIMD level, by at most 1:** AVX2
+  and SSE2 differ on a few pixels. Goldens therefore render at one pinned
+  level; stage 6 of M1 chooses which. Threads, and Linux against Windows,
+  don't change the pixels.
 
 ## 11. Security, robustness and licensing
 
@@ -530,11 +557,11 @@ writing it, is the bottleneck. The rules follow from that:
 
 Review session pamnqej6 settled D2 to D6 and D9 (section 2), and D1, Rust,
 stable, edition 2024 on Fauré's toolchain, which it assumed without
-objection (project owner, 2026-10-18). These remain:
+objection (project owner, 2026-10-18). D7, the renderer, was settled on
+M1's measurements (project owner, 2026-10-19; section 10). This remains:
 
 | # | Decision | Recommendation | Alternatives |
 |---|---|---|---|
-| D7 | 2D renderer | chosen by measurement in M1: Vello (GPU) with its CPU variant as reference, behind our own `scene` | tiny-skia for CPU plus our own wgpu pipeline |
 | D8 | Macro and scripting language | decide later, with the scripting track; commands are its foundation either way | — |
 
 ## 15. Tech stack (proposed)
@@ -544,7 +571,7 @@ objection (project owner, 2026-10-18). These remain:
 | Language | Rust, stable toolchain, edition 2024 |
 | Windows and input (generic shell) | winit |
 | GPU | wgpu |
-| 2D rendering | our `scene` display list; Vello / Vello CPU (D7) |
+| 2D rendering | our `scene` display list, drawn by `vello_cpu` and `vello_gpu` (D7) |
 | PDF | krilla or pdf-writer |
 | Text | skrifa, HarfRust; our own layout and editing; TeX hyphenation patterns |
 | Unicode and locale | ICU4X |
