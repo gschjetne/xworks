@@ -485,10 +485,11 @@ What follows from them:
   pixels compared with uncached drawing. Cached CPU and GPU renders still
   agree. If it fails us, text is twice as slow until we cache glyphs
   ourselves.
-- **`vello_cpu`'s output depends on the SIMD level, by at most 1:** AVX2
-  and SSE2 differ on a few pixels. Goldens therefore render at one pinned
-  level; stage 6 of M1 chooses which. Threads, and Linux against Windows,
-  don't change the pixels.
+- **`vello_cpu` has two outputs, at most 1 apart:** one for the wide SIMD
+  paths (AVX2 on x86-64, NEON on Arm) and one for the narrow ones (SSE2,
+  and the scalar fallback). Within each, Linux, Windows and macOS draw
+  identical pixels, on any number of threads. Goldens therefore render at
+  one pinned level; stage 6 of M1 chooses which.
 
 ## 11. Security, robustness and licensing
 

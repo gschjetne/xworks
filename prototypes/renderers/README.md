@@ -108,10 +108,16 @@ Hashes of the CPU renders (`hashes`):
   the scalar fallback. Its grid and slide differ between AVX2 and SSE2, by
   at most 1 in a channel, on a handful of pixels. SSE2 matches the
   fallback.
-- **Operating systems:** Linux and Windows on the same computer give
-  identical hashes at every level, for `vello_cpu` and tiny-skia.
-- **Arm** (macOS, NEON): the `Renderer prototype` workflow runs `hashes` on
-  CI's Linux, Windows and macOS runners.
+- **Operating systems and processors:** CI's Linux and Windows runners
+  (x86-64) and macOS runner (Arm, NEON), and the owner's workstation, give
+  identical hashes level for level (the `Renderer prototype` workflow, run
+  39322804148). NEON draws exactly what AVX2 draws, and the scalar
+  fallback exactly what SSE2 draws, on every platform. tiny-skia is the
+  same everywhere.
+
+So `vello_cpu` has exactly two outputs: one for the wide SIMD paths (AVX2,
+NEON) and one for the narrow ones (SSE2, the fallback), at most 1 apart in
+any channel. A golden pinned to either reproduces on every platform.
 
 ### Size and WebAssembly
 
