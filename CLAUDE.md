@@ -40,6 +40,11 @@ the tests on Linux, Windows and macOS.
 - `cargo run -p shot -- [SCENE...]` renders scenes to `target/shot/`;
   `--list` lists them. Look at what you render.
 - Golden records and how they're approved: [spec/golden/README.md](spec/golden/README.md).
+- **GPU work runs on Windows.** This machine is WSL2, whose Linux sees only
+  llvmpipe, a software rasterizer. Build for Windows with `cargo xwin build
+  --target x86_64-pc-windows-msvc` and run the `.exe` from WSL, which
+  reaches the real GPU; `WGPU_BACKEND=dx12 WSLENV=WGPU_BACKEND` picks
+  DirectX 12.
 
 ## Pure crates
 
