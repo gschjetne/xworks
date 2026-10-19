@@ -1,0 +1,41 @@
+# The renderer comparison (docs/ROADMAP.md, M1 stage 3, decision D7). A
+# standalone project, outside the workspace, as prototypes/decimal is.
+#
+# Candidates, each a feature, so binary size can be measured per stack:
+# - sparse:   vello_cpu (the reference) with vello_gpu, one architecture
+# - research: vello, the compute-centric GPU renderer, against vello_cpu
+# - skia:     tiny-skia on the CPU; the GPU only receives the frame
+[package]
+name = "renderer-prototype"
+version = "0.0.0"
+edition = "2024"
+rust-version = "1.99"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[features]
+default = ["sparse", "research", "skia"]
+sparse = ["dep:vello_cpu", "dep:vello_gpu", "dep:wgpu", "dep:pollster"]
+research = ["dep:vello", "dep:vello_cpu", "dep:wgpu", "dep:pollster"]
+skia = ["dep:tiny-skia", "dep:wgpu", "dep:pollster"]
+# Lets the CPU reference also render with fearless_simd's scalar fallback,
+# to check that its output doesn't depend on the SIMD level.
+fallback = ["fearless_simd/force_support_fallback"]
+
+[dependencies]
+kurbo = "=0.13.1"
+skrifa = "=0.48.0"
+png = "=0.18.1"
+sha2 = "=0.11.0"
+vello = { version = "=0.11.0", optional = true }
+vello_cpu = { version = "=0.3.0", optional = true, features = ["multithreading"] }
+vello_gpu = { version = "=0.3.0", optional = true }
+tiny-skia = { version = "=0.12.0", optional = true }
+wgpu = { version = "=30.0.1", optional = true }
+pollster = { version = "=0.4.0", optional = true }
+fearless_simd = { version = "=0.7.0", optional = true }
+
+[profile.release]
+debug = "line-tables-only"
+
+[workspace]
