@@ -39,6 +39,12 @@ pub enum Error {
         /// The name inside it.
         name: String,
     },
+    /// A bundled font hasn't been fetched.
+    #[error("{path} is missing; fetch the fonts with `cargo run -p fetch-fonts`")]
+    MissingFont {
+        /// Where it should be.
+        path: PathBuf,
+    },
     /// An image couldn't be encoded as PNG.
     #[error("encoding PNG: {0}")]
     Png(#[from] png::EncodingError),

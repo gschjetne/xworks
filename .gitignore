@@ -1,1 +1,3 @@
 target/
+# The bundled fonts, fetched by `cargo run -p fetch-fonts` (spec/text/fonts.ron).
+fonts/

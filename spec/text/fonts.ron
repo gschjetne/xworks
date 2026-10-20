@@ -1,0 +1,115 @@
+// The fonts M1 bundles, and the families text falls back to for characters
+// a family lacks. All are Noto, under the SIL Open Font License 1.1.
+//
+// They aren't committed: `cargo run -p fetch-fonts` downloads them into
+// fonts/ from pinned commits of the Noto repositories and checks each
+// against its hash. CI does the same.
+//
+// The CJK font is the pan-CJK one: it holds Japanese, Korean and both
+// Chinese forms, and its `locl` feature picks them by language.
+(
+    files: [
+        (
+            file: "NotoSerif-Regular.ttf",
+            url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/ccd96e1c95d1142fe8ea2247042cb80a351b01ea/fonts/NotoSerif/unhinted/ttf/NotoSerif-Regular.ttf",
+            sha256: "a15cfbbc1539d707115111d672d590a3d70d4f74b4c0a315956da20ae19a14e1",
+        ),
+        (
+            file: "NotoSerif-Bold.ttf",
+            url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/ccd96e1c95d1142fe8ea2247042cb80a351b01ea/fonts/NotoSerif/unhinted/ttf/NotoSerif-Bold.ttf",
+            sha256: "24ad531e6b05ddad8c3d89572d2c93eb86a6b74e652ce7ee3c3e171de68e84c3",
+        ),
+        (
+            file: "NotoSerif-Italic.ttf",
+            url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/ccd96e1c95d1142fe8ea2247042cb80a351b01ea/fonts/NotoSerif/unhinted/ttf/NotoSerif-Italic.ttf",
+            sha256: "c4b3c971741ecdb40f5a443bce754e8fe91efe761b6ea10c92be7c3597cdadc4",
+        ),
+        (
+            file: "NotoSerif-BoldItalic.ttf",
+            url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/ccd96e1c95d1142fe8ea2247042cb80a351b01ea/fonts/NotoSerif/unhinted/ttf/NotoSerif-BoldItalic.ttf",
+            sha256: "1bc4f86502eaa368718f6192bee022ea9a703d5af1c18b7d291212657b63074a",
+        ),
+        (
+            file: "NotoSans-Regular.ttf",
+            url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/ccd96e1c95d1142fe8ea2247042cb80a351b01ea/fonts/NotoSans/unhinted/ttf/NotoSans-Regular.ttf",
+            sha256: "f3961a9cde016d41a4879aecda1474d3a36d6bf54fa0e4643de029cc2248b0e8",
+        ),
+        (
+            file: "NotoSans-Bold.ttf",
+            url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/ccd96e1c95d1142fe8ea2247042cb80a351b01ea/fonts/NotoSans/unhinted/ttf/NotoSans-Bold.ttf",
+            sha256: "87cb2d84472a7d66da659ee47b6cdb9552326e8c128245231f191b6ac72529d9",
+        ),
+        (
+            file: "NotoSans-Italic.ttf",
+            url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/ccd96e1c95d1142fe8ea2247042cb80a351b01ea/fonts/NotoSans/unhinted/ttf/NotoSans-Italic.ttf",
+            sha256: "678288f868807d4d64a6f3b51466871d117d915780381ce9d0ed4b3bcbd06d37",
+        ),
+        (
+            file: "NotoSans-BoldItalic.ttf",
+            url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/ccd96e1c95d1142fe8ea2247042cb80a351b01ea/fonts/NotoSans/unhinted/ttf/NotoSans-BoldItalic.ttf",
+            sha256: "3d367743f371f28671d2764e911a53d7c20ec9b6aa8791d059e7090389fc52a5",
+        ),
+        (
+            file: "NotoNaskhArabic-Regular.ttf",
+            url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/ccd96e1c95d1142fe8ea2247042cb80a351b01ea/fonts/NotoNaskhArabic/unhinted/ttf/NotoNaskhArabic-Regular.ttf",
+            sha256: "c34fdbd98af4dbc45ca192a23d2eeb77032add83086f5fe32957d23b3f36b221",
+        ),
+        (
+            file: "NotoNaskhArabic-Bold.ttf",
+            url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/ccd96e1c95d1142fe8ea2247042cb80a351b01ea/fonts/NotoNaskhArabic/unhinted/ttf/NotoNaskhArabic-Bold.ttf",
+            sha256: "380ac34b249d336e1a43c21053df440594e1e3db8f75fabd4d85b649ca1ea4c6",
+        ),
+        (
+            file: "NotoSansArabic-Regular.ttf",
+            url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/ccd96e1c95d1142fe8ea2247042cb80a351b01ea/fonts/NotoSansArabic/unhinted/ttf/NotoSansArabic-Regular.ttf",
+            sha256: "bd86ca02f087d7f3c3788ba458fb6b73744c7639ed276b8d870dba6def6c40d0",
+        ),
+        (
+            file: "NotoSansArabic-Bold.ttf",
+            url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/ccd96e1c95d1142fe8ea2247042cb80a351b01ea/fonts/NotoSansArabic/unhinted/ttf/NotoSansArabic-Bold.ttf",
+            sha256: "f4cb79f842a07d1bcf597879574358fb7010f73761396d1d0f2445dfedb4d2ca",
+        ),
+        (
+            file: "NotoSerifHebrew-Regular.ttf",
+            url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/ccd96e1c95d1142fe8ea2247042cb80a351b01ea/fonts/NotoSerifHebrew/unhinted/ttf/NotoSerifHebrew-Regular.ttf",
+            sha256: "193c639291b424c66c9074d2dfa21c985b5fbceda545603f8745ca1a9f8951cc",
+        ),
+        (
+            file: "NotoSerifHebrew-Bold.ttf",
+            url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/ccd96e1c95d1142fe8ea2247042cb80a351b01ea/fonts/NotoSerifHebrew/unhinted/ttf/NotoSerifHebrew-Bold.ttf",
+            sha256: "17d5d36e529ff991b99a90439b0d6b2e1a24ad3b125393063265f4acd5b545e7",
+        ),
+        (
+            file: "NotoSansHebrew-Regular.ttf",
+            url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/ccd96e1c95d1142fe8ea2247042cb80a351b01ea/fonts/NotoSansHebrew/unhinted/ttf/NotoSansHebrew-Regular.ttf",
+            sha256: "04272f5600d0ec816d31d0df73b23aa8d3501ea359ebe820da31c11ffcf00853",
+        ),
+        (
+            file: "NotoSansHebrew-Bold.ttf",
+            url: "https://raw.githubusercontent.com/notofonts/notofonts.github.io/ccd96e1c95d1142fe8ea2247042cb80a351b01ea/fonts/NotoSansHebrew/unhinted/ttf/NotoSansHebrew-Bold.ttf",
+            sha256: "dfdb3056de1f4542b888c77a1a8a750548a802e271479f56e52152423b64dde8",
+        ),
+        (
+            file: "NotoSansCJKsc-Regular.otf",
+            url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
+            sha256: "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
+        ),
+        (
+            file: "NotoSansCJKsc-Bold.otf",
+            url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf",
+            sha256: "b5f0d1a190a7f9b43c310a8850630af12553df32c4c050543f9059732d9b4c0a",
+        ),
+    ],
+    // A character a family lacks comes from the first of its fallbacks
+    // that has it.
+    families: [
+        (
+            family: "Noto Serif",
+            fallback: ["Noto Naskh Arabic", "Noto Serif Hebrew", "Noto Sans CJK SC"],
+        ),
+        (
+            family: "Noto Sans",
+            fallback: ["Noto Sans Arabic", "Noto Sans Hebrew", "Noto Sans CJK SC"],
+        ),
+    ],
+)

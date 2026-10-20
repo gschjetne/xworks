@@ -4,6 +4,7 @@
 //!   the form every render is compared in.
 //! - [`golden`]: approved renders, recorded as SHA-256 hashes of their
 //!   pixels under `spec/golden/` (spec/golden/README.md).
+//! - [`fonts`]: the bundled fonts, as `spec/text/fonts.ron` lists them.
 //!
 //! testkit is an impure crate: it reads and writes files.
 //!
@@ -14,6 +15,7 @@
 //! - The same pixels always give the same hash, on every platform.
 
 mod error;
+pub mod fonts;
 pub mod golden;
 mod image;
 
