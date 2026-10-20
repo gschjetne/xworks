@@ -1,0 +1,13 @@
+// Lines aligned to the end, the right in a left-to-right paragraph: each
+// line's text ends at the width, and its hanging space goes past it.
+(
+    text: "The quick brown fox jumps over the lazy dog.",
+    style: (family: "Noto Serif", language: "en"),
+    width: 101,
+    align: End,
+    lines: [
+        (text: "The quick brown "),
+        (text: "fox jumps over "),
+        (text: "the lazy dog."),
+    ],
+)

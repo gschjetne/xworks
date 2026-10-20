@@ -1,0 +1,29 @@
+// A right-to-left paragraph whose English wraps. Each line is ordered on
+// its own: the space ending the first line takes the paragraph's
+// direction and goes to its left end (rule L1), and "world" starts the
+// second line at its right. Moving left past the first line's left end,
+// the caret goes on at the second line's right end.
+(
+    text: "שלום עולם hello there world שלום",
+    style: (family: "Noto Serif", language: "he"),
+    width: 125,
+    paragraph: Rtl,
+    fonts: [("שלום עולם ", "Noto Serif Hebrew"), ("hello there world ", "Noto Serif"), ("שלום", "Noto Serif Hebrew")],
+    lines: [
+        (text: "שלום עולם hello there ", visual: [Rtl(" "), Ltr("hello there"), Rtl("שלום עולם ")]),
+        (text: "world שלום", visual: [Rtl(" שלום"), Ltr("world")]),
+    ],
+    carets: [
+        (
+            from: "0>",
+            by: Left,
+            visits: [
+                "1<", "2<", "3<", "4<", "5<", "6<", "7<", "8<", "9<", "10<",
+                "20>", "19>", "18>", "17>", "16>", "15>", "14>", "13>", "12>", "11>", "10>",
+                "22<",
+                "27<", "26>", "25>", "24>", "23>", "22>",
+                "28<", "29<", "30<", "31<", "32<",
+            ],
+        ),
+    ],
+)

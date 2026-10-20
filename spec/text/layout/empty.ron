@@ -1,0 +1,13 @@
+// An empty paragraph still has a line, as tall as its style's font.
+(
+    text: "",
+    style: (family: "Noto Serif", language: "en"),
+    width: 100,
+    lines: [
+        (text: "", visual: [], width: 0, baseline: 162916, height: 207569),
+    ],
+    carets: [
+        (from: "0>", by: Right, visits: []),
+        (from: "0>", by: Next, visits: []),
+    ],
+)

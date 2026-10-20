@@ -1,0 +1,13 @@
+// Centred lines: the space either side of each line's text is the same,
+// the hanging space at its end aside.
+(
+    text: "The quick brown fox jumps over the lazy dog.",
+    style: (family: "Noto Serif", language: "en"),
+    width: 101,
+    align: Center,
+    lines: [
+        (text: "The quick brown "),
+        (text: "fox jumps over "),
+        (text: "the lazy dog."),
+    ],
+)

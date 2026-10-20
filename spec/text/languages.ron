@@ -1,0 +1,64 @@
+// The language tag reaches the shaper: the same characters take each
+// language's own forms, from the font's `locl` feature. Glyph IDs are those
+// of the bundled fonts (fonts.ron), as HarfBuzz 14.6.0 shapes them.
+[
+    (
+        about: "Serbian italic Cyrillic has its own forms of б, г, д, п and т",
+        text: "бгдпт",
+        style: (family: "Noto Serif", italic: true),
+        glyphs: [
+            ("sr", [2385, 2386, 2387, 2388, 2389]),
+            ("ru", [458, 460, 461, 472, 475]),
+        ],
+    ),
+    (
+        about: "Serbian upright б differs from Russian",
+        text: "бгдпт",
+        style: (family: "Noto Serif"),
+        glyphs: [
+            ("sr", [2377, 460, 461, 472, 475]),
+            ("ru", [458, 460, 461, 472, 475]),
+        ],
+    ),
+    (
+        about: "Han characters take Japanese, Korean, or Simplified or Traditional Chinese forms",
+        text: "直骨",
+        style: (family: "Noto Serif"),
+        glyphs: [
+            ("ja", [27873, 45132]),
+            ("ko", [27873, 45132]),
+            ("zh-Hans", [27874, 45133]),
+            ("zh-Hant", [27874, 45134]),
+            // The font's default is Simplified Chinese.
+            ("und", [27874, 45133]),
+        ],
+    ),
+    (
+        about: "Urdu writes four, six and seven its own way",
+        text: "۴۶۷",
+        style: (family: "Noto Serif"),
+        glyphs: [
+            ("ur", [156, 130, 157]),
+            ("fa", [136, 138, 139]),
+            ("ar", [136, 138, 139]),
+        ],
+    ),
+    (
+        about: "Romanian puts a comma, not a cedilla, under S and T",
+        text: "ŞŢ",
+        style: (family: "Noto Serif"),
+        glyphs: [
+            ("ro", [328, 291]),
+            ("en", [287, 851]),
+        ],
+    ),
+    (
+        about: "Catalan's l·l becomes one glyph",
+        text: "col·legi",
+        style: (family: "Noto Serif"),
+        glyphs: [
+            ("ca", [70, 82, 257, 79, 72, 74, 76]),
+            ("en", [70, 82, 79, 121, 79, 72, 74, 76]),
+        ],
+    ),
+]

@@ -1,0 +1,17 @@
+// Japanese breaks between any two characters, except that a line may not
+// start with a full stop: す moves down with 。 rather than leave it alone.
+// A line exactly as wide as the paragraph fits. The characters come from
+// Noto Sans CJK, in its Japanese forms, kerned.
+(
+    text: "日本語のテキストは単語の間で改行されます。",
+    style: (family: "Noto Serif", language: "ja"),
+    width: 60,
+    fonts: [("日本語のテキストは単語の間で改行されます。", "Noto Sans CJK SC")],
+    lines: [
+        (text: "日本語のテ", width: 762000, baseline: 176784, height: 220675),
+        (text: "キストは単", width: 757428, baseline: 397459, height: 220675),
+        (text: "語の間で改", width: 762000, baseline: 618134, height: 220675),
+        (text: "行されま", width: 609600, baseline: 838809, height: 220675),
+        (text: "す。", width: 289560, baseline: 1059484, height: 220675),
+    ],
+)

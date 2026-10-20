@@ -1,0 +1,14 @@
+// A word wider than the paragraph is broken between characters, as many
+// on each line as fit, rather than run past the edge; what's left of it
+// starts the next line, and the text after it follows as usual.
+(
+    text: "Antidisestablishmentarianism is long.",
+    style: (family: "Noto Serif", language: "en"),
+    width: 60,
+    lines: [
+        (text: "Antidisest"),
+        (text: "ablishme"),
+        (text: "ntarianis"),
+        (text: "m is long."),
+    ],
+)

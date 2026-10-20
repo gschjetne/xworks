@@ -7,5 +7,17 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[dependencies]
+harfrust.workspace = true
+locale.workspace = true
+serde.workspace = true
+skrifa.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+ron.workspace = true
+testkit.workspace = true
+
 [lints]
 workspace = true

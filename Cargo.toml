@@ -33,7 +33,8 @@ shot = { path = "tools/shot" }
 
 # External crates. Each one needs a stated reason (CLAUDE.md, rule 5).
 anyhow = "1.0.104"      # error handling in tools only
-icu_locale_core = "2.3.0"   # language tags, which reach the shaper and the line breaker
+harfrust = "0.14.0"     # shaping text (docs/ARCHITECTURE.md, section 9); it shares read-fonts with skrifa
+icu_locale_core = "2.3.0"   # language tags
 icu_properties = { version = "2.3.0", features = ["unicode_bidi"] }  # Unicode character properties: script, bidi class and its data for unicode-bidi
 icu_segmenter = "2.3.0"     # line, word and grapheme boundaries (docs/ARCHITECTURE.md, section 9)
 png = "0.18.1"          # writing test renders as PNG
@@ -41,6 +42,7 @@ proptest = "1.11.0"     # property tests (docs/ARCHITECTURE.md, section 13)
 ron = "0.12.2"          # specs and golden records are RON data
 serde = { version = "1.0.229", features = ["derive"] }
 sha2 = { version = "0.11.0", default-features = false }  # golden images are recorded as SHA-256 hashes of their pixels
+skrifa = "0.48.0"       # reading fonts: tables, metrics, character maps and outlines (docs/ARCHITECTURE.md, section 9)
 thiserror = "2.0.21"    # error types in libraries
 unicode-bidi = { version = "0.3.18", default-features = false, features = ["std"] }  # the bidi algorithm, run on ICU4X's data
 

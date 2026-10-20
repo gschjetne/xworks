@@ -1,0 +1,25 @@
+// A line separator ends its line wherever it is. It takes no room, and the
+// caret after it stands at the start of the next line; moving left from
+// there, the caret goes to the end of the line before, ahead of the
+// separator.
+(
+    text: "First line\u{2028}and the second",
+    style: (family: "Noto Serif", language: "en"),
+    width: 300,
+    lines: [
+        (text: "First line\u{2028}", baseline: 162916, height: 207569),
+        (text: "and the second", baseline: 370485, height: 207569),
+    ],
+    carets: [
+        (
+            from: "8>",
+            by: Next,
+            visits: ["9<", "10<", "11>", "12<", "13<", "14<", "15<", "16<", "17<", "18<", "19<", "20<", "21<", "22<", "23<", "24<", "25<"],
+        ),
+        (
+            from: "13<",
+            by: Left,
+            visits: ["12>", "11>", "10<", "9>", "8>", "7>", "6>", "5>", "4>", "3>", "2>", "1>", "0>"],
+        ),
+    ],
+)

@@ -1,0 +1,15 @@
+// Arabic runs right to left, joined, in Noto Naskh Arabic, the fallback
+// Noto Serif names for it; its spaces and punctuation come from the same
+// font. Lines are as tall as Naskh's metrics make them.
+(
+    text: "مرحبا بالعالم، هذا نص عربي للاختبار.",
+    style: (family: "Noto Serif", language: "ar"),
+    width: 70,
+    paragraph: Rtl,
+    fonts: [("مرحبا بالعالم، هذا نص عربي للاختبار.", "Noto Naskh Arabic")],
+    lines: [
+        (text: "مرحبا بالعالم، ", visual: [Rtl("مرحبا بالعالم، ")], width: 704240, baseline: 162916, height: 259538),
+        (text: "هذا نص عربي ", visual: [Rtl("هذا نص عربي ")], width: 747827, baseline: 422454, height: 259538),
+        (text: "للاختبار.", visual: [Rtl("للاختبار.")], width: 450341, baseline: 681992, height: 259538),
+    ],
+)

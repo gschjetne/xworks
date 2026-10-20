@@ -1,0 +1,34 @@
+// English in a right-to-left paragraph, whose direction comes from its
+// first strong character. Moving left, the way Hebrew reads, the caret
+// keeps going left on screen: it enters the English at its end and crosses
+// it from its last letter to its first.
+(
+    text: "הוא אמר hello world היום.",
+    style: (family: "Noto Serif", language: "he"),
+    width: 300,
+    paragraph: Rtl,
+    fonts: [("הוא אמר ", "Noto Serif Hebrew"), ("hello world ", "Noto Serif"), ("היום", "Noto Serif Hebrew"), (".", "Noto Serif")],
+    lines: [
+        (text: "הוא אמר hello world היום.", visual: [Rtl(" היום."), Ltr("hello world"), Rtl("הוא אמר ")]),
+    ],
+    carets: [
+        (
+            from: "0>",
+            by: Left,
+            visits: [
+                "1<", "2<", "3<", "4<", "5<", "6<", "7<", "8<",
+                "18>", "17>", "16>", "15>", "14>", "13>", "12>", "11>", "10>", "9>", "8>",
+                "20<", "21<", "22<", "23<", "24<", "25<",
+            ],
+        ),
+        (
+            from: "25<",
+            by: Right,
+            visits: [
+                "24>", "23>", "22>", "21>", "20>", "19>",
+                "9<", "10<", "11<", "12<", "13<", "14<", "15<", "16<", "17<", "18<", "19<",
+                "7>", "6>", "5>", "4>", "3>", "2>", "1>", "0>",
+            ],
+        ),
+    ],
+)

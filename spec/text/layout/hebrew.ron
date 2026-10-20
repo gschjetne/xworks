@@ -1,0 +1,20 @@
+// Hebrew runs right to left. Noto Serif Hebrew has no comma or full stop,
+// so those come from Noto Serif, and a line holding one is as tall as Noto
+// Serif's metrics make it.
+(
+    text: "שלום עולם, זהו טקסט קצר לבדיקה.",
+    style: (family: "Noto Serif", language: "he"),
+    width: 66,
+    paragraph: Rtl,
+    fonts: [
+        ("שלום עולם", "Noto Serif Hebrew"),
+        (", ", "Noto Serif"),
+        ("זהו טקסט קצר לבדיקה", "Noto Serif Hebrew"),
+        (".", "Noto Serif"),
+    ],
+    lines: [
+        (text: "שלום עולם, ", visual: [Rtl("שלום עולם, ")], width: 690829, baseline: 162916, height: 207569),
+        (text: "זהו טקסט ", visual: [Rtl("זהו טקסט ")], width: 597256, baseline: 344119, height: 180746),
+        (text: "קצר לבדיקה.", visual: [Rtl("קצר לבדיקה.")], width: 776632, baseline: 551231, height: 207569),
+    ],
+)

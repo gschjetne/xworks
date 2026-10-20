@@ -1,0 +1,13 @@
+// Greek, with its tonos accents, breaks like Latin.
+(
+    text: "Η γρήγορη καφέ αλεπού πηδάει πάνω από τον τεμπέλη σκύλο.",
+    style: (family: "Noto Serif", language: "el"),
+    width: 110,
+    fonts: [("Η γρήγορη καφέ αλεπού πηδάει πάνω από τον τεμπέλη σκύλο.", "Noto Serif")],
+    lines: [
+        (text: "Η γρήγορη καφέ ", width: 1157480, baseline: 162916, height: 207569),
+        (text: "αλεπού πηδάει ", width: 1054303, baseline: 370485, height: 207569),
+        (text: "πάνω από τον ", width: 997611, baseline: 578054, height: 207569),
+        (text: "τεμπέλη σκύλο.", width: 1080667, baseline: 785623, height: 207569),
+    ],
+)

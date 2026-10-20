@@ -1,0 +1,12 @@
+// A number in Arabic text reads left to right, inside the right-to-left
+// line; Naskh has the digits, so they stay in its font.
+(
+    text: "عام 2026 هو العام",
+    style: (family: "Noto Serif", language: "ar"),
+    width: 300,
+    paragraph: Rtl,
+    fonts: [("عام 2026 هو العام", "Noto Naskh Arabic")],
+    lines: [
+        (text: "عام 2026 هو العام", visual: [Rtl(" هو العام"), Ltr("2026"), Rtl("عام ")]),
+    ],
+)
