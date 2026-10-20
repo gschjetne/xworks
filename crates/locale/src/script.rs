@@ -22,7 +22,10 @@ impl Script {
         self.0
     }
 
-    fn of(c: char) -> Option<Script> {
+    /// The script of `c`, or `None` if it's common to many scripts, as
+    /// spaces, digits and most punctuation are, or takes its base's, as
+    /// combining marks do.
+    pub fn of(c: char) -> Option<Script> {
         let script = CodePointMapData::<IcuScript>::new().get(c);
         if matches!(
             script,
