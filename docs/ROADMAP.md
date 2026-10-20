@@ -213,6 +213,22 @@ each tie rule pin the conventions convergence alone can't, and deliberately
 broken rules showed the tests catch them. Rebasing a sequence of operations
 over another, which collaboration needs, waits for that track.
 
+**Stage 5 is done (2026-10-20).** `locale` wraps ICU4X: language tags,
+line breaks, graphemes, script runs and bidi levels. `text` loads fonts
+with skrifa, shapes with HarfRust, breaks lines first fit, orders them by
+the bidi algorithm, and answers the editing questions: where the caret is
+drawn, where it goes on screen and in the text, what a click hits, and how
+a selection is highlighted. Fifteen layout cases under `spec/text/` cover
+Latin, Greek, Cyrillic, Arabic, Hebrew and Japanese, alignment, hard
+breaks, a word too long for its line, and text of both directions in one
+line and across wrapped lines, with caret walks through them worked out by
+hand. Their widths come from HarfBuzz itself, and HarfRust matches them
+exactly. Language cases check that the tag reaches the shaper: Serbian,
+Japanese, Korean, Chinese, Urdu, Romanian and Catalan forms. Property tests over
+random mixed-script paragraphs found one bug, a line that came out wider
+than measured where a break split a kerning pair; lines are now measured as
+they will be shaped. The bundled fonts, 37 MB of Noto, are fetched by hash.
+
 ### Exit criteria
 
 - A scripted session types a document of several pages, with headings, bold

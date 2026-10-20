@@ -14,9 +14,17 @@ office suite built from scratch to be usable, fast and correct.
 
 ## Status and checks
 
-M0 (architecture) is done. M1, the walking skeleton, is under way: stage 1
-(the workspace and the test harness) is in place, and the other crates are
-empty until their stages fill them ([docs/ROADMAP.md](docs/ROADMAP.md)).
+M0 (architecture) is done. M1, the walking skeleton, is under way:
+`calc`'s decimal numbers, `doc`, `locale` and `text` are in place, and the
+other crates are empty until their stages fill them
+([docs/ROADMAP.md](docs/ROADMAP.md)).
+
+The tests lay text out in the bundled fonts, which aren't committed. Fetch
+them once, and again when `spec/text/fonts.ron` changes:
+
+```sh
+cargo run -p fetch-fonts
+```
 
 Every change must pass, from the repository root:
 
@@ -40,6 +48,8 @@ the tests on Linux, Windows and macOS.
 - `cargo run -p shot -- [SCENE...]` renders scenes to `target/shot/`;
   `--list` lists them. Look at what you render.
 - Golden records and how they're approved: [spec/golden/README.md](spec/golden/README.md).
+- `fuzz/` holds the fuzz targets (rule 8), in a workspace of their own;
+  run one with `cargo +nightly fuzz run TARGET` from there.
 - **GPU work runs on Windows.** This machine is WSL2, whose Linux sees only
   llvmpipe, a software rasterizer. Build for Windows with `cargo xwin build
   --target x86_64-pc-windows-msvc` and run the `.exe` from WSL, which

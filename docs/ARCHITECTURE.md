@@ -433,7 +433,8 @@ layout and editing, on the same pure-Rust stack Fauré uses:
   rustybuzz was archived in 2026 and isn't used.
 - **Unicode and locale:** ICU4X for line breaking, word and sentence
   segmentation, bidirectional text, collation, case mapping, and number and
-  date formatting.
+  date formatting. For bidi, ICU4X has the data and `unicode-bidi` runs the
+  algorithm on it.
 - **Paragraph breaking:** optimal (Knuth–Plass) breaking for justified
   text, and first-fit where it's cheaper and looks the same, with
   hyphenation from TeX's pattern files.
@@ -444,6 +445,37 @@ layout and editing, on the same pure-Rust stack Fauré uses:
 - **Editing:** carets, selections, IME composition and bidi caret movement
   are part of `text`, so the word processor, text boxes on slides, sheet
   cells and database fields all edit text the same way.
+
+**How a paragraph is laid out.** Its text is divided into items of one
+style, one face, one bidi level and one script, and each item is shaped on
+its own, with the text around it as context so letters join across style
+changes. A character comes from its style's family if that has it, or else
+from the first of the family's fallbacks that does; the fallbacks are data
+(`spec/text/fonts.ron`). Spaces and punctuation stay in the face of the text
+before them when it has them, so Arabic keeps Arabic spaces. Lines are broken
+first fit where UAX #14 allows, and each candidate line is measured as it
+will be shaped: where a break falls between glyphs that interact, such as a
+kerning pair, the line's edge is shaped again. A word too wide for a line is
+broken between graphemes. Spaces at a line's end hang past it. Each line is
+then ordered for display on its own (UAX #9, rules L1 and L2), aligned, and
+made as tall as its fonts' ascent and descent.
+
+**The caret** stands between graphemes, and a cursor is an offset with an
+affinity: whether it belongs with the character before it or the one after.
+Where directions meet, one offset is two places on screen, and where a line
+wraps, one offset is the end of one line and the start of the next; the
+affinity says which. The caret keeps to the character just typed or just
+moved past, so it stands where the next character typed in that script will
+appear. It moves two ways: on screen, left and right grapheme by grapheme,
+going on at the next line in the paragraph's reading order; and in the
+text's order, forward and back. Hit-testing a point finds the nearer edge of
+the grapheme there. Selections are logical ranges, highlighted as one
+rectangle per stretch that is together on screen.
+
+**Fonts for M1** are Noto: Serif and Sans with italics, Naskh and Sans
+Arabic, Serif and Sans Hebrew, and the pan-CJK Sans, whose `locl` feature
+picks Japanese, Korean or Chinese forms by language. They come to 37 MB, so
+they're fetched by hash (`cargo run -p fetch-fonts`) rather than committed.
 
 Fauré's `text` and `typeset` crates are tuned for pixel-exact Platinum UI
 text; xWorks needs resolution-independent document text. The two share the
