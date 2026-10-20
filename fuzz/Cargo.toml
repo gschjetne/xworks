@@ -1,0 +1,38 @@
+# Fuzz targets (CLAUDE.md, rule 8), in a workspace of their own: libfuzzer-sys
+# brings a license (NCSA, for libFuzzer) that deny.toml doesn't list, and the
+# targets aren't part of the product. Run one with a nightly toolchain and
+# cargo-fuzz, from here:
+#
+#   cargo +nightly fuzz run font_file
+[package]
+name = "xworks-fuzz"
+version = "0.0.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+publish = false
+
+[package.metadata]
+cargo-fuzz = true
+
+[workspace]
+
+[dependencies]
+libfuzzer-sys = "0.4.12"  # cargo-fuzz's harness
+locale = { path = "../crates/locale" }
+ron = "0.12.2"
+testkit = { path = "../crates/testkit" }
+text = { path = "../crates/text" }
+
+[[bin]]
+name = "font_file"
+path = "fuzz_targets/font_file.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "paragraph"
+path = "fuzz_targets/paragraph.rs"
+test = false
+doc = false
+bench = false
