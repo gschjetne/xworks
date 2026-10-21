@@ -156,8 +156,9 @@ flowchart LR
      undo, redo, bold, italic, the paragraph styles and font size.
    - **The app:** Elm-style, over the document and its views.
    - **The generic shell:** winit and wgpu, showing the pages with
-     scrolling, the caret and selection by mouse and keyboard, typing, IME
-     composition and plain-text clipboard.
+     scrolling, the caret and selection by mouse and keyboard (the arrow
+     keys move the caret on screen), typing, IME composition and
+     plain-text clipboard.
    - **The toolkit's first chrome:** a menu bar, menus and a status bar,
      drawn from the chrome model.
    - **Accessibility:** a first AccessKit tree, with the document as text.
@@ -227,7 +228,11 @@ exactly. Language cases check that the tag reaches the shaper: Serbian,
 Japanese, Korean, Chinese, Urdu, Romanian and Catalan forms. Property tests over
 random mixed-script paragraphs found one bug, a line that came out wider
 than measured where a break split a kerning pair; lines are now measured as
-they will be shaped. The bundled fonts, 37 MB of Noto, are fetched by hash.
+they will be shaped. The bundled fonts, 87 MB of Noto, are fetched by hash.
+The owner accepted the stage (review manq394m) and settled four things: the
+fonts stay fetched, the arrow keys move the caret on screen, italic in a
+family without an italic face is slanted, and Noto Serif falls back to Noto
+Serif CJK.
 
 ### Exit criteria
 

@@ -468,14 +468,22 @@ affinity says which. The caret keeps to the character just typed or just
 moved past, so it stands where the next character typed in that script will
 appear. It moves two ways: on screen, left and right grapheme by grapheme,
 going on at the next line in the paragraph's reading order; and in the
-text's order, forward and back. Hit-testing a point finds the nearer edge of
-the grapheme there. Selections are logical ranges, highlighted as one
-rectangle per stretch that is together on screen.
+text's order, forward and back. **The arrow keys move it on screen**: Left
+always moves it left, in mixed-direction text too (project owner,
+2026-10-21). Hit-testing a point finds the nearer edge of the grapheme
+there. Selections are logical ranges, highlighted as one rectangle per
+stretch that is together on screen.
+
+**Italic in a family without one** is the upright face slanted (project
+owner, 2026-10-21). Noto has no italic for Arabic, Hebrew or CJK; `text`
+marks such runs as oblique, and the display list slants their glyphs.
 
 **Fonts for M1** are Noto: Serif and Sans with italics, Naskh and Sans
-Arabic, Serif and Sans Hebrew, and the pan-CJK Sans, whose `locl` feature
-picks Japanese, Korean or Chinese forms by language. They come to 37 MB, so
-they're fetched by hash (`cargo run -p fetch-fonts`) rather than committed.
+Arabic, Serif and Sans Hebrew, and the pan-CJK Serif and Sans, whose `locl`
+feature picks Japanese, Korean or Chinese forms by language. Noto Serif
+falls back to the serif CJK face and Noto Sans to the sans (project owner,
+2026-10-21). They come to 87 MB, so they're fetched by hash (`cargo run -p
+fetch-fonts`) rather than committed (project owner, 2026-10-21).
 
 Fauré's `text` and `typeset` crates are tuned for pixel-exact Platinum UI
 text; xWorks needs resolution-independent document text. The two share the
