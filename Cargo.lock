@@ -187,6 +187,11 @@ version = "0.0.0"
 [[package]]
 name = "canvas"
 version = "0.0.0"
+dependencies = [
+ "proptest",
+ "serde",
+ "text",
+]
 
 [[package]]
 name = "cbc"
