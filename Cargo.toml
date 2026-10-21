@@ -33,6 +33,7 @@ shot = { path = "tools/shot" }
 
 # External crates. Each one needs a stated reason (CLAUDE.md, rule 5).
 anyhow = "1.0.104"      # error handling in tools only
+fearless_simd = { version = "0.7.0", default-features = false, features = ["force_support_fallback"] }  # vello_cpu's SIMD levels; this feature gives the portable scalar one, whose pixels are the same everywhere
 harfrust = "0.14.0"     # shaping text (docs/ARCHITECTURE.md, section 9); it shares read-fonts with skrifa
 icu_locale_core = "2.3.0"   # language tags
 icu_properties = { version = "2.3.0", features = ["unicode_bidi"] }  # Unicode character properties: script, bidi class and its data for unicode-bidi
@@ -44,6 +45,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 sha2 = { version = "0.11.0", default-features = false }  # golden images are recorded as SHA-256 hashes of their pixels
 skrifa = "0.48.0"       # reading fonts: tables, metrics, character maps and outlines (docs/ARCHITECTURE.md, section 9)
 thiserror = "2.0.21"    # error types in libraries
+vello_cpu = { version = "=0.3.0", default-features = false, features = ["std", "text", "u8_pipeline"] }  # the CPU renderer (D7, docs/ARCHITECTURE.md, section 10); single-threaded, so render-cpu stays pure
 unicode-bidi = { version = "0.3.18", default-features = false, features = ["std"] }  # the bidi algorithm, run on ICU4X's data
 
 [workspace.lints.rust]
