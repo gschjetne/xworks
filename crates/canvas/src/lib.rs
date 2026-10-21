@@ -6,6 +6,8 @@
 //! - [`PageStyle`]: a page's size and margins.
 //! - [`paginate`]: blocks of lines poured into pages, breaking paragraphs
 //!   between lines.
+//! - [`automatic`]: a document's story poured into automatic pages and
+//!   drawn, page by page, as display lists.
 //!
 //! The rules where a page breaks:
 //!
@@ -29,7 +31,11 @@
 
 use std::ops::Range;
 
+use doc::Document;
+use scene::{Color, Page, Point};
 use serde::Deserialize;
+use story::{ParagraphLayout, StyleSheet};
+use text::Fonts;
 use text::units::Length;
 
 /// A page's size and margins, as `spec/styles/` gives them.
@@ -211,6 +217,60 @@ pub fn paginate(height: i64, blocks: &[Block]) -> Vec<Vec<Piece>> {
         }
     }
     pages
+}
+
+/// A story's laid-out paragraphs as blocks to pour.
+pub fn blocks(paragraphs: &[ParagraphLayout]) -> Vec<Block> {
+    paragraphs
+        .iter()
+        .map(|p| Block {
+            lines: p.layout.lines.iter().map(|l| l.height).collect(),
+            space_before: p.space_before,
+            space_after: p.space_after,
+            keep_with_next: p.keep_with_next,
+        })
+        .collect()
+}
+
+/// `pages` of `paragraphs`, as [`paginate`] placed them, drawn on white
+/// pages of `style`.
+pub fn draw(
+    style: &PageStyle,
+    paragraphs: &[ParagraphLayout],
+    pages: &[Vec<Piece>],
+    fonts: &Fonts,
+) -> Vec<Page> {
+    pages
+        .iter()
+        .map(|pieces| {
+            let mut page = Page::new(style.width, style.height);
+            page.fill_background(Color::WHITE);
+            for piece in pieces {
+                let origin = Point::new(style.left, style.top + piece.y);
+                page.items
+                    .extend(paragraphs[piece.block].layout.paint_lines(
+                        fonts,
+                        piece.lines.clone(),
+                        origin,
+                        |_| Color::BLACK,
+                    ));
+            }
+            page
+        })
+        .collect()
+}
+
+/// `document`'s story in automatic pages of `style`: laid out, poured and
+/// drawn.
+pub fn automatic(
+    document: &Document,
+    sheet: &StyleSheet,
+    style: &PageStyle,
+    fonts: &Fonts,
+) -> Vec<Page> {
+    let paragraphs = story::lay_out(document, sheet, fonts, style.body_width());
+    let pages = paginate(style.body_height(), &blocks(&paragraphs));
+    draw(style, &paragraphs, &pages, fonts)
 }
 
 #[cfg(test)]

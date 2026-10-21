@@ -8,11 +8,16 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+doc.workspace = true
+scene.workspace = true
 serde.workspace = true
+story.workspace = true
 text.workspace = true
 
 [dev-dependencies]
 proptest.workspace = true
+ron.workspace = true
+testkit.workspace = true
 
 [lints]
 workspace = true

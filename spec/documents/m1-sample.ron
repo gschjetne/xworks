@@ -1,0 +1,78 @@
+// A sample document for M1 (docs/ROADMAP.md, stage 7): headings, body
+// text with bold and italic, and paragraphs in every M1 script, about three
+// A4 pages in spec/styles/m1.ron's styles. Each paragraph is its style's
+// name and its text in runs, each with its character properties. The
+// pangrams are traditional; the English is xWorks' own.
+[
+    ("Heading 1", [("A walking skeleton", {})]),
+    ("Body", [
+        ("This document is set by xWorks from end to end: its text is stored as objects and operations, laid out in fixed-point units, shaped with HarfRust, broken into lines first fit, poured into pages of one style and drawn by the same renderer that tests use. ", {}),
+        ("Nothing here is hand-placed.", {"italic": Bool(true)}),
+        (" When a paragraph does not fit at the foot of a page it breaks between lines, leaving at least two of them on each side, and a heading never ends a page without the start of the text it heads.", {}),
+    ]),
+    ("Body", [
+        ("The aim is an office suite that is ", {}),
+        ("usable, fast and correct", {"bold": Bool(true)}),
+        (". Usable means the program does what people expect, in the order they expect it, without asking them to learn its internals. Fast means every keystroke reaches the screen before the next one, and that opening, saving and scrolling never make anyone wait for work they did not ask for. Correct means that numbers add up exactly, that text in every script is shaped and ordered as its readers write it, and that a document looks the same on every machine that opens it.", {}),
+    ]),
+    ("Heading 2", [("Layout in fixed-point units", {})]),
+    ("Body", [
+        ("Every position on a page is a whole number of layout units, nine hundred and fourteen thousand four hundred to the inch. Points, millimetres and the pixels of a ninety-six dot screen are all whole numbers of them, so lines and pages break in exactly the same places on Linux, Windows, macOS and in a browser. Floating-point arithmetic, which can round differently from one machine to the next, never decides where a line ends.", {}),
+    ]),
+    ("Body", [
+        ("Fonts travel with documents. A document carries the fonts it uses, subset where their licences ask for it, so that opening it elsewhere never reflows it into a different shape. When a family lacks a character, the character comes from the first of the family's fallbacks that has it: Arabic from Naskh, Hebrew from Noto Serif Hebrew, and Chinese and Japanese from Noto Serif CJK, each in the forms its language uses.", {}),
+    ]),
+    ("Heading 2", [("Text in every script", {})]),
+    ("Body", [
+        ("Greek, with its accents: ", {}),
+        ("Ξεσκεπάζω την ψυχοφθόρα βδελυγμία.", {"language": Text("el")}),
+        (" Cyrillic, in two sentences that use every letter: ", {}),
+        ("Съешь же ещё этих мягких французских булок, да выпей чаю. В чащах юга жил бы цитрус? Да, но фальшивый экземпляр!", {"language": Text("ru")}),
+    ]),
+    ("Body", [
+        ("Arabic is written right to left, its letters joined: ", {}),
+        ("نص حكيم له سر قاطع وذو شأن عظيم مكتوب على ثوب أخضر ومغلف بجلد أزرق.", {"language": Text("ar")}),
+        (" Hebrew too, without joining, and in italic it leans as Latin does, because Noto has no Hebrew italic and xWorks slants the upright face: ", {}),
+        ("דג סקרן שט בים מאוכזב ולפתע מצא חברה.", {"language": Text("he"), "italic": Bool(true)}),
+    ]),
+    ("Body", [
+        ("Japanese breaks between any two characters, except where its rules forbid it: ", {}),
+        ("いろはにほへと　ちりぬるを　わかよたれそ　つねならむ　うゐのおくやま　けふこえて　あさきゆめみし　ゑひもせす。", {"language": Text("ja")}),
+        (" Chinese, in the opening of the Thousand Character Classic: ", {}),
+        ("天地玄黄，宇宙洪荒。日月盈昃，辰宿列张。", {"language": Text("zh-Hans")}),
+    ]),
+    ("Heading 3", [("A paragraph that reads right to left", {})]),
+    ("Body", [
+        ("مرحبا بالعالم، هذا نص عربي للاختبار. عام 2026 هو العام الذي بدأ فيه هذا المشروع، والنص هنا يبدأ من اليمين وينتهي في اليسار.", {"language": Text("ar")}),
+    ]),
+    ("Heading 2", [("Operations and undo", {})]),
+    ("Body", [
+        ("A document is a set of objects with identities that never change, and every edit is a small operation on them: insert text, delete text, split a paragraph, join two, set a property. Each operation knows its inverse, so undo is exact, and each can be moved over another made at the same time, so that two people editing one document arrive at the same result whichever order their edits are applied in. A transaction groups the operations of one action, and applies all of them or none.", {}),
+    ]),
+    ("Body", [
+        ("Snapshots cost nothing. The objects live in a persistent map that shares its structure between versions, so the renderer, the spelling checker and the autosave can each hold a version of the document while the person goes on typing, and none of them ever sees half an edit.", {}),
+    ]),
+    ("Heading 2", [("Pages", {})]),
+    ("Body", [
+        ("A word-processing document is a story poured into a canvas whose pages are made as they are needed, from a page style that gives their size and margins. This is the first form of that canvas, the one the word processor will grow from: later come headers and footers, footnotes, floating figures, tables that break across pages, and columns.", {}),
+    ]),
+    ("Body", [
+        ("Where a page breaks depends only on what comes before it. Typing in the last paragraph of a long document never moves a page break near its start, so a document of five hundred pages can be laid out again from the paragraph that changed, not from the beginning, and the pages before it are drawn from what was already drawn.", {}),
+    ]),
+    ("Body", [
+        ("The same rule makes printing honest. What prints is a PDF made from the same display lists the screen shows, with the same fonts embedded, so a page that looks right on the screen comes out of the printer the same way, line for line.", {}),
+    ]),
+    ("Heading 2", [("What comes next", {})]),
+    ("Body", [
+        ("After pages come storage and the shell. Every transaction is appended to the file as it is committed, so a crash loses nothing that was done; the window shows the pages with a caret that moves through text of any direction; and a menu bar, drawn by xWorks itself, offers the first commands. Then the budgets are measured on a real workstation, and the skeleton is done.", {}),
+    ]),
+    ("Body", [
+        ("Each later track grows from these foundations rather than beside them: the spreadsheet's grid, the database's records and the modelling cube are new substrates with their own ways of addressing things, but they store their objects, record their operations, set their text and draw their pages the same way this document does.", {}),
+    ]),
+    ("Body", [
+        ("The quick brown fox jumps over the lazy dog. ", {}),
+        ("Pack my box with five dozen liquor jugs.", {"bold": Bool(true)}),
+        (" How vexingly quick daft zebras jump! ", {}),
+        ("Sphinx of black quartz, judge my vow.", {"italic": Bool(true)}),
+    ]),
+]
