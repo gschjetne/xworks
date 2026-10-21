@@ -1336,6 +1336,13 @@ version = "0.0.0"
 [[package]]
 name = "story"
 version = "0.0.0"
+dependencies = [
+ "doc",
+ "ron",
+ "serde",
+ "testkit",
+ "text",
+]
 
 [[package]]
 name = "strict-num"

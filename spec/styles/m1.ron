@@ -1,0 +1,46 @@
+// M1's styles (docs/ROADMAP.md, M1 stage 7): one page style, which the
+// canvas's automatic pages take, and the paragraph styles a story's
+// paragraphs name. Lengths are Pt(...), Mm(...) or In(...).
+(
+    // A4, with 25 mm margins all round.
+    page: (
+        width: Mm(210),
+        height: Mm(297),
+        top: Mm(25),
+        bottom: Mm(25),
+        left: Mm(25),
+        right: Mm(25),
+    ),
+    // The first is the default, for paragraphs that name no style or one
+    // that isn't here. Headings keep with the paragraph after them.
+    paragraph: [
+        (name: "Body", family: "Noto Serif", size: Pt(11), space_after: Pt(6)),
+        (
+            name: "Heading 1",
+            family: "Noto Sans",
+            size: Pt(20),
+            bold: true,
+            space_before: Pt(18),
+            space_after: Pt(6),
+            keep_with_next: true,
+        ),
+        (
+            name: "Heading 2",
+            family: "Noto Sans",
+            size: Pt(15),
+            bold: true,
+            space_before: Pt(14),
+            space_after: Pt(4),
+            keep_with_next: true,
+        ),
+        (
+            name: "Heading 3",
+            family: "Noto Sans",
+            size: Pt(12.5),
+            bold: true,
+            space_before: Pt(10),
+            space_after: Pt(3),
+            keep_with_next: true,
+        ),
+    ],
+)
