@@ -20,6 +20,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4.12"  # cargo-fuzz's harness
 locale = { path = "../crates/locale" }
 ron = "0.12.2"
+store = { path = "../crates/store" }
 testkit = { path = "../crates/testkit" }
 text = { path = "../crates/text" }
 
@@ -33,6 +34,13 @@ bench = false
 [[bin]]
 name = "paragraph"
 path = "fuzz_targets/paragraph.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "store_file"
+path = "fuzz_targets/store_file.rs"
 test = false
 doc = false
 bench = false
