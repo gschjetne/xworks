@@ -9,6 +9,8 @@
 //! - [`Op`]: the changes. [`Document::apply`] applies one and returns the
 //!   operations that undo it; [`rebase`] moves one over a concurrent one.
 //! - [`Transaction`] and [`History`]: named, undoable steps.
+//! - [`Snapshot`]: a document as plain data, for storing, and checked when
+//!   it's read back ([`Document::from_snapshot`]).
 //!
 //! Invariants:
 //!
@@ -29,7 +31,7 @@ mod op;
 mod props;
 mod rebase;
 
-pub use document::{Document, Object, Paragraph, Story};
+pub use document::{Document, Object, Paragraph, Snapshot, SnapshotError, Story};
 pub use history::{History, Transaction};
 pub use id::ObjectId;
 pub use op::{Error, Op};

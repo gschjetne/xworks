@@ -1,5 +1,8 @@
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::sync::Arc;
+
+use serde::{Deserialize, Serialize};
 
 use crate::idmap::IdMap;
 use crate::props::{self, Props, Run};
@@ -7,7 +10,7 @@ use crate::{Error, ObjectId, Op};
 
 /// A story: an ordered list of paragraphs, as M1 has it. Later tracks add
 /// lists, tables and embedded parts as blocks of their own.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Story {
     /// Its paragraphs, in order. There is always at least one.
     pub paragraphs: Vec<ObjectId>,
@@ -18,7 +21,7 @@ pub struct Story {
 ///
 /// Its runs cover its text exactly, and are normalized: no empty runs, and
 /// no two neighbours with equal properties.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Paragraph {
     /// The story it belongs to.
     pub story: ObjectId,
@@ -43,7 +46,7 @@ impl Paragraph {
 }
 
 /// An object in a document.
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Object {
     /// A story.
     Story(Story),
@@ -81,7 +84,127 @@ impl Default for Document {
     }
 }
 
+/// A document as plain data, for storing: every object by ID, the root, and
+/// the next ID to give out.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Snapshot {
+    /// The root story's ID.
+    pub root: ObjectId,
+    /// The next ID to give out; above every ID in use.
+    pub next_id: u64,
+    /// Every object, in ID order.
+    pub objects: Vec<(ObjectId, Object)>,
+}
+
+/// Why a snapshot isn't a document.
+#[derive(Clone, Debug, PartialEq, Eq, thiserror::Error)]
+pub enum SnapshotError {
+    /// Two objects with one ID.
+    #[error("{0} is two objects")]
+    Duplicate(ObjectId),
+    /// An ID at or above the next one to give out.
+    #[error("{0} isn't below the next ID")]
+    IdTooHigh(ObjectId),
+    /// The root isn't a story.
+    #[error("the root {0} isn't a story")]
+    RootNotAStory(ObjectId),
+    /// A story with no paragraphs.
+    #[error("{0} has no paragraphs")]
+    EmptyStory(ObjectId),
+    /// A story lists something that isn't one of its paragraphs.
+    #[error("{story} lists {paragraph}, which isn't a paragraph of it")]
+    NotItsParagraph {
+        /// The story.
+        story: ObjectId,
+        /// What it lists.
+        paragraph: ObjectId,
+    },
+    /// A paragraph that no story lists, or that one lists twice.
+    #[error("{0} isn't in its story exactly once")]
+    Stray(ObjectId),
+    /// A paragraph whose runs don't cover its text.
+    #[error("{0}'s runs don't cover its text")]
+    RunsMismatch(ObjectId),
+}
+
 impl Document {
+    /// The document as plain data.
+    pub fn to_snapshot(&self) -> Snapshot {
+        Snapshot {
+            root: self.root,
+            next_id: self.next_id,
+            objects: self
+                .objects
+                .entries()
+                .into_iter()
+                .map(|(id, object)| (id, Object::clone(object)))
+                .collect(),
+        }
+    }
+
+    /// The document `snapshot` describes, if it holds together: the root
+    /// is a story, every story lists its own paragraphs, each once, every
+    /// paragraph is in its story, and runs cover their text. Runs are
+    /// normalized.
+    pub fn from_snapshot(snapshot: Snapshot) -> Result<Document, SnapshotError> {
+        let mut objects = IdMap::new();
+        let mut ids = BTreeSet::new();
+        for (id, object) in snapshot.objects {
+            if !ids.insert(id) {
+                return Err(SnapshotError::Duplicate(id));
+            }
+            if id.0 >= snapshot.next_id {
+                return Err(SnapshotError::IdTooHigh(id));
+            }
+            let object = match object {
+                Object::Paragraph(mut p) => {
+                    if props::total(&p.runs) as usize != p.text.chars().count() {
+                        return Err(SnapshotError::RunsMismatch(id));
+                    }
+                    props::normalize(&mut p.runs);
+                    Object::Paragraph(p)
+                }
+                story => story,
+            };
+            objects.insert(id, Arc::new(object));
+        }
+        let document = Document {
+            objects,
+            root: snapshot.root,
+            next_id: snapshot.next_id,
+        };
+        if document.story(document.root).is_none() {
+            return Err(SnapshotError::RootNotAStory(document.root));
+        }
+        // Every paragraph is listed once, by its own story.
+        let mut listed = BTreeSet::new();
+        for (id, object) in document.objects.entries() {
+            let Object::Story(story) = &**object else {
+                continue;
+            };
+            if story.paragraphs.is_empty() {
+                return Err(SnapshotError::EmptyStory(id));
+            }
+            for &p in &story.paragraphs {
+                if document.paragraph(p).is_none_or(|q| q.story != id) {
+                    return Err(SnapshotError::NotItsParagraph {
+                        story: id,
+                        paragraph: p,
+                    });
+                }
+                if !listed.insert(p) {
+                    return Err(SnapshotError::Stray(p));
+                }
+            }
+        }
+        for (id, object) in document.objects.entries() {
+            if matches!(&**object, Object::Paragraph(_)) && !listed.contains(&id) {
+                return Err(SnapshotError::Stray(id));
+            }
+        }
+        Ok(document)
+    }
+
     /// A document holding a story with one empty paragraph.
     pub fn new() -> Document {
         let root = ObjectId(0);

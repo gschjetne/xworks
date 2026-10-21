@@ -8,7 +8,7 @@
 //! - a transaction applies all or nothing, and undo and redo are exact;
 //! - operations survive serialization.
 
-use doc::{Document, History, ObjectId, Op, Props, Run, Value, rebase};
+use doc::{Document, History, ObjectId, Op, Props, Run, Snapshot, Value, rebase};
 use proptest::prelude::*;
 
 /// Characters of one to four bytes, so character offsets and byte offsets
@@ -243,6 +243,26 @@ proptest! {
     }
 
     #[test]
+    fn documents_survive_storing_as_snapshots(values in choices()) {
+        let c = &mut Choices { values: &values, at: 0 };
+        let mut ids = 1000;
+        let mut doc = document(c, &mut ids);
+        for _ in 0..c.below(6) {
+            let op = op(&doc, &mut ids, c);
+            doc.apply(&op).expect("a generated operation applies");
+        }
+        let text = ron::to_string(&doc.to_snapshot()).expect("a snapshot serializes");
+        let back: Snapshot = ron::from_str(&text).expect("and reads back");
+        let restored = Document::from_snapshot(back).expect("a snapshot of a document is valid");
+        prop_assert_eq!(restored.dump(), doc.dump());
+        prop_assert_eq!(&restored, &doc);
+        // IDs given out after it don't collide with the stored ones.
+        let mut again = restored.clone();
+        let mut original = doc.clone();
+        prop_assert_eq!(again.new_id(), original.new_id());
+    }
+
+    #[test]
     fn transactions_are_all_or_nothing_and_undo_exactly(values in choices()) {
         let c = &mut Choices { values: &values, at: 0 };
         let mut ids = 1000;
@@ -270,15 +290,15 @@ proptest! {
             states.push(doc.clone());
         }
         for state in states.iter().rev().skip(1) {
-            prop_assert_eq!(history.undo(&mut doc).unwrap(), Some("Edit".to_string()));
+            prop_assert_eq!(history.undo(&mut doc).unwrap().map(|t| t.name.as_str()), Some("Edit"));
             prop_assert_eq!(&doc, state);
         }
-        prop_assert_eq!(history.undo(&mut doc).unwrap(), None);
+        prop_assert!(history.undo(&mut doc).unwrap().is_none());
         for state in states.iter().skip(1) {
             history.redo(&mut doc).unwrap();
             prop_assert_eq!(&doc, state);
         }
-        prop_assert_eq!(history.redo(&mut doc).unwrap(), None);
+        prop_assert!(history.redo(&mut doc).unwrap().is_none());
     }
 
     #[test]
@@ -476,5 +496,149 @@ mod ties {
             d.paragraph(p).unwrap().props.get("style"),
             Some(&Value::Text("Quote".into()))
         );
+    }
+}
+
+mod snapshots {
+    use std::sync::Arc;
+
+    use doc::{Document, Object, ObjectId, Op, Props, Run, Snapshot, SnapshotError};
+
+    fn two_paragraphs() -> Snapshot {
+        let mut doc = Document::new();
+        let first = doc.paragraphs()[0];
+        doc.apply(&Op::InsertText {
+            paragraph: first,
+            offset: 0,
+            text: "ab".to_string(),
+            runs: vec![Run::new(2, Props::new())],
+        })
+        .unwrap();
+        let new = doc.new_id();
+        doc.apply(&Op::SplitParagraph {
+            paragraph: first,
+            offset: 1,
+            new,
+            new_props: Props::new(),
+        })
+        .unwrap();
+        doc.to_snapshot()
+    }
+
+    fn paragraph_mut(s: &mut Snapshot, id: ObjectId) -> &mut doc::Paragraph {
+        match &mut s.objects.iter_mut().find(|(i, _)| *i == id).unwrap().1 {
+            Object::Paragraph(p) => p,
+            Object::Story(_) => panic!("a paragraph"),
+        }
+    }
+
+    #[test]
+    fn broken_snapshots_are_refused() {
+        let good = two_paragraphs();
+        assert!(Document::from_snapshot(good.clone()).is_ok());
+        let (root, p1, p2) = (good.root, good.objects[1].0, good.objects[2].0);
+
+        let mut s = good.clone();
+        s.objects.push(s.objects[1].clone());
+        assert_eq!(
+            Document::from_snapshot(s),
+            Err(SnapshotError::Duplicate(p1))
+        );
+
+        let mut s = good.clone();
+        s.next_id = p2.0;
+        assert_eq!(
+            Document::from_snapshot(s),
+            Err(SnapshotError::IdTooHigh(p2))
+        );
+
+        let mut s = good.clone();
+        s.root = p1;
+        assert_eq!(
+            Document::from_snapshot(s),
+            Err(SnapshotError::RootNotAStory(p1))
+        );
+
+        let mut s = good.clone();
+        s.objects[0].1 = Object::Story(doc::Story { paragraphs: vec![] });
+        assert_eq!(
+            Document::from_snapshot(s),
+            Err(SnapshotError::EmptyStory(root))
+        );
+
+        let mut s = good.clone();
+        s.objects[0].1 = Object::Story(doc::Story {
+            paragraphs: vec![p1, ObjectId(99)],
+        });
+        assert_eq!(
+            Document::from_snapshot(s),
+            Err(SnapshotError::NotItsParagraph {
+                story: root,
+                paragraph: ObjectId(99)
+            })
+        );
+
+        let mut s = good.clone();
+        s.objects[0].1 = Object::Story(doc::Story {
+            paragraphs: vec![p1, p1],
+        });
+        assert_eq!(Document::from_snapshot(s), Err(SnapshotError::Stray(p1)));
+
+        let mut s = good.clone();
+        s.objects[0].1 = Object::Story(doc::Story {
+            paragraphs: vec![p1],
+        });
+        assert_eq!(Document::from_snapshot(s), Err(SnapshotError::Stray(p2)));
+
+        let mut s = good.clone();
+        paragraph_mut(&mut s, p1).text.push('x');
+        assert_eq!(
+            Document::from_snapshot(s),
+            Err(SnapshotError::RunsMismatch(p1))
+        );
+    }
+
+    #[test]
+    fn runs_read_back_normalized() {
+        let mut s = two_paragraphs();
+        let p1 = s.objects[1].0;
+        let p = paragraph_mut(&mut s, p1);
+        p.text = "xyz".to_string();
+        p.runs = vec![
+            Run::new(1, Props::new()),
+            Run::new(0, Props::new()),
+            Run::new(2, Props::new()),
+        ];
+        let doc = Document::from_snapshot(s).unwrap();
+        assert_eq!(
+            doc.paragraph(p1).unwrap().runs,
+            vec![Run {
+                len: 3,
+                props: Arc::new(Props::new())
+            }]
+        );
+    }
+
+    #[test]
+    fn history_rebuilds_from_a_record_without_applying() {
+        let mut history = doc::History::new();
+        let t = |name: &str| doc::Transaction {
+            name: name.to_string(),
+            ops: vec![],
+            inverse: vec![],
+        };
+        history.push(t("Typing"));
+        history.push(t("Bold"));
+        assert!(history.replay_undo());
+        assert_eq!(
+            (history.undo_name(), history.redo_name()),
+            (Some("Typing"), Some("Bold"))
+        );
+        assert!(history.replay_redo());
+        assert_eq!(
+            (history.undo_name(), history.redo_name()),
+            (Some("Bold"), None)
+        );
+        assert!(!history.replay_redo());
     }
 }

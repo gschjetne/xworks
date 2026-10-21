@@ -55,9 +55,30 @@ impl History {
         self.redo.last().map(|t| t.name.as_str())
     }
 
-    /// Undoes the last transaction on `document`. Returns its name, or
-    /// `None` if there was nothing to undo.
-    pub fn undo(&mut self, document: &mut Document) -> Result<Option<String>, Error> {
+    /// Moves the last transaction from Undo to Redo without applying it:
+    /// for rebuilding history from a record of what was done. Returns
+    /// whether there was one.
+    pub fn replay_undo(&mut self) -> bool {
+        let Some(t) = self.undo.pop() else {
+            return false;
+        };
+        self.redo.push(t);
+        true
+    }
+
+    /// Moves the last transaction from Redo to Undo without applying it;
+    /// the mirror of [`History::replay_undo`].
+    pub fn replay_redo(&mut self) -> bool {
+        let Some(t) = self.redo.pop() else {
+            return false;
+        };
+        self.undo.push(t);
+        true
+    }
+
+    /// Undoes the last transaction on `document`. Returns it, for the file's
+    /// record, or `None` if there was nothing to undo.
+    pub fn undo(&mut self, document: &mut Document) -> Result<Option<&Transaction>, Error> {
         let Some(t) = self.undo.pop() else {
             return Ok(None);
         };
@@ -65,14 +86,13 @@ impl History {
             self.undo.push(t);
             return Err(e);
         }
-        let name = t.name.clone();
         self.redo.push(t);
-        Ok(Some(name))
+        Ok(self.redo.last())
     }
 
-    /// Redoes the last undone transaction. Returns its name, or `None` if
-    /// there was nothing to redo.
-    pub fn redo(&mut self, document: &mut Document) -> Result<Option<String>, Error> {
+    /// Redoes the last undone transaction. Returns it, or `None` if there
+    /// was nothing to redo.
+    pub fn redo(&mut self, document: &mut Document) -> Result<Option<&Transaction>, Error> {
         let Some(t) = self.redo.pop() else {
             return Ok(None);
         };
@@ -80,8 +100,7 @@ impl History {
             self.redo.push(t);
             return Err(e);
         }
-        let name = t.name.clone();
         self.undo.push(t);
-        Ok(Some(name))
+        Ok(self.undo.last())
     }
 }
