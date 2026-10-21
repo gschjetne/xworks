@@ -35,7 +35,7 @@ pub struct Span {
 }
 
 /// Where lines sit between the paragraph's edges.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Deserialize)]
 pub enum Align {
     /// Against the edge the paragraph's direction starts from: the left
     /// in a left-to-right paragraph, the right in a right-to-left one.

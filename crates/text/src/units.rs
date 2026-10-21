@@ -12,6 +12,29 @@ pub const MILLIMETRE: i64 = 36_000;
 /// A pixel at 96 dots to the inch.
 pub const PIXEL: i64 = 9_525;
 
+/// A length as specs write it: points, millimetres or inches.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize)]
+pub enum Length {
+    /// Typographic points.
+    Pt(f64),
+    /// Millimetres.
+    Mm(f64),
+    /// Inches.
+    In(f64),
+}
+
+impl Length {
+    /// The length in layout units, rounded to the nearest.
+    pub fn units(self) -> i64 {
+        let (n, unit) = match self {
+            Length::Pt(n) => (n, POINT),
+            Length::Mm(n) => (n, MILLIMETRE),
+            Length::In(n) => (n, INCH),
+        };
+        (n * unit as f64).round() as i64
+    }
+}
+
 /// `value` font units, at `size` layout units to the em of a font with
 /// `units_per_em`, in layout units: rounded to the nearest, halves away
 /// from zero.
@@ -34,6 +57,13 @@ mod tests {
         assert_eq!(INCH, 72 * POINT);
         assert_eq!(INCH * 10, 254 * MILLIMETRE);
         assert_eq!(INCH, 96 * PIXEL);
+    }
+
+    #[test]
+    fn lengths_convert_exactly() {
+        assert_eq!(Length::Pt(10.5).units(), 133_350);
+        assert_eq!(Length::Mm(210.0).units(), 7_560_000);
+        assert_eq!(Length::In(8.5).units(), 7_772_400);
     }
 
     #[test]

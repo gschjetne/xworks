@@ -101,3 +101,45 @@ fn glyphs_carry_the_text_they_show() {
         }
     }
 }
+
+#[test]
+fn some_lines_paint_from_their_own_top() {
+    // For a paragraph that breaks across pages: its later lines drawn
+    // from the top of the next page.
+    let text = "One two three four five six seven eight nine ten eleven twelve.";
+    let spans = [Span {
+        len: text.len(),
+        style: style(false, "en"),
+    }];
+    let layout = text::layout(
+        fonts(),
+        &Paragraph {
+            text,
+            spans: &spans,
+            direction: None,
+            align: Align::Start,
+            width: points(60.0),
+        },
+    );
+    assert!(layout.lines.len() >= 3);
+    let origin = Point::new(0, 1_000_000);
+    let items = layout.paint_lines(fonts(), 1..3, origin, |_| Color::BLACK);
+    let want: Vec<i64> = layout.lines[1..3]
+        .iter()
+        .map(|l| origin.y + l.baseline - layout.lines[1].top)
+        .collect();
+    let mut got: Vec<i64> = items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Glyphs(run) => Some(run.baseline),
+            _ => None,
+        })
+        .collect();
+    got.dedup();
+    assert_eq!(got, want);
+    assert!(
+        layout
+            .paint_lines(fonts(), 9..9, origin, |_| Color::BLACK)
+            .is_empty()
+    );
+}

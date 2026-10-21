@@ -11,8 +11,25 @@ impl Layout {
     /// each of its lines' runs, in `color` of the run's span. Each glyph
     /// carries the text its cluster shows.
     pub fn paint(&self, fonts: &Fonts, origin: Point, color: impl Fn(usize) -> Color) -> Vec<Item> {
+        self.paint_lines(fonts, 0..self.lines.len(), origin, color)
+    }
+
+    /// `lines` of the paragraph, drawn with the first one's top left at
+    /// `origin`, as [`Layout::paint`] draws them all: for a paragraph that
+    /// breaks across pages.
+    pub fn paint_lines(
+        &self,
+        fonts: &Fonts,
+        lines: std::ops::Range<usize>,
+        origin: Point,
+        color: impl Fn(usize) -> Color,
+    ) -> Vec<Item> {
         let mut items = Vec::new();
-        for line in &self.lines {
+        let Some(top) = self.lines.get(lines.start).map(|l| l.top) else {
+            return items;
+        };
+        let origin = Point::new(origin.x, origin.y - top);
+        for line in &self.lines[lines] {
             for run in &line.runs {
                 if run.glyphs.is_empty() {
                     continue;
