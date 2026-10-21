@@ -21,15 +21,27 @@
         ],
     ),
     (
-        about: "Han characters take Japanese, Korean, or Simplified or Traditional Chinese forms",
+        about: "Han characters take Japanese, Korean, or Simplified or Traditional Chinese forms, in serif",
         text: "直骨",
         style: (family: "Noto Serif"),
+        glyphs: [
+            ("ja", [27755, 45051]),
+            ("ko", [27755, 45051]),
+            ("zh-Hans", [27756, 45052]),
+            ("zh-Hant", [27756, 45053]),
+            // The font's default is Simplified Chinese.
+            ("und", [27756, 45052]),
+        ],
+    ),
+    (
+        about: "Han characters take Japanese, Korean, or Simplified or Traditional Chinese forms, in sans",
+        text: "直骨",
+        style: (family: "Noto Sans"),
         glyphs: [
             ("ja", [27873, 45132]),
             ("ko", [27873, 45132]),
             ("zh-Hans", [27874, 45133]),
             ("zh-Hant", [27874, 45134]),
-            // The font's default is Simplified Chinese.
             ("und", [27874, 45133]),
         ],
     ),

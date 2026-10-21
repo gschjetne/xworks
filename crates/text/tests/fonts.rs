@@ -25,6 +25,7 @@ fn every_bundled_face_loads_with_its_family_weight_and_slant() {
         "Noto Sans Arabic",
         "Noto Sans CJK SC",
         "Noto Sans Hebrew",
+        "Noto Serif CJK SC",
         "Noto Serif Hebrew",
     ] {
         for weight in [400, 700] {
@@ -73,3 +74,4 @@ fn what_isnt_a_font_is_refused() {
     assert!(fonts.add(bytes[..200].to_vec()).is_err());
     assert_eq!(fonts.faces().count(), 0);
 }
+

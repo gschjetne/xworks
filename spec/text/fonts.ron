@@ -5,8 +5,10 @@
 // fonts/ from pinned commits of the Noto repositories and checks each
 // against its hash. CI does the same.
 //
-// The CJK font is the pan-CJK one: it holds Japanese, Korean and both
-// Chinese forms, and its `locl` feature picks them by language.
+// The CJK fonts are the pan-CJK ones: each holds Japanese, Korean and both
+// Chinese forms, and its `locl` feature picks them by language. Noto Serif
+// falls back to the serif CJK face, Noto Sans to the sans (project owner,
+// 2026-10-21).
 (
     files: [
         (
@@ -99,13 +101,23 @@
             url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Bold.otf",
             sha256: "b5f0d1a190a7f9b43c310a8850630af12553df32c4c050543f9059732d9b4c0a",
         ),
+        (
+            file: "NotoSerifCJKsc-Regular.otf",
+            url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Serif/OTF/SimplifiedChinese/NotoSerifCJKsc-Regular.otf",
+            sha256: "2a2eae2628df83556c54018c41e20fa532c1b862c5256ae8b3f23feb918d12ca",
+        ),
+        (
+            file: "NotoSerifCJKsc-Bold.otf",
+            url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Serif/OTF/SimplifiedChinese/NotoSerifCJKsc-Bold.otf",
+            sha256: "8af07d4b6c2e82bcc72a30e066eaf295f11b9424f4aad2eaa9fe0e9c3b38fc73",
+        ),
     ],
     // A character a family lacks comes from the first of its fallbacks
     // that has it.
     families: [
         (
             family: "Noto Serif",
-            fallback: ["Noto Naskh Arabic", "Noto Serif Hebrew", "Noto Sans CJK SC"],
+            fallback: ["Noto Naskh Arabic", "Noto Serif Hebrew", "Noto Serif CJK SC"],
         ),
         (
             family: "Noto Sans",
