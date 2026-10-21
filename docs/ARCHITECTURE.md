@@ -200,7 +200,11 @@ flowchart LR
 - **Word-processing document:** a story poured into a canvas whose pages are
   generated automatically from page styles. Automatic pagination, with
   footnotes, floats and tables that break across pages, is a layout mode of
-  the canvas, not a separate engine.
+  the canvas, not a separate engine. Its first form (M1) breaks paragraphs
+  between lines with no widows or orphans and keeps headings with what
+  follows. Where a page breaks depends only on what comes before it, so an
+  edit never moves the breaks before it, and a long document can be laid
+  out again from the paragraph that changed.
 - **Page layout (DTP):** a canvas with pages laid out by hand and stories
   threaded through frames.
 - **Presentation:** a canvas of slide-sized pages in sequence, with masters.

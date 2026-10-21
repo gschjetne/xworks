@@ -15,9 +15,9 @@ office suite built from scratch to be usable, fast and correct.
 ## Status and checks
 
 M0 (architecture) is done. M1, the walking skeleton, is under way:
-`calc`'s decimal numbers, `doc`, `locale`, `text`, `scene`, `render-cpu`
-and `render-pdf` are in place, and the other crates are empty until their
-stages fill them
+`calc`'s decimal numbers, `doc`, `locale`, `text`, `scene`, `render-cpu`,
+`render-pdf`, `story` and `canvas` are in place, and the other crates are
+empty until their stages fill them
 ([docs/ROADMAP.md](docs/ROADMAP.md)).
 
 The tests lay text out in the bundled fonts, which aren't committed. Fetch

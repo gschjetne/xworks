@@ -245,6 +245,17 @@ extracts back as drawn, which for left-to-right text is as typed. `shot`
 draws two new scenes for approval, shapes and text in every M1 script, and
 writes any scenes as PDF.
 
+**Stage 7 is built (2026-10-22); its golden awaits approval.** `story`
+reads a document's paragraphs as styled text: paragraph styles from
+`spec/styles/m1.ron` (Body, Heading 1 to 3), with bold, italic, font,
+size and language over them. `canvas` paginates: paragraphs break between
+lines with no widows or orphans, headings keep with what follows, and
+space is dropped at page edges. A sample document of about three A4 pages
+(`spec/documents/m1-sample.ron`) is drawn as a scene, and as a PDF of its
+pages. Tests check that its text stays within the margins and that an
+edit leaves every page before it as it was, on the sample and in property
+tests over random documents.
+
 ### Exit criteria
 
 - A scripted session types a document of several pages, with headings, bold
