@@ -529,7 +529,21 @@ What follows from them:
   paths (AVX2 on x86-64, NEON on Arm) and one for the narrow ones (SSE2,
   and the scalar fallback). Within each, Linux, Windows and macOS draw
   identical pixels, on any number of threads. Goldens therefore render at
-  one pinned level; stage 6 of M1 chooses which.
+  one pinned level: the scalar fallback, render-cpu's `Level::Portable`,
+  which every machine has, Arm included, and which CI checks on Linux,
+  Windows and macOS. The screen uses the fastest level the machine has.
+
+**What M1 built.** `scene` holds pages of fills, strokes and glyph runs.
+`text` paints a laid-out paragraph into it: each glyph carries the text its
+cluster shows, and a run in a family without an italic is marked oblique,
+which every renderer slants by 12° about its baseline. render-cpu draws
+with `vello_cpu`, single-threaded, so it stays a pure crate; the app runs
+it on its workers. render-pdf writes with krilla (from the Typst project),
+which embeds each font subset to the glyphs used, with a Unicode mapping so
+text can be searched and copied. A PDF holds glyphs in the order they're
+drawn, left to right; readers that apply the bidi algorithm read Arabic and
+Hebrew back in order, others reversed. A tagged PDF, with its reading order
+explicit, comes with accessibility work after M1.
 
 ## 11. Security, robustness and licensing
 

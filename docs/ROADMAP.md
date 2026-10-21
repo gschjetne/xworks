@@ -234,6 +234,17 @@ fonts stay fetched, the arrow keys move the caret on screen, italic in a
 family without an italic face is slanted, and Noto Serif falls back to Noto
 Serif CJK.
 
+**Stage 6 is built (2026-10-21); its goldens await approval.** `scene` is
+the display list: pages of fills, strokes and glyph runs that carry their
+text. `text` paints laid-out paragraphs into it. render-cpu draws it with
+`vello_cpu`, at a portable scalar level for tests and goldens and the
+machine's fastest for the screen; the approved `filled-rect` golden still
+matches, drawn this way. render-pdf writes it with krilla: fonts embedded
+and subset, page sizes exact, the same bytes every time, and text that
+extracts back as drawn, which for left-to-right text is as typed. `shot`
+draws two new scenes for approval, shapes and text in every M1 script, and
+writes any scenes as PDF.
+
 ### Exit criteria
 
 - A scripted session types a document of several pages, with headings, bold

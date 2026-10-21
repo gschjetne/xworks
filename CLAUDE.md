@@ -15,8 +15,9 @@ office suite built from scratch to be usable, fast and correct.
 ## Status and checks
 
 M0 (architecture) is done. M1, the walking skeleton, is under way:
-`calc`'s decimal numbers, `doc`, `locale` and `text` are in place, and the
-other crates are empty until their stages fill them
+`calc`'s decimal numbers, `doc`, `locale`, `text`, `scene`, `render-cpu`
+and `render-pdf` are in place, and the other crates are empty until their
+stages fill them
 ([docs/ROADMAP.md](docs/ROADMAP.md)).
 
 The tests lay text out in the bundled fonts, which aren't committed. Fetch
@@ -46,7 +47,8 @@ CI ([.github/workflows/ci.yml](.github/workflows/ci.yml)) runs Clippy and
 the tests on Linux, Windows and macOS.
 
 - `cargo run -p shot -- [SCENE...]` renders scenes to `target/shot/`;
-  `--list` lists them. Look at what you render.
+  `--list` lists them, and `--pdf` writes them as pages of one PDF. Look
+  at what you render.
 - Golden records and how they're approved: [spec/golden/README.md](spec/golden/README.md).
 - `fuzz/` holds the fuzz targets (rule 8), in a workspace of their own;
   run one with `cargo +nightly fuzz run TARGET` from there.
