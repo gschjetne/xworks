@@ -461,6 +461,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "scene"
+version = "0.0.0"
+
+[[package]]
 name = "serde"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -574,6 +578,7 @@ version = "0.0.0"
 dependencies = [
  "harfrust",
  "locale",
+ "scene",
  "serde",
  "skrifa",
  "thiserror",

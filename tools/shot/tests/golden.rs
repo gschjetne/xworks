@@ -16,7 +16,7 @@ fn every_recorded_scene_matches_its_golden() {
             ));
             continue;
         };
-        let image = (scene.render)();
+        let image = scene.render();
         if !record.matches(&image) {
             let path = golden::report_dir().join(format!("{}.png", record.name));
             image.write_png(&path).expect("the report writes");
