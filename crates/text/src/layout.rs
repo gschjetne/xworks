@@ -129,6 +129,10 @@ pub struct GlyphRun {
     /// Its bidi level: even runs read left to right, odd ones right to
     /// left.
     pub level: u8,
+    /// Whether its glyphs are to be slanted: its style is italic but its
+    /// face isn't, because the family has no italic, as Arabic, Hebrew and
+    /// CJK fonts often don't (project owner, 2026-10-21).
+    pub oblique: bool,
     /// Its left edge.
     pub x: i64,
     /// Its width: its glyphs' advances together.
@@ -487,12 +491,14 @@ fn build_line(
             pen += g.advance;
         }
         cells.extend(piece_cells(text, graphemes, piece, x));
+        let style = &paragraph.spans[item.span].style;
         runs.push(GlyphRun {
             face: item.face,
-            size: paragraph.spans[item.span].style.size,
+            size: style.size,
             span: item.span,
             range: piece.range.clone(),
             level: piece.level,
+            oblique: style.italic && !fonts.face(item.face).italic(),
             x,
             width: pen - x,
             glyphs,

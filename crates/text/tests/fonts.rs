@@ -3,7 +3,7 @@
 mod common;
 
 use common::fonts;
-use text::{FontError, Fonts};
+use text::{Align, FontError, Fonts, Language, Paragraph, Span, Style, units};
 
 #[test]
 fn every_bundled_face_loads_with_its_family_weight_and_slant() {
@@ -75,3 +75,49 @@ fn what_isnt_a_font_is_refused() {
     assert_eq!(fonts.faces().count(), 0);
 }
 
+#[test]
+fn italic_without_an_italic_face_is_slanted() {
+    let fonts = fonts();
+    let text = "Hello שלום";
+    let spans = [Span {
+        len: text.len(),
+        style: Style {
+            family: "Noto Serif".to_string(),
+            size: 12 * units::POINT,
+            weight: 400,
+            italic: true,
+            language: Language::und(),
+        },
+    }];
+    let layout = text::layout(
+        fonts,
+        &Paragraph {
+            text,
+            spans: &spans,
+            direction: None,
+            align: Align::Start,
+            width: 300 * units::POINT,
+        },
+    );
+    let runs: Vec<(&str, &str, bool)> = layout.lines[0]
+        .runs
+        .iter()
+        .map(|r| {
+            (
+                &text[r.range.clone()],
+                fonts.face(r.face).family(),
+                r.oblique,
+            )
+        })
+        .collect();
+    // Noto Serif has an italic, so Latin needs no slant; Noto Serif Hebrew
+    // has none, so the Hebrew is slanted. The space after "Hello" runs the
+    // Latin way, in its face.
+    assert_eq!(
+        runs,
+        [
+            ("Hello ", "Noto Serif", false),
+            ("שלום", "Noto Serif Hebrew", true),
+        ]
+    );
+}
