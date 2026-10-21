@@ -251,3 +251,44 @@ pub fn shapes_page() -> Page {
     });
     page
 }
+
+/// The sample document (`spec/documents/m1-sample.ron`) in M1's styles,
+/// its automatic pages side by side on a grey sheet.
+pub fn document_sheet() -> Page {
+    let pages = document_pages();
+    let width = pages.first().map_or(0, |p| p.width);
+    let height = pages.first().map_or(0, |p| p.height);
+    let gap = INCH / 4;
+    let count = pages.len() as i64;
+    let mut out = Page::new(count * width + (count + 1) * gap, height + 2 * gap);
+    out.fill_background(Color::rgb(160, 160, 160));
+    for (i, page) in pages.iter().enumerate() {
+        out.place(page, Point::new(gap + i as i64 * (width + gap), gap));
+    }
+    out
+}
+
+/// The sample document (`spec/documents/m1-sample.ron`) in M1's styles,
+/// in automatic pages.
+pub fn document_pages() -> Vec<Page> {
+    #[derive(serde::Deserialize)]
+    struct Sheet {
+        page: canvas::PageStyleSpec,
+    }
+    let spec = |dir: &str, name: &str| {
+        testkit::specs(dir)
+            .expect("spec/")
+            .into_iter()
+            .find(|(n, _)| n == name)
+            .unwrap_or_else(|| panic!("spec/{dir}/{name}.ron"))
+            .1
+    };
+    let styles = spec("styles", "m1");
+    let sheet: story::StyleSheet = ron::from_str(&styles).expect("a style sheet");
+    let page: Sheet = ron::from_str(&styles).expect("a page style");
+    let style = canvas::PageStyle::from_spec(&page.page);
+    let paragraphs: Vec<(String, Vec<(String, doc::Props)>)> =
+        ron::from_str(&spec("documents", "m1-sample")).expect("a document");
+    let document = story::document(&paragraphs);
+    canvas::automatic(&document, &sheet, &style, fonts())
+}

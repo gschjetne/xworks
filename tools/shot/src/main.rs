@@ -4,7 +4,8 @@
 //! ```text
 //! shot [SCENE...]                     render scenes to target/shot/SCENE.png
 //! shot --approve "NAME" [SCENE...]    also record them in spec/golden/
-//! shot --pdf [SCENE...]               write them as pages of target/shot/scenes.pdf
+//! shot --pdf [SCENE...]               write them as pages of target/shot/scenes.pdf,
+//!                                     a sheet of pages as its pages
 //! shot --hashes [SCENE...]            print their golden hashes, to compare platforms
 //! shot --list                         list the scenes
 //! ```
@@ -73,7 +74,13 @@ fn main() -> anyhow::Result<()> {
         if approver.is_some() {
             bail!("goldens are images; approve without --pdf");
         }
-        let pages: Vec<_> = scenes.iter().map(|scene| (scene.page)()).collect();
+        let pages: Vec<_> = scenes
+            .iter()
+            .flat_map(|scene| match scene.pages {
+                Some(pages) => pages(),
+                None => vec![(scene.page)()],
+            })
+            .collect();
         let bytes = render_pdf::pdf(&pages, Some("xWorks scenes"))?;
         std::fs::create_dir_all(&out).with_context(|| format!("creating {}", out.display()))?;
         let path = out.join("scenes.pdf");

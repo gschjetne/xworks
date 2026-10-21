@@ -1266,10 +1266,14 @@ name = "shot"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "canvas",
+ "doc",
  "render-cpu",
  "render-pdf",
  "ron",
  "scene",
+ "serde",
+ "story",
  "testkit",
  "text",
 ]

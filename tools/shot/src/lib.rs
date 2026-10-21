@@ -15,7 +15,7 @@ mod pages;
 
 use testkit::Image;
 
-pub use pages::{fonts, shapes_page, text_page};
+pub use pages::{document_pages, document_sheet, fonts, shapes_page, text_page};
 
 /// A named page, and the resolution it's drawn at.
 pub struct Scene {
@@ -27,6 +27,9 @@ pub struct Scene {
     pub ppi: f64,
     /// Makes its page.
     pub page: fn() -> scene::Page,
+    /// For a scene that shows several pages on one sheet: the pages
+    /// themselves, for PDF.
+    pub pages: Option<fn() -> Vec<scene::Page>>,
 }
 
 impl Scene {
@@ -44,18 +47,28 @@ pub fn scenes() -> &'static [Scene] {
             description: "the harness's own check: a dark rectangle on white, 64 by 48",
             ppi: 96.0,
             page: filled_rect,
+            pages: None,
         },
         Scene {
             name: "shapes",
             description: "fills, strokes, curves and transparency, at 96 pixels per inch",
             ppi: 96.0,
             page: shapes_page,
+            pages: None,
+        },
+        Scene {
+            name: "document",
+            description: "the sample document in automatic A4 pages, side by side, at 48 pixels per inch",
+            ppi: 48.0,
+            page: document_sheet,
+            pages: Some(document_pages),
         },
         Scene {
             name: "text",
             description: "paragraphs in every M1 script, bold, italic and slanted, at 144 pixels per inch",
             ppi: 144.0,
             page: text_page,
+            pages: None,
         },
     ]
 }
