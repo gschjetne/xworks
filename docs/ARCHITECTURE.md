@@ -337,6 +337,18 @@ canonical text form, and tests and goldens use that form.
 than after it. A reader that sees a newer schema version opens the file
 read-only and says so; it never guesses.
 
+**How schema 1 works** (M1). The file is marked by SQLite's application ID
+and its schema by the user version. A new file is written beside its name
+and renamed into place. Each transaction is appended to the log in an
+SQLite transaction of its own, with a snapshot of the whole document every
+hundred entries; opening reads the latest snapshot and replays the log
+after it, and rebuilds undo and redo from the whole log, so history
+survives closing. Operations and snapshots are RON. SQLite runs in
+write-ahead-log mode with `synchronous = NORMAL`: a crash of the program
+loses nothing committed, and a power cut can lose the last transactions
+but never the file. Nothing read is trusted: a snapshot or log entry that
+doesn't hold together is an error.
+
 **Documents carry their fonts** (project owner, 2026-10-18). The fonts a
 document uses are embedded, subset where the font's license requires it, so it
 lays out the same on every machine. Missing-font substitution, and the reflow

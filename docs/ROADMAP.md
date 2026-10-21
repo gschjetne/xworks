@@ -256,6 +256,15 @@ pages. Tests check that its text stays within the margins and that an
 edit leaves every page before it as it was, on the sample and in property
 tests over random documents.
 
+**Stage 8 is built (2026-10-22).** `spec/format/` specifies schema 1 of
+the `.xw` file, and `store` reads and writes it: new files are renamed
+into place whole, every transaction is appended as it's committed with a
+snapshot every hundred, and opening starts from the latest snapshot and
+rebuilds undo from the whole log. A file from a newer schema opens
+read-only. Reopening gives the same dump and the same renders; the crash
+test passes a thousand runs; a fuzz target reads any bytes as a file;
+`xworks-dump` prints a file in canonical text.
+
 ### Exit criteria
 
 - A scripted session types a document of several pages, with headings, bold
