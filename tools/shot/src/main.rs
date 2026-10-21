@@ -5,6 +5,7 @@
 //! shot [SCENE...]                     render scenes to target/shot/SCENE.png
 //! shot --approve "NAME" [SCENE...]    also record them in spec/golden/
 //! shot --pdf [SCENE...]               write them as pages of target/shot/scenes.pdf
+//! shot --hashes [SCENE...]            print their golden hashes, to compare platforms
 //! shot --list                         list the scenes
 //! ```
 //!
@@ -16,6 +17,7 @@ use testkit::golden::{self, Golden};
 fn main() -> anyhow::Result<()> {
     let mut approver = None;
     let mut pdf = false;
+    let mut hashes = false;
     let mut names = Vec::new();
     let mut args = std::env::args().skip(1);
     while let Some(arg) = args.next() {
@@ -34,8 +36,9 @@ fn main() -> anyhow::Result<()> {
                 approver = Some(name);
             }
             "--pdf" => pdf = true,
+            "--hashes" => hashes = true,
             "-h" | "--help" => {
-                println!("usage: shot [--list] [--pdf] [--approve NAME] [SCENE...]");
+                println!("usage: shot [--list] [--pdf | --hashes] [--approve NAME] [SCENE...]");
                 return Ok(());
             }
             _ if arg.starts_with('-') => bail!("unknown option {arg}; try --help"),
@@ -52,6 +55,19 @@ fn main() -> anyhow::Result<()> {
             .collect::<anyhow::Result<_>>()?
     };
 
+    if hashes {
+        for scene in scenes {
+            let image = scene.render();
+            println!(
+                "{:<16} {}x{} {}",
+                scene.name,
+                image.width(),
+                image.height(),
+                golden::hash(&image)
+            );
+        }
+        return Ok(());
+    }
     let out = testkit::workspace_root().join("target/shot");
     if pdf {
         if approver.is_some() {

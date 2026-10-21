@@ -43,6 +43,9 @@ jobs:
           key: fonts-${{ hashFiles('spec/text/fonts.ron') }}
       - run: cargo run -p fetch-fonts
       - run: cargo nextest run --workspace
+      # Every scene's hash, approved or not, so a render can be seen to be
+      # the same on every platform before a person approves it.
+      - run: cargo run -p shot -- --hashes
 
   # Formatting, dependencies' licenses and advisories, and the pure crates
   # built for WebAssembly, once.
