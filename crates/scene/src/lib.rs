@@ -220,6 +220,55 @@ impl Page {
         });
     }
 
+    /// Draws `other`'s items on this page with `other`'s top left corner at
+    /// `at`: for sheets of pages, side by side.
+    pub fn place(&mut self, other: &Page, at: Point) {
+        let shift = |p: Point| Point::new(p.x + at.x, p.y + at.y);
+        let path = |path: &Path| {
+            Path(
+                path.0
+                    .iter()
+                    .map(|segment| match *segment {
+                        Segment::MoveTo(a) => Segment::MoveTo(shift(a)),
+                        Segment::LineTo(a) => Segment::LineTo(shift(a)),
+                        Segment::QuadTo(a, b) => Segment::QuadTo(shift(a), shift(b)),
+                        Segment::CubicTo(a, b, c) => Segment::CubicTo(shift(a), shift(b), shift(c)),
+                        Segment::Close => Segment::Close,
+                    })
+                    .collect(),
+            )
+        };
+        for item in &other.items {
+            self.items.push(match item {
+                Item::Fill { path: p, color } => Item::Fill {
+                    path: path(p),
+                    color: *color,
+                },
+                Item::Stroke {
+                    path: p,
+                    width,
+                    color,
+                } => Item::Stroke {
+                    path: path(p),
+                    width: *width,
+                    color: *color,
+                },
+                Item::Glyphs(run) => Item::Glyphs(Glyphs {
+                    baseline: run.baseline + at.y,
+                    glyphs: run
+                        .glyphs
+                        .iter()
+                        .map(|g| Glyph {
+                            at: shift(g.at),
+                            ..g.clone()
+                        })
+                        .collect(),
+                    ..run.clone()
+                }),
+            });
+        }
+    }
+
     /// Every font its glyphs use, each once, in the order first used.
     pub fn fonts(&self) -> Vec<Font> {
         let mut fonts: Vec<Font> = Vec::new();
@@ -251,6 +300,21 @@ mod tests {
                 Segment::Close,
             ]
         );
+    }
+
+    #[test]
+    fn a_placed_page_moves_everything() {
+        let mut inner = Page::new(10, 10);
+        inner.items.push(Item::Fill {
+            path: Path::rect(1, 2, 3, 4),
+            color: Color::BLACK,
+        });
+        let mut sheet = Page::new(100, 100);
+        sheet.place(&inner, Point::new(50, 60));
+        let Item::Fill { path, .. } = &sheet.items[0] else {
+            panic!("a fill");
+        };
+        assert_eq!(path, &Path::rect(51, 62, 3, 4));
     }
 
     #[test]
