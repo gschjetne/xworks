@@ -45,6 +45,7 @@ png = "0.18.1"          # writing test renders as PNG
 proptest = "1.11.0"     # property tests (docs/ARCHITECTURE.md, section 13)
 ron = "0.12.2"          # specs and golden records are RON data
 serde = { version = "1.0.229", features = ["derive"] }
+rusqlite = { version = "0.40.2", features = ["bundled"] }  # the .xw file is an SQLite database (docs/ARCHITECTURE.md, section 6); bundled, so every platform has the same SQLite
 sha2 = { version = "0.11.0", default-features = false }  # golden images are recorded as SHA-256 hashes of their pixels
 skrifa = "0.48.0"       # reading fonts: tables, metrics, character maps and outlines (docs/ARCHITECTURE.md, section 9)
 thiserror = "2.0.21"    # error types in libraries

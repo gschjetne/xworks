@@ -6,6 +6,8 @@
 //!   pixels under `spec/golden/` (spec/golden/README.md).
 //! - [`fonts`]: the bundled fonts, as `spec/text/fonts.ron` lists them.
 //! - [`specs`]: the RON files in a directory of `spec/`, for tests to read.
+//! - [`scratch_dir`]: a fresh, empty directory under `target/` for a test's
+//!   files.
 //!
 //! testkit is an impure crate: it reads and writes files.
 //!
@@ -62,4 +64,20 @@ pub fn specs(dir: &str) -> Result<Vec<(String, String)>, Error> {
     }
     specs.sort();
     Ok(specs)
+}
+
+/// A fresh, empty directory for a test's files: `target/scratch/NAME`,
+/// emptied if it was there before.
+pub fn scratch_dir(name: &str) -> Result<PathBuf, Error> {
+    let dir = workspace_root().join("target/scratch").join(name);
+    match std::fs::remove_dir_all(&dir) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(source) => return Err(Error::Io { path: dir, source }),
+    }
+    std::fs::create_dir_all(&dir).map_err(|source| Error::Io {
+        path: dir.clone(),
+        source,
+    })?;
+    Ok(dir)
 }

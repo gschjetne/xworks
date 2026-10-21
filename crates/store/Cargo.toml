@@ -7,5 +7,21 @@ license.workspace = true
 repository.workspace = true
 publish.workspace = true
 
+[dependencies]
+doc.workspace = true
+ron.workspace = true
+rusqlite.workspace = true
+serde.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+canvas.workspace = true
+rusqlite.workspace = true
+render-cpu.workspace = true
+story.workspace = true
+testkit.workspace = true
+text.workspace = true
+
 [lints]
 workspace = true
