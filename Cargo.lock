@@ -854,6 +854,7 @@ dependencies = [
  "locale",
  "proptest",
  "ron",
+ "scene",
  "serde",
  "skrifa",
  "testkit",

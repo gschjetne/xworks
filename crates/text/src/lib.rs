@@ -7,6 +7,8 @@
 //!   text is divided into items of one style, face, bidi level and script,
 //!   shaped with HarfRust; lines are broken first fit where ICU4X allows,
 //!   and each is ordered for display by the bidi algorithm.
+//! - [`Layout::paint`]: the paragraph as display-list glyph runs (`scene`),
+//!   each glyph with the text it shows.
 //! - [`Layout`]'s editing queries ([`Cursor`], [`Caret`]): where the
 //!   caret stands, how it moves on screen and through the text, what a
 //!   click hits, and how a selection is highlighted.
@@ -26,6 +28,7 @@
 mod caret;
 mod font;
 mod layout;
+mod paint;
 mod shape;
 pub mod units;
 

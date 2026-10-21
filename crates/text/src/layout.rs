@@ -75,6 +75,8 @@ pub struct Layout {
     /// The height of its lines together.
     pub height: i64,
     pub(crate) direction: Direction,
+    /// Its text.
+    pub(crate) text: String,
     /// Where its graphemes begin and end, from 0 to the text's length.
     pub(crate) graphemes: Vec<usize>,
     /// The offsets just after hard line breaks.
@@ -220,6 +222,7 @@ pub fn layout(fonts: &Fonts, paragraph: &Paragraph<'_>) -> Layout {
         width: paragraph.width,
         height: top,
         direction: bidi.direction(),
+        text: text.to_string(),
         graphemes,
         hard_breaks,
     }

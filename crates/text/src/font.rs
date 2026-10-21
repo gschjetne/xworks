@@ -36,6 +36,7 @@ impl FaceId {
 /// One face of a font file: what layout needs from it, and its data, for
 /// drawing and embedding.
 pub struct Face {
+    data: scene::FontData,
     blob: Blob,
     index: u32,
     pub(crate) font: harfrust::Font,
@@ -69,6 +70,14 @@ impl Face {
     /// The font file it's in.
     pub fn data(&self) -> &[u8] {
         &self.blob
+    }
+
+    /// The face, for drawing: its file, shared, and its index in it.
+    pub fn font(&self) -> scene::Font {
+        scene::Font {
+            data: self.data.clone(),
+            index: self.index,
+        }
     }
 
     /// Its index in its file, which is 0 unless the file is a collection.
@@ -135,14 +144,14 @@ impl Fonts {
     /// Adds every face in `data`, a font file or collection. Returns their
     /// IDs; nothing is added if any face can't be read.
     pub fn add(&mut self, data: Vec<u8>) -> Result<Vec<FaceId>, FontError> {
-        let shared: Arc<dyn AsRef<[u8]> + Send + Sync> = Arc::new(data);
-        let blob = Blob::from(shared);
+        let shared: scene::FontData = Arc::new(data);
+        let blob = Blob::from(shared.clone());
         let count = match FileRef::new(&blob).map_err(|e| FontError::NotAFont(e.to_string()))? {
             FileRef::Font(_) => 1,
             FileRef::Collection(c) => c.len(),
         };
         let faces = (0..count)
-            .map(|index| load(&blob, index))
+            .map(|index| load(&shared, &blob, index))
             .collect::<Result<Vec<_>, _>>()?;
         let first = self.faces.len() as u32;
         self.faces.extend(faces);
@@ -212,7 +221,7 @@ impl Fonts {
 }
 
 /// Face `index` of `blob`.
-fn load(blob: &Blob, index: u32) -> Result<Face, FontError> {
+fn load(data: &scene::FontData, blob: &Blob, index: u32) -> Result<Face, FontError> {
     let bad = |reason: String| FontError::BadFace { index, reason };
     let font_ref = skrifa::FontRef::from_index(blob, index).map_err(|e| bad(e.to_string()))?;
     let family = [StringId::TYPOGRAPHIC_FAMILY_NAME, StringId::FAMILY_NAME]
@@ -231,6 +240,7 @@ fn load(blob: &Blob, index: u32) -> Result<Face, FontError> {
         return Err(bad("an em of 0 units".to_string()));
     }
     Ok(Face {
+        data: data.clone(),
         blob: blob.clone(),
         index,
         family,
