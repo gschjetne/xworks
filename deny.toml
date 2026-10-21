@@ -8,7 +8,12 @@ all-features = true
 # Security advisories and unmaintained crates from the RustSec database.
 yanked = "deny"
 # Advisories that don't apply or can't be fixed yet, each with its reason.
-ignore = []
+ignore = [
+    # ttf-parser is unmaintained, not vulnerable. It comes only through
+    # lopdf, which render-pdf's tests use to read back PDFs we wrote; no
+    # shipped code depends on it.
+    { id = "RUSTSEC-2026-0192", reason = "test-only, via lopdf; unmaintained, not vulnerable" },
+]
 
 [licenses]
 # xWorks is MIT OR Apache-2.0 (docs/ARCHITECTURE.md, section 11). Only

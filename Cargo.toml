@@ -35,9 +35,12 @@ shot = { path = "tools/shot" }
 anyhow = "1.0.104"      # error handling in tools only
 fearless_simd = { version = "0.7.0", default-features = false, features = ["force_support_fallback"] }  # vello_cpu's SIMD levels; this feature gives the portable scalar one, whose pixels are the same everywhere
 harfrust = "0.14.0"     # shaping text (docs/ARCHITECTURE.md, section 9); it shares read-fonts with skrifa
+krilla = { version = "=0.8.2", default-features = false }  # PDF output (docs/ARCHITECTURE.md, section 10): fonts embedded and subset, text kept extractable; its default features would bring rustybuzz
 icu_locale_core = "2.3.0"   # language tags
 icu_properties = { version = "2.3.0", features = ["unicode_bidi"] }  # Unicode character properties: script, bidi class and its data for unicode-bidi
 icu_segmenter = "2.3.0"     # line, word and grapheme boundaries (docs/ARCHITECTURE.md, section 9)
+lopdf = { version = "0.42.0", default-features = false }  # reading PDFs back in tests: fonts, pages
+pdf-extract = "=0.12.1" # reading PDFs' text back in tests
 png = "0.18.1"          # writing test renders as PNG
 proptest = "1.11.0"     # property tests (docs/ARCHITECTURE.md, section 13)
 ron = "0.12.2"          # specs and golden records are RON data
