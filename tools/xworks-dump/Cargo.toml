@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+store.workspace = true
 
 [lints]
 workspace = true
