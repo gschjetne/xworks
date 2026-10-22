@@ -298,6 +298,64 @@ order, as Google Docs and Figma do. That's simpler and faster than a CRDT,
 and the rules above are all it needs from the model. Offline editing and
 peer-to-peer sync are not goals.
 
+**What M2's stage 2 built** (objects and the block tree). The choices
+below are the stage's own, open to the owner's review unless marked
+settled.
+
+- **A story is a tree of blocks.** Its paragraphs and containers
+  (`doc::Block`) nest: a list holds items, an item or a quote holds blocks
+  as the story does, a table holds rows, and a row holds its cells, each a
+  paragraph. Headings and code blocks are paragraphs set apart by their
+  style (`code: true` for code, as `heading` marks headings), so Enter in
+  code breaks its line (U+2028) rather than the paragraph. Containers may
+  be empty, as Markdown's `-` is an empty item, but the story always has a
+  paragraph. Nothing in the tree is walked by recursion, so no file can
+  exhaust the stack.
+- **Blocks are made, deleted and moved by operations:** InsertBlock with
+  everything in it, DeleteBlock, whose inverse carries the whole subtree
+  back, MoveBlock and SetBlockProp, after M1's six so the file format's
+  positions hold. M1's operations keep their fields and meaning; a split's
+  new paragraph goes after it in its own container, and a join needs the
+  next paragraph in the same one.
+- **Rebasing two blocks' operations** keeps both changes where its rules
+  can: blocks put in one place keep the first one's first; a place after a
+  block moved or deleted becomes the place after the one before it; a
+  deleted block takes every change inside it with it. Where two can't both
+  have their way (moves that together would nest a block in itself,
+  deletions that together would leave no paragraph), rebase finds it by
+  applying both orders to the document, and the first one wins; `conflict`
+  says when. So the two orders always meet. Property tests show M1's
+  operations never conflict, and only deletions and moves of blocks do.
+- **Child lists stay `Arc<Vec>`,** copied when their own container changes,
+  as M1's story was, which the tree confines to one container.
+- **Marks:** emphasis and strong are M1's italic and bold; `code` sets a
+  run in JetBrains Mono on a tint, and `link` (with `link-title`) holds a
+  link's target. A table's column alignment is its cells' `align`; its
+  columns share its width, and its first row is its header.
+- **`story::flow`** lays the tree out as paragraphs in reading order, each
+  in its place: indent, its list item's marker (bullets by depth from the
+  sheet, numbers counted, never stored), its quotes' bars, the table cell
+  it is, and the containers around it. Nesting past 32 lays out as if it
+  stopped there. Lists and quotes indent from the left, also for
+  right-to-left paragraphs, until documents have a direction.
+- **`canvas`** pours a table's row as one block, and draws markers in
+  their gutters, quotes' bars, code on its tint, links in their colour and
+  tables' rules. The structure nests, and tagged PDF says `L`, `LI`,
+  `Lbl`, `LBody`, `BlockQuote`, `Code`, `Table`, `TR`, `TH` and `TD`. A
+  story of paragraphs draws exactly as before.
+- **The editor** keeps working by position in the reading order; deleting
+  across blocks, joining at their edges, pasting and Enter, Backspace,
+  Delete and Tab learn the tree (`app::blocks`): Enter in an empty item or
+  at an empty quote's end leaves it, Backspace at an item's start takes it
+  out a level, Tab and Shift+Tab nest and un-nest items and move between
+  cells, and elsewhere Tab types a tab. The commands for lists, quotes,
+  code and tables have shortcuts but no places in the menus yet, as M1's
+  menus are an approved golden; the designed chrome places them.
+- **Typing lays out one paragraph:** while no container changes, the flow
+  is kept, every other paragraph's layout stays where it is, and only the
+  changed paragraph's block is made again before pouring, which made a
+  keystroke's update cheaper than M1's.
+
 ## 6. File format (`store`)
 
 One file per document, with the extension `.xw`, the same for every kind of
@@ -366,6 +424,15 @@ doesn't hold together is an error.
   review dfx97ttt), in postcard's specified wire format. Enums are written
   by their variants' positions, so new variants of `doc`'s types go at the
   end; a test pins the bytes.
+
+**Schema 2** (M2) holds the block tree and its operations, whose variants
+come after M1's, and adds an `image` table for pictures: each one's
+original bytes and format, by the SHA-256 of the bytes, as fonts are kept.
+Opening a schema 1 file upgrades it in one SQLite transaction, or leaves it
+as it was: every snapshot and log entry is read with schema 1's types,
+frozen in `store`, and written in schema 2's encoding. A file M1 wrote is
+kept as a fixture (`spec/format/fixtures/`), which must open with M1's own
+dump of it.
 - **A commit survives a crash of the program** (project owner, 2026-10-22,
   review dfx97ttt): SQLite runs in write-ahead-log mode with
   `synchronous = NORMAL`. A power cut can lose the last transactions, but
