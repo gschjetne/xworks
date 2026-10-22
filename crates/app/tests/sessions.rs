@@ -173,6 +173,32 @@ fn the_exit_document_reopens_and_exports_the_same() {
     assert!(missing.is_empty(), "not read: {missing:?}\nfrom: {text}");
 }
 
+/// The editor lays out again only what an edit changed: whatever a session
+/// did, its pages draw as those of its document laid out afresh, as
+/// opening it does, with the same structure.
+#[test]
+fn layout_kept_through_edits_is_layout_made_afresh() {
+    let mut failures = Vec::new();
+    for (name, source) in testkit::specs("sessions").expect("spec/sessions") {
+        let session = session::read(&source).unwrap_or_else(|e| panic!("{name}.ron: {e}"));
+        let mut res = resources().clone();
+        res.documents = testkit::scratch_dir(&format!("app-afresh-{name}")).expect("a folder");
+        let res = Arc::new(res);
+        let mut played = session::play(res.clone(), &session).expect("the session plays");
+        // A composition in progress is shown but not in the document:
+        // it's cancelled first.
+        played.editor.update(app::Event::Preedit(String::new()));
+        let pages = played.editor.pages();
+        let path = played.editor.path().to_path_buf();
+        drop(played);
+        let fresh = app::Editor::open(res, &path).expect("it opens").pages();
+        if pages.structure != fresh.structure || renders(&pages) != renders(&fresh) {
+            failures.push(name);
+        }
+    }
+    assert!(failures.is_empty(), "drawn otherwise afresh: {failures:?}");
+}
+
 /// Each page's pixels, drawn portably at 48 to the inch.
 fn renders(pages: &canvas::Pages) -> Vec<Vec<u8>> {
     pages

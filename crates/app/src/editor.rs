@@ -132,6 +132,8 @@ struct Laid {
     containers: Vec<ObjectId>,
     /// The story's paragraphs in reading order, as laid out.
     ids: Vec<ObjectId>,
+    /// The paragraph laid out with a composition in it, if one was.
+    composed: Option<ObjectId>,
     index: HashMap<ObjectId, usize>,
     /// What each block poured holds: a paragraph, or a table's row.
     units: Vec<std::ops::Range<usize>>,
@@ -286,6 +288,7 @@ impl Editor {
                 entries: Vec::new(),
                 containers: Vec::new(),
                 ids: Vec::new(),
+                composed: None,
                 index: HashMap::new(),
                 units: Vec::new(),
                 blocks: Vec::new(),
@@ -415,7 +418,11 @@ impl Editor {
         let composing = !self.composition.is_empty();
         let composed = composing.then(|| self.composed());
         let focus = self.focus.paragraph;
-        let fresh_for = |id: ObjectId| !unchanged(id) || (composing && id == focus);
+        // A paragraph is laid out again if it changed, if a composition is
+        // in it, or if one was, though it's gone now.
+        let was_composed = self.laid.composed;
+        let fresh_for =
+            |id: ObjectId| !unchanged(id) || (composing && id == focus) || was_composed == Some(id);
         // Each paragraph's layout and word count, the word count being the
         // document's, not the composition's: kept where they are when the
         // flow is, and otherwise found by ID, kept if the paragraph and its
@@ -586,6 +593,7 @@ impl Editor {
             entries,
             containers: std::mem::take(&mut self.laid.containers),
             ids: std::mem::take(&mut self.laid.ids),
+            composed: composing.then_some(focus),
             index: std::mem::take(&mut self.laid.index),
             units,
             blocks,
