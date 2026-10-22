@@ -275,7 +275,11 @@ property, move an object, set a cell's formula. Every operation:
 - has a defined **rebase** against every other kind of operation, stating
   how it moves when a concurrent operation lands first. Rebasing isn't used
   until collaboration, but property tests check it from the start. An
-  operation without a sound rebase doesn't get merged.
+  operation without a sound rebase doesn't get merged. Rebase may consult
+  the document both operations apply to (project owner, 2026-10-22, review
+  pysc65hp). Moving a block can only be checked against a concurrent move
+  that would make a cycle by looking at the tree, and collaboration's
+  clients hold the document they rebase onto.
 
 A **transaction** groups operations into one undoable step with a name ("Undo
 Typing", "Undo Sort"). Commands produce transactions; nothing else changes a
@@ -309,6 +313,18 @@ run or an embedded sheet, xWorks asks before turning the document into an
 no room for history, so continuous saving writes the whole file (atomically,
 through a rename), and undo history and named versions last only as long as
 the document is open.
+
+- **Its language** comes from `lang` in its YAML front matter where there
+  is one, as Pandoc, Quarto and Hugo write it. The front matter is kept as
+  written (project owner, 2026-10-22, review pysc65hp).
+- **Headings are paragraph styles** with a level, as Markdown's `#` lines
+  are paragraphs with a level, and a section is a heading and what follows
+  it up to the next heading of its level or higher. Moving sections,
+  folding and the outline view act on those runs of blocks (project owner,
+  2026-10-22, review pysc65hp).
+- **Its tables are Markdown's** in M2: a header row, rows of cells of one
+  paragraph each, and column alignment. Fuller tables come with Write
+  (project owner, 2026-10-22, review pysc65hp).
 
 **Container: SQLite** (project owner, 2026-10-18). A document is an SQLite
 database with a fixed, versioned schema: objects, the transaction log, embedded
@@ -556,6 +572,24 @@ falls back to the serif CJK face and Noto Sans to the sans (project owner,
 2026-10-21). They come to 87 MB, so they're fetched by hash (`cargo run -p
 fetch-fonts`) rather than committed (project owner, 2026-10-21).
 
+**Documents' fonts from M2** are Source Serif 4 for serif, a transitional
+face after Fournier's, Inter for sans and JetBrains Mono for code (project
+owner, 2026-10-22, review pysc65hp). Noto stays the fallback for every
+script they lack. Other moods, Garamond's or Alegreya's, can come as
+stylesheets of their own.
+
+**A document has a language,** the system's when it's made, and text can be
+set to another (project owner, 2026-10-22, review pysc65hp). Language picks
+hyphenation, Japanese line breaking and local letterforms, and goes to PDF
+and screen readers.
+
+**Hyphenation** follows TeX's pattern files, by Liang's algorithm, for
+English (US and UK), German, French, Spanish, Norwegian (Bokmål and
+Nynorsk), Swedish, Russian and Greek (project owner, 2026-10-22, review
+pysc65hp). The files ship unmodified, beside the fonts, and are read when a
+language needs them; their licences (MIT, permissive notices, and LPPL for
+Swedish and Russian) all allow that.
+
 Fauré's `text` and `typeset` crates are tuned for pixel-exact Platinum UI
 text; xWorks needs resolution-independent document text. The two share the
 stack and the lessons, not the crates.
@@ -623,6 +657,12 @@ order it reads: a line's runs in logical order, and a right-to-left run's
 glyphs from its right end. So Arabic and Hebrew extract as typed even in
 readers that don't apply the bidi algorithm, and screen readers follow
 the document's structure. Fills and strokes are artifacts, outside it.
+
+**Images** (project owner, 2026-10-22, review pysc65hp) are PNG, JPEG, GIF
+and WebP; a GIF shows its first frame. Each is converted to sRGB when it's
+placed, so print matches the screen, and the file keeps the original's
+bytes, so better colour management later loses nothing. Every decoder gets
+a fuzz target.
 
 ## 11. Security, robustness and licensing
 
