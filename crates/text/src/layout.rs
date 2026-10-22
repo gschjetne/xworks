@@ -74,6 +74,9 @@ pub struct Layout {
     pub width: i64,
     /// The height of its lines together.
     pub height: i64,
+    /// Whether a character had no face to come from, so it shows as a box:
+    /// the fonts lack something the text needs.
+    pub missing: bool,
     pub(crate) direction: Direction,
     /// Its text.
     pub(crate) text: String,
@@ -187,6 +190,7 @@ pub fn layout(fonts: &Fonts, paragraph: &Paragraph<'_>) -> Layout {
     let bidi = Bidi::new(text, paragraph.direction);
     let graphemes = locale::graphemes(text);
     let items = shape::itemize(fonts, text, paragraph.spans, &bidi, &graphemes);
+    let missing = items.iter().any(|item| item.missing);
 
     // Each cluster's advance, at the offset where it starts, and their
     // running sums: the width of a stretch of text as shaped whole.
@@ -223,6 +227,7 @@ pub fn layout(fonts: &Fonts, paragraph: &Paragraph<'_>) -> Layout {
         lines,
         width: paragraph.width,
         height: top,
+        missing,
         direction: bidi.direction(),
         text: text.to_string(),
         languages: paragraph

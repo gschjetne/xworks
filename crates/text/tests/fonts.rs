@@ -121,3 +121,43 @@ fn italic_without_an_italic_face_is_slanted() {
         ]
     );
 }
+
+#[test]
+fn characters_no_face_has_are_reported() {
+    // Noto Serif alone: it has Latin, and no Chinese.
+    let mut fonts = Fonts::new();
+    let (_, bytes) = testkit::fonts::load()
+        .expect("the bundled fonts")
+        .into_iter()
+        .find(|(name, _)| name == "NotoSerif-Regular.ttf")
+        .expect("Noto Serif");
+    fonts.add(bytes).expect("a font");
+    let lay_out = |fonts: &Fonts, text: &str| {
+        let spans = [Span {
+            len: text.len(),
+            style: Style {
+                family: "Noto Serif".to_string(),
+                size: 12 * units::POINT,
+                weight: 400,
+                italic: false,
+                language: Language::und(),
+            },
+        }];
+        text::layout(
+            fonts,
+            &Paragraph {
+                text,
+                spans: &spans,
+                direction: None,
+                align: Align::Start,
+                width: 300 * units::POINT,
+            },
+        )
+    };
+    assert!(!lay_out(&fonts, "Hello, world").missing);
+    assert!(lay_out(&fonts, "Hello, 世界").missing);
+    // With every bundled face, Chinese has one.
+    assert!(!lay_out(common::fonts(), "Hello, 世界").missing);
+    // A blank paragraph lacks nothing.
+    assert!(!lay_out(&fonts, "").missing);
+}

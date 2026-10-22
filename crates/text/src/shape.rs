@@ -20,6 +20,8 @@ pub(crate) struct Item {
     pub face: FaceId,
     pub level: u8,
     pub script: Script,
+    /// Whether a character in it has no face, so it shows as a box.
+    pub missing: bool,
     /// Its glyphs, left to right.
     pub glyphs: Vec<Shaped>,
 }
@@ -72,7 +74,7 @@ pub(crate) fn itemize(
             .last()
             .filter(|item| item.span == span && item.range.end == start)
             .map(|item| item.face);
-        let face = choose(fonts, cluster, &candidates[span], previous);
+        let (face, found) = choose(fonts, cluster, &candidates[span], previous);
         let level = bidi.level(start);
         let script = scripts[script].1;
         match items.last_mut() {
@@ -83,6 +85,7 @@ pub(crate) fn itemize(
                     && item.script == script =>
             {
                 item.range.end = end;
+                item.missing |= !found;
             }
             _ => items.push(Item {
                 range: start..end,
@@ -90,6 +93,7 @@ pub(crate) fn itemize(
                 face,
                 level,
                 script,
+                missing: !found,
                 glyphs: Vec::new(),
             }),
         }
@@ -108,24 +112,28 @@ pub(crate) fn itemize(
     items
 }
 
-/// The face for the grapheme `cluster`: the one before it if the cluster
-/// has no script of its own and that face has it, so spaces and
-/// punctuation stay with the text around them; otherwise the first
-/// candidate that has every character; otherwise the first candidate.
-fn choose(fonts: &Fonts, cluster: &str, candidates: &[FaceId], previous: Option<FaceId>) -> FaceId {
+/// The face for the grapheme `cluster`, and whether it has the cluster:
+/// the one before it if the cluster has no script of its own and that face
+/// has it, so spaces and punctuation stay with the text around them;
+/// otherwise the first candidate that has every character; otherwise the
+/// first candidate, which hasn't.
+fn choose(
+    fonts: &Fonts,
+    cluster: &str,
+    candidates: &[FaceId],
+    previous: Option<FaceId>,
+) -> (FaceId, bool) {
     let covers = |id: FaceId| covers(fonts.face(id), cluster);
     if let Some(previous) = previous
         && cluster.chars().all(|c| Script::of(c).is_none())
         && covers(previous)
     {
-        return previous;
+        return (previous, true);
     }
-    candidates
-        .iter()
-        .copied()
-        .find(|&id| covers(id))
-        .or_else(|| candidates.first().copied())
-        .expect("fonts to lay out with")
+    match candidates.iter().copied().find(|&id| covers(id)) {
+        Some(id) => (id, true),
+        None => (*candidates.first().expect("fonts to lay out with"), false),
+    }
 }
 
 /// Whether `face` has every character of `cluster` that's drawn.

@@ -34,7 +34,8 @@ impl FaceId {
 }
 
 /// One face of a font file: what layout needs from it, and its data, for
-/// drawing and embedding.
+/// drawing and embedding. Cloning shares the data.
+#[derive(Clone)]
 pub struct Face {
     data: scene::FontData,
     blob: Blob,
@@ -129,7 +130,11 @@ pub struct FamilySpec {
 /// A character comes from the face its style asks for if that has it, or
 /// else from the first of the family's fallbacks that does, in the weight
 /// and slant nearest the style's.
-#[derive(Debug, Default)]
+///
+/// Faces are only ever added, so a [`FaceId`] stays the same face, and
+/// layouts made before more faces were added still draw with them.
+/// Cloning shares the faces' data.
+#[derive(Clone, Debug, Default)]
 pub struct Fonts {
     faces: Vec<Face>,
     fallbacks: BTreeMap<String, Vec<String>>,
