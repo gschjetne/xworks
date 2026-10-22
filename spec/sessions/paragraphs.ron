@@ -1,0 +1,20 @@
+// A selection across paragraphs copies as lines, and deleting it joins
+// what's left.
+(
+    size: (900, 700),
+    events: [
+        Type("alpha"),
+        Key("Enter"),
+        Type("beta"),
+        Key("Enter"),
+        Type("gamma"),
+        Key("Primary+Home"),
+        Repeat("Right", 2),
+        Repeat("Shift+Down", 2),
+        Key("Shift+End"),
+        Command("copy"),
+        Key("Backspace"),
+    ],
+    expect: [("Body", "al")],
+    clipboard: Some("pha\nbeta\ngamma"),
+)

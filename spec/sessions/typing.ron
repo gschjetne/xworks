@@ -1,0 +1,26 @@
+// Typing a heading and two paragraphs. The heading's style ends at Enter;
+// Bold at the caret applies to what's typed next; Backspace takes back
+// characters.
+(
+    size: (900, 700),
+    events: [
+        Command("style-heading-1"),
+        Type("A heading"),
+        Key("Enter"),
+        Type("First paragraph, "),
+        Key("Primary+B"),
+        Type("bold"),
+        Key("Primary+B"),
+        Type(" and plain."),
+        Key("Enter"),
+        Type("Second"),
+        Repeat("Backspace", 3),
+        Type("ond paragraph."),
+    ],
+    expect: [
+        ("Heading 1", "A heading"),
+        ("Body", "First paragraph, bold and plain."),
+        ("Body", "Second paragraph."),
+    ],
+    marks: [("bold", ["bold"])],
+)

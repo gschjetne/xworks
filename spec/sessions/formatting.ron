@@ -1,0 +1,16 @@
+// Styles by shortcut, and Bigger at the caret for what's typed next.
+(
+    size: (900, 700),
+    events: [
+        Type("Title"),
+        Key("Primary+1"),
+        Key("Enter"),
+        Type("Body text"),
+        Key("Primary+Shift+."),
+        Type(" bigger"),
+        Key("Primary+Home"),
+        Key("Primary+2"),
+    ],
+    expect: [("Heading 2", "Title"), ("Body", "Body text bigger")],
+    marks: [(" bigger", ["size"])],
+)

@@ -1,0 +1,15 @@
+// A run of typing undoes as one; moving the caret starts a new run. Redo
+// brings back what was undone.
+(
+    size: (900, 700),
+    events: [
+        Type("Hello"),
+        Type(" world"),
+        Key("Left"),
+        Type("!"),
+        Key("Primary+Z"),
+        Key("Primary+Z"),
+        Key("Primary+Shift+Z"),
+    ],
+    expect: [("Body", "Hello world")],
+)

@@ -1,0 +1,14 @@
+// Closing and opening the document again keeps its text and its history:
+// Undo after reopening takes back the last run of typing.
+(
+    size: (900, 700),
+    events: [
+        Type("Kept"),
+        Key("Enter"),
+        Type("across closing"),
+        Reopen,
+        Key("Primary+Z"),
+        Type("again"),
+    ],
+    expect: [("Body", "Kept"), ("Body", "again")],
+)

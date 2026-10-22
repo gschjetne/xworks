@@ -1,0 +1,13 @@
+// An input method composes text before committing it: the composition is
+// shown but isn't in the document until it's committed.
+(
+    size: (900, 700),
+    events: [
+        Type("日本"),
+        Preedit("に"),
+        Preedit("にほ"),
+        Type("日本"),
+        Preedit(""),
+    ],
+    expect: [("Body", "日本日本")],
+)

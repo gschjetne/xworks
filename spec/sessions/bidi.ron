@@ -1,0 +1,17 @@
+// A Hebrew word in English: the right arrow walks the English left to
+// right, and what's typed where the English ends goes before the Hebrew.
+(
+    size: (900, 700),
+    events: [
+        Type("The word "),
+        Type("שלום"),
+        Type(" means peace."),
+        Key("Primary+Home"),
+        Repeat("Right", 9),
+        Type("["),
+        Key("Primary+End"),
+        Key("Backspace"),
+        Type("!"),
+    ],
+    expect: [("Body", "The word [שלום means peace!")],
+)

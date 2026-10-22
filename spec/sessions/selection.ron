@@ -1,0 +1,21 @@
+// Shift and the arrows select; Cut, Paste, Select All and Italic act on the
+// selection.
+(
+    size: (900, 700),
+    events: [
+        Type("one two three"),
+        Key("Enter"),
+        Type("four"),
+        Key("Primary+Home"),
+        Repeat("Shift+Right", 4),
+        Command("cut"),
+        Key("Primary+End"),
+        Type(" "),
+        Command("paste"),
+        Key("Primary+A"),
+        Command("italic"),
+    ],
+    expect: [("Body", "two three"), ("Body", "four one ")],
+    marks: [("two three", ["italic"]), ("four one ", ["italic"])],
+    clipboard: Some("one "),
+)

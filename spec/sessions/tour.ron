@@ -1,0 +1,28 @@
+// A short document in every M1 script, ending with a word selected: the
+// session behind shot's editor scenes.
+(
+    size: (900, 640),
+    events: [
+        Command("style-heading-1"),
+        Type("xWorks, typed"),
+        Key("Enter"),
+        Type("This text was typed into the editor, with "),
+        Key("Primary+B"),
+        Type("bold"),
+        Key("Primary+B"),
+        Type(" and "),
+        Key("Primary+I"),
+        Type("italic"),
+        Key("Primary+I"),
+        Type(" words, Greek (Γειά σου), Cyrillic (Привет), Hebrew (שלום), Arabic (مرحبا) and Japanese (日本語)."),
+        Key("Enter"),
+        Type("A second paragraph, to show the caret and a selection."),
+        Repeat("Shift+Left", 9),
+    ],
+    expect: [
+        ("Heading 1", "xWorks, typed"),
+        ("Body", "This text was typed into the editor, with bold and italic words, Greek (Γειά σου), Cyrillic (Привет), Hebrew (שלום), Arabic (مرحبا) and Japanese (日本語)."),
+        ("Body", "A second paragraph, to show the caret and a selection."),
+    ],
+    marks: [("bold", ["bold"]), ("italic", ["italic"])],
+)

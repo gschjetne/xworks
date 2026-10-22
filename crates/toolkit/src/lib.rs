@@ -42,6 +42,8 @@ pub struct Theme {
     pub ink: Color,
     /// Text that can't be chosen.
     pub disabled: Color,
+    /// Text that says less, such as shortcuts.
+    pub secondary: Color,
     /// What's under the pointer, or open.
     pub highlight: Color,
     /// Text on the highlight.
@@ -60,7 +62,8 @@ impl Default for Theme {
             padding: 10 * PIXEL,
             background: Color::rgb(240, 240, 238),
             ink: Color::rgb(20, 20, 20),
-            disabled: Color::rgb(150, 150, 150),
+            disabled: Color::rgb(165, 165, 165),
+            secondary: Color::rgb(105, 105, 105),
             highlight: Color::rgb(40, 90, 200),
             highlight_ink: Color::WHITE,
             line: Color::rgb(200, 200, 196),
@@ -400,7 +403,11 @@ impl MenuBar {
                                 &mut out,
                                 shortcut,
                                 row(r.x + r.width - theme.padding - w, r.y, r.height),
-                                if *enabled { theme.disabled } else { ink },
+                                match (lit, enabled) {
+                                    (true, _) => theme.highlight_ink,
+                                    (false, true) => theme.secondary,
+                                    (false, false) => theme.disabled,
+                                },
                             );
                         }
                     }

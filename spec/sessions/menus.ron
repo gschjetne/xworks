@@ -1,0 +1,13 @@
+// The menus: clicking Format opens it, and clicking Bold in it runs Bold on
+// the selection.
+(
+    size: (900, 700),
+    events: [
+        Type("Bold by menu"),
+        Key("Primary+A"),
+        Click(110, 13),
+        Click(130, 41),
+    ],
+    expect: [("Body", "Bold by menu")],
+    marks: [("Bold by menu", ["bold"])],
+)
