@@ -5,7 +5,7 @@
 # document to open. With -p, it builds that tool too and runs it instead,
 # such as budgets, which runs the shell beside it.
 #
-# The programs, spec/, fonts/ and icons/ are copied to a folder on Windows'
+# The programs, spec/, fonts/, hyphenation/ and icons/ are copied to a folder on Windows'
 # own disk first, as an installed xWorks would have them: loaded across
 # WSL's file share, the program alone takes seconds to start.
 #
@@ -35,7 +35,7 @@ fi
 shift 4
 local=$(wslpath "$(cmd.exe /c "echo %LOCALAPPDATA%" 2>/dev/null | tr -d '\r')")/xworks-dev
 mkdir -p "$local"
-rsync -a --delete spec fonts icons "$local/"
+rsync -a --delete spec fonts hyphenation icons "$local/"
 cp "target/x86_64-pc-windows-msvc/$profile/xworks.exe" "target/x86_64-pc-windows-msvc/$profile/$run.exe" "$local/"
 XWORKS_ROOT="$(wslpath -w "$local")"
 export XWORKS_ROOT

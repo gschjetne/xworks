@@ -1,5 +1,6 @@
 //! `fetch-fonts`: downloads the fonts `spec/text/fonts.ron` lists into
-//! `fonts/`, and checks each against its hash.
+//! `fonts/`, and the hyphenation patterns `spec/text/hyphenation.ron`
+//! lists into `hyphenation/`, and checks each against its hash.
 //!
 //! ```text
 //! fetch-fonts           fetch what's missing or wrong, check the rest
@@ -17,6 +18,7 @@ use std::process::Command;
 use anyhow::{Context, bail};
 use sha2::{Digest, Sha256};
 use testkit::fonts::{self, FontFile};
+use testkit::hyphenation;
 
 fn main() -> anyhow::Result<()> {
     let check_only = match std::env::args().nth(1).as_deref() {
@@ -28,21 +30,37 @@ fn main() -> anyhow::Result<()> {
         }
         Some(arg) => bail!("unknown argument {arg}; try --help"),
     };
-    let dir = fonts::dir();
-    std::fs::create_dir_all(&dir).with_context(|| format!("creating {}", dir.display()))?;
+    let fetched = fetch_all(&fonts::dir(), &fonts::manifest()?.files, check_only)?;
+    println!(
+        "{}: the bundled fonts, checked ({fetched} fetched)",
+        fonts::dir().display()
+    );
+    let dir = hyphenation::dir();
+    let fetched = fetch_all(&dir, &hyphenation::manifest()?.files, check_only)?;
+    println!(
+        "{}: the hyphenation patterns, checked ({fetched} fetched)",
+        dir.display()
+    );
+    Ok(())
+}
+
+/// Fetches into `dir` those of `files` that are missing or wrong, or with
+/// `check_only` fails if any is. Returns how many it fetched.
+fn fetch_all(dir: &Path, files: &[FontFile], check_only: bool) -> anyhow::Result<usize> {
+    std::fs::create_dir_all(dir).with_context(|| format!("creating {}", dir.display()))?;
     let mut fetched = 0;
     // Archives downloaded so far, by URL.
     let mut archives: HashMap<String, PathBuf> = HashMap::new();
-    for file in fonts::manifest()?.files {
+    for file in files {
         let path = dir.join(&file.file);
-        if matches(&path, &file)? {
+        if matches(&path, file)? {
             continue;
         }
         if check_only {
             bail!("{} is missing or differs from its hash", path.display());
         }
         match &file.member {
-            None => fetch(&path, &file)?,
+            None => fetch(&path, file)?,
             Some(member) => {
                 let archive = match archives.get(&file.url) {
                     Some(archive) => archive.clone(),
@@ -53,7 +71,7 @@ fn main() -> anyhow::Result<()> {
                         archive
                     }
                 };
-                extract(&archive, member, &path, &file)?;
+                extract(&archive, member, &path, file)?;
             }
         }
         fetched += 1;
@@ -61,11 +79,7 @@ fn main() -> anyhow::Result<()> {
     for archive in archives.values() {
         std::fs::remove_file(archive).ok();
     }
-    println!(
-        "{}: the bundled fonts, checked ({fetched} fetched)",
-        dir.display()
-    );
-    Ok(())
+    Ok(fetched)
 }
 
 /// Whether `path` holds `file`'s bytes.
@@ -89,7 +103,7 @@ fn fetch(path: &Path, file: &FontFile) -> anyhow::Result<()> {
     if got != file.sha256 {
         std::fs::remove_file(&partial).ok();
         bail!(
-            "{} has the hash {got}, not {} as spec/text/fonts.ron says",
+            "{} has the hash {got}, not {} as its spec says",
             file.url,
             file.sha256
         );
@@ -114,7 +128,7 @@ fn extract(archive: &Path, member: &str, path: &Path, file: &FontFile) -> anyhow
     let got = sha256(&bytes);
     if got != file.sha256 {
         bail!(
-            "{member} in {} has the hash {got}, not {} as spec/text/fonts.ron says",
+            "{member} in {} has the hash {got}, not {} as its spec says",
             file.url,
             file.sha256
         );

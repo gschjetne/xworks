@@ -1,3 +1,5 @@
 target/
 # The bundled fonts, fetched by `cargo run -p fetch-fonts` (spec/text/fonts.ron).
 fonts/
+# The hyphenation patterns, fetched with the fonts (spec/text/hyphenation.ron).
+hyphenation/

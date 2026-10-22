@@ -1,0 +1,254 @@
+// The hyphenation patterns documents are hyphenated with: TeX's, from the
+// hyph-utf8 package (the tex-hyphen repository), by Liang's algorithm
+// (crates/text/src/hyphen.rs), for English (US and UK), German, French,
+// Spanish, Norwegian (Bokmål and Nynorsk), Swedish, Russian and Greek
+// (project owner, 2026-10-22, review pysc65hp).
+//
+// They aren't committed: `cargo run -p fetch-fonts` downloads them into
+// hyphenation/, beside the fonts, from a pinned commit, and checks each
+// against its hash. CI does the same. They ship as they come, unmodified,
+// which every licence below allows, the LPPL included, and each with the
+// TeX file whose header holds its copyright and licence (`notices`). The
+// app reads a language's files the first time text in it is hyphenated.
+//
+// Each language has the tags it hyphenates;
+// text in a language with no tag here takes its base language's, so
+// en-CA hyphenates as en (crates/text, Hyphenation::get). `left` and
+// `right` are the fewest letters a break leaves before and after it, as
+// each file's header gives them for typesetting.
+(
+    files: [
+        (
+            file: "hyph-en-us.pat.txt",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/txt/hyph-en-us.pat.txt",
+            sha256: "0f57318b878b132547ae92db39a6e1d1cf2a05d9008874955d6ecb910007a463",
+        ),
+        (
+            file: "hyph-en-us.hyp.txt",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/txt/hyph-en-us.hyp.txt",
+            sha256: "5e785c27e151f878c312991d937b5582615b77737ab30bac413d5967d6aa21da",
+        ),
+        (
+            file: "hyph-en-us.tex",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/tex/hyph-en-us.tex",
+            sha256: "f4ffcd96c5cbc886bdad23f95dcae8edc3cd3620eae62f7946eceda97c4e68f8",
+        ),
+        (
+            file: "hyph-en-gb.pat.txt",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/txt/hyph-en-gb.pat.txt",
+            sha256: "651b89b4a0d4051995db8586e81ab109a4c7395d7706c06483893ebab5af013b",
+        ),
+        (
+            file: "hyph-en-gb.hyp.txt",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/txt/hyph-en-gb.hyp.txt",
+            sha256: "947b7b8e76f6a0d8ebe296178ff92ad624e4912ffbaaf59b26f81a395124e366",
+        ),
+        (
+            file: "hyph-en-gb.tex",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/tex/hyph-en-gb.tex",
+            sha256: "e95bb4ab350f620c41c231c4785d7bdb4f91949d3e631b30e08b3ead3c340a52",
+        ),
+        (
+            file: "hyph-de-1996.pat.txt",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/txt/hyph-de-1996.pat.txt",
+            sha256: "0570839683e4843a6210b188e2a586fe06f2b6b73952ec8106a634209d735adb",
+        ),
+        (
+            file: "hyph-de-1996.tex",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/tex/hyph-de-1996.tex",
+            sha256: "374ad1ce3263f8a2791ec070ef9b516c532dae64456f3fb656e617e8ae53a9d3",
+        ),
+        (
+            file: "hyph-fr.pat.txt",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/txt/hyph-fr.pat.txt",
+            sha256: "fd40a89e9e8eb0784a0919e50378814843e44afa41c5beaf0a85f6562820f6c2",
+        ),
+        (
+            file: "hyph-fr.tex",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/tex/hyph-fr.tex",
+            sha256: "526cad6fe8f52fcd3caa3fcaf667cb1740cfc14bca198680e00dc343a84594de",
+        ),
+        (
+            file: "hyph-es.pat.txt",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/txt/hyph-es.pat.txt",
+            sha256: "7ae8fa8d6a61ea4111c4a0412d019b62e7c07a62673121d0b711c5bc08d8e00c",
+        ),
+        (
+            file: "hyph-es.tex",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/tex/hyph-es.tex",
+            sha256: "6a2e5f39a991a23d1cd8a23dbd0f6fe96a9f07561a6695f4f3320f47030e236c",
+        ),
+        (
+            file: "hyph-nb.pat.txt",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/txt/hyph-nb.pat.txt",
+            sha256: "e080c77da3d0f8de7e464f69082f5e2485e43ed349a2a7018b84e0adef785806",
+        ),
+        (
+            file: "hyph-nb.hyp.txt",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/txt/hyph-nb.hyp.txt",
+            sha256: "6484bbd793e20a206a2f0d7abfc499a5f8688c54ea7e91ee7af87fba53959d00",
+        ),
+        (
+            file: "hyph-nb.tex",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/tex/hyph-nb.tex",
+            sha256: "b111264f46d59089d4cf96691c66b637166f5aae5b86719a5b9fe32737cc0169",
+        ),
+        (
+            file: "hyph-nn.pat.txt",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/txt/hyph-nn.pat.txt",
+            sha256: "e080c77da3d0f8de7e464f69082f5e2485e43ed349a2a7018b84e0adef785806",
+        ),
+        (
+            file: "hyph-nn.hyp.txt",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/txt/hyph-nn.hyp.txt",
+            sha256: "817480ec60623d17564f87366200de408421ed2ad3d6feba284ff5350ff245e4",
+        ),
+        (
+            file: "hyph-nn.tex",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/tex/hyph-nn.tex",
+            sha256: "f217dca0e815443bc9feac27d9eb48cf795b3f4f222afacf7f87fb6c2b0e196e",
+        ),
+        (
+            file: "hyph-no.tex",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/tex/hyph-no.tex",
+            sha256: "05a2ac5fbf88bdc78c580e5cb8a158e6aa760d13756604f9523aa99feec3ec65",
+        ),
+        (
+            file: "hyph-sv.pat.txt",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/txt/hyph-sv.pat.txt",
+            sha256: "1fbf98f5d316712fd4e86f564643ad7341184f9ce8b30e0e18d06eceb4f52a79",
+        ),
+        (
+            file: "hyph-sv.tex",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/tex/hyph-sv.tex",
+            sha256: "102253382bd91cdb7535de5c20744254c9ac9aaa4ca12ed420eb835e5004c0b3",
+        ),
+        (
+            file: "hyph-ru.pat.txt",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/txt/hyph-ru.pat.txt",
+            sha256: "12fa91c83d56ffefa589cf022d9f24ec5a5f4035b4c09484cf4270128c2c162a",
+        ),
+        (
+            file: "hyph-ru.hyp.txt",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/txt/hyph-ru.hyp.txt",
+            sha256: "11b1c36c26bab4770505c2331eb85fb3e13f0c0841a7fa80142aee3be332facb",
+        ),
+        (
+            file: "hyph-ru.tex",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/tex/hyph-ru.tex",
+            sha256: "ce988fcc66e5e29d7474df5ab5b489d3f52a50ebccf570997f992d84221b922a",
+        ),
+        (
+            file: "hyph-el-monoton.pat.txt",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/txt/hyph-el-monoton.pat.txt",
+            sha256: "ae58ac05e9c88dcfa6a2ebecb2fd6aebb08c3f36c4bf3c4e96984c0a2a71ad2e",
+        ),
+        (
+            file: "hyph-el-monoton.tex",
+            url: "https://raw.githubusercontent.com/hyphenation/tex-hyphen/5684c0f51c0b81133db2efbe60a408b4155a3ff5/hyph-utf8/tex/generic/hyph-utf8/patterns/tex/hyph-el-monoton.tex",
+            sha256: "a3aa9ecba9c00dd958a2b1d1d3b3aa851701f6d0027ef9cc9d7365e432c5acb0",
+        ),
+    ],
+    languages: [
+        (
+            name: "English (US)",
+            tags: ["en", "en-US"],
+            patterns: "hyph-en-us.pat.txt",
+            exceptions: Some("hyph-en-us.hyp.txt"),
+            licence: "Gerard Kuiken's notice: copying and distribution, with or without modification, in any medium without royalty, keeping the copyright notice and the notice",
+            notices: ["hyph-en-us.tex"],
+            left: 2,
+            right: 3,
+        ),
+        (
+            name: "English (UK)",
+            tags: ["en-GB", "en-AU", "en-IE", "en-NZ", "en-ZA"],
+            patterns: "hyph-en-gb.pat.txt",
+            exceptions: Some("hyph-en-gb.hyp.txt"),
+            licence: "MIT",
+            notices: ["hyph-en-gb.tex"],
+            left: 2,
+            right: 3,
+        ),
+        (
+            name: "German",
+            tags: ["de"],
+            patterns: "hyph-de-1996.pat.txt",
+            exceptions: None,
+            licence: "MIT",
+            notices: ["hyph-de-1996.tex"],
+            left: 2,
+            right: 2,
+        ),
+        (
+            name: "French",
+            tags: ["fr"],
+            patterns: "hyph-fr.pat.txt",
+            exceptions: None,
+            licence: "MIT",
+            notices: ["hyph-fr.tex"],
+            left: 2,
+            right: 2,
+        ),
+        (
+            name: "Spanish",
+            tags: ["es"],
+            patterns: "hyph-es.pat.txt",
+            exceptions: None,
+            licence: "MIT",
+            notices: ["hyph-es.tex"],
+            left: 2,
+            right: 2,
+        ),
+        (
+            name: "Norwegian Bokmål",
+            tags: ["nb", "no"],
+            patterns: "hyph-nb.pat.txt",
+            exceptions: Some("hyph-nb.hyp.txt"),
+            licence: "Rune Kleveland and Ole Michael Selberg's notice: copying and distribution, with or without modification, in any medium without royalty, keeping the copyright notice and the notice",
+            notices: ["hyph-nb.tex", "hyph-no.tex"],
+            left: 2,
+            right: 2,
+        ),
+        (
+            name: "Norwegian Nynorsk",
+            tags: ["nn"],
+            patterns: "hyph-nn.pat.txt",
+            exceptions: Some("hyph-nn.hyp.txt"),
+            licence: "Rune Kleveland and Ole Michael Selberg's notice: copying and distribution, with or without modification, in any medium without royalty, keeping the copyright notice and the notice",
+            notices: ["hyph-nn.tex", "hyph-no.tex"],
+            left: 2,
+            right: 2,
+        ),
+        (
+            name: "Swedish",
+            tags: ["sv"],
+            patterns: "hyph-sv.pat.txt",
+            exceptions: None,
+            licence: "LPPL 1.2 or later, which allows unmodified copies",
+            notices: ["hyph-sv.tex"],
+            left: 2,
+            right: 2,
+        ),
+        (
+            name: "Russian",
+            tags: ["ru"],
+            patterns: "hyph-ru.pat.txt",
+            exceptions: Some("hyph-ru.hyp.txt"),
+            licence: "LPPL 1.2 or later, which allows unmodified copies",
+            notices: ["hyph-ru.tex"],
+            left: 2,
+            right: 2,
+        ),
+        (
+            name: "Greek (monotonic)",
+            tags: ["el"],
+            patterns: "hyph-el-monoton.pat.txt",
+            exceptions: None,
+            licence: "MIT or LPPL, at our choice: MIT",
+            notices: ["hyph-el-monoton.tex"],
+            left: 1,
+            right: 1,
+        ),
+    ],
+)

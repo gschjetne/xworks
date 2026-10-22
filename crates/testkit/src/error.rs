@@ -45,6 +45,12 @@ pub enum Error {
         /// Where it should be.
         path: PathBuf,
     },
+    /// A hyphenation file hasn't been fetched.
+    #[error("{path} is missing; fetch it with the fonts, `cargo run -p fetch-fonts`")]
+    MissingHyphenation {
+        /// Where it should be.
+        path: PathBuf,
+    },
     /// An image couldn't be encoded as PNG.
     #[error("encoding PNG: {0}")]
     Png(#[from] png::EncodingError),

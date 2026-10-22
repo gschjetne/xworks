@@ -15,7 +15,8 @@ pub struct Manifest {
     pub files: Vec<FontFile>,
 }
 
-/// A font file and where it comes from.
+/// A font file and where it comes from; or any file fetched by hash, as
+/// the hyphenation patterns are.
 #[derive(Debug, Clone, Deserialize)]
 pub struct FontFile {
     /// Its name in `fonts/`.
