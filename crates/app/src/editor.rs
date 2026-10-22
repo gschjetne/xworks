@@ -119,6 +119,9 @@ struct Laid {
     /// Where each paragraph's lines are: (page, top within the page's
     /// body), by paragraph and line.
     places: Vec<Vec<(usize, i64)>>,
+    /// Each paragraph's words, for the status bar, counted when it's laid
+    /// out.
+    words: Vec<usize>,
 }
 
 /// The Open panel: documents to choose from.
@@ -249,6 +252,7 @@ impl Editor {
                 index: HashMap::new(),
                 pages: Vec::new(),
                 places: Vec::new(),
+                words: Vec::new(),
             },
             document,
             history,
@@ -335,13 +339,16 @@ impl Editor {
     /// `all`, lays out every paragraph afresh.
     fn relayout(&mut self, all: bool) {
         let width = self.res.page.body_width();
-        let mut old: HashMap<ObjectId, ParagraphLayout> = std::mem::take(&mut self.laid.paragraphs)
-            .into_iter()
-            .map(|p| (p.id, p))
-            .collect();
+        let mut old: HashMap<ObjectId, (ParagraphLayout, usize)> =
+            std::mem::take(&mut self.laid.paragraphs)
+                .into_iter()
+                .zip(std::mem::take(&mut self.laid.words))
+                .map(|(p, words)| (p.id, (p, words)))
+                .collect();
         let composing = !self.composition.is_empty();
         let composed = composing.then(|| self.composed());
         let mut paragraphs = Vec::with_capacity(self.document.paragraphs().len());
+        let mut words = Vec::with_capacity(paragraphs.capacity());
         for &id in self.document.paragraphs() {
             let same = !all
                 && match (self.laid.document.object(id), self.document.object(id)) {
@@ -349,8 +356,14 @@ impl Editor {
                     _ => false,
                 };
             let reuse = same && !(composing && id == self.focus.paragraph);
-            let layout = match (reuse, old.remove(&id)) {
-                (true, Some(layout)) => layout,
+            let old = old.remove(&id);
+            // The words are the document's, not the composition's.
+            let count = match &old {
+                Some((_, count)) if same => *count,
+                _ => self.paragraph(id).text.split_whitespace().count(),
+            };
+            let layout = match (reuse, old) {
+                (true, Some((layout, _))) => layout,
                 _ => {
                     let source = match &composed {
                         Some(c) if id == self.focus.paragraph => c,
@@ -360,6 +373,7 @@ impl Editor {
                 }
             };
             paragraphs.push(layout);
+            words.push(count);
         }
         let pages = canvas::paginate(self.res.page.body_height(), &canvas::blocks(&paragraphs));
         let mut places: Vec<Vec<(usize, i64)>> = paragraphs
@@ -385,6 +399,7 @@ impl Editor {
             paragraphs,
             pages,
             places,
+            words,
         };
     }
 
@@ -1605,12 +1620,7 @@ impl Editor {
         let (k, cursor) = self.cursor(self.focus);
         let line = self.laid.paragraphs[k].layout.line_of(cursor);
         let page = self.laid.places[k][line].0 + 1;
-        let words: usize = self
-            .document
-            .paragraphs()
-            .iter()
-            .map(|&id| self.paragraph(id).text.split_whitespace().count())
-            .sum();
+        let words: usize = self.laid.words.iter().sum();
         let p = self.paragraph(self.focus.paragraph);
         let name = match p.props.get(keys::STYLE) {
             Some(Value::Text(name)) => Some(name.as_str()),
