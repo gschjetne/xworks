@@ -1307,6 +1307,7 @@ name = "story"
 version = "0.0.0"
 dependencies = [
  "doc",
+ "locale",
  "serde",
  "text",
 ]
