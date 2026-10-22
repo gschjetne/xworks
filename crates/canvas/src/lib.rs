@@ -247,35 +247,38 @@ pub fn units(paragraphs: &[ParagraphLayout]) -> Vec<Range<usize>> {
 /// tall as its tallest cell, with room around the cells as `look` says.
 /// A table's header keeps with the row after it.
 pub fn blocks(paragraphs: &[ParagraphLayout], look: &story::Blocks) -> Vec<Block> {
-    let pad = look.cell_padding.units();
-    let space = look.table_space.units();
     units(paragraphs)
         .into_iter()
-        .map(|unit| {
-            let p = &paragraphs[unit.start];
-            match p.place.cell {
-                None => Block {
-                    lines: p.layout.lines.iter().map(|l| l.height).collect(),
-                    space_before: p.space_before,
-                    space_after: p.space_after,
-                    keep_with_next: p.keep_with_next,
-                },
-                Some(cell) => Block {
-                    lines: vec![
-                        paragraphs[unit]
-                            .iter()
-                            .map(|c| c.layout.height)
-                            .max()
-                            .unwrap_or(0)
-                            + 2 * pad,
-                    ],
-                    space_before: if cell.index == 0 { space } else { 0 },
-                    space_after: if cell.last { space } else { 0 },
-                    keep_with_next: cell.index == 0 && !cell.last,
-                },
-            }
-        })
+        .map(|unit| block(paragraphs, unit, look))
         .collect()
+}
+
+/// The block to pour of one of the [`units`] of `paragraphs`, as
+/// [`blocks`] makes it.
+pub fn block(paragraphs: &[ParagraphLayout], unit: Range<usize>, look: &story::Blocks) -> Block {
+    let p = &paragraphs[unit.start];
+    match p.place.cell {
+        None => Block {
+            lines: p.layout.lines.iter().map(|l| l.height).collect(),
+            space_before: p.space_before,
+            space_after: p.space_after,
+            keep_with_next: p.keep_with_next,
+        },
+        Some(cell) => {
+            let space = look.table_space.units();
+            let tallest = paragraphs[unit]
+                .iter()
+                .map(|c| c.layout.height)
+                .max()
+                .unwrap_or(0);
+            Block {
+                lines: vec![tallest + 2 * look.cell_padding.units()],
+                space_before: if cell.index == 0 { space } else { 0 },
+                space_after: if cell.last { space } else { 0 },
+                keep_with_next: cell.index == 0 && !cell.last,
+            }
+        }
+    }
 }
 
 /// Where each laid-out paragraph's text, and its list item's marker,

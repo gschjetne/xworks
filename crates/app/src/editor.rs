@@ -126,6 +126,10 @@ struct Laid {
     /// one's by identity, so unchanged paragraphs keep their layouts.
     document: Document,
     paragraphs: Vec<ParagraphLayout>,
+    /// The story's paragraphs in reading order, each in its place, and
+    /// the containers that placed them.
+    entries: Vec<story::Entry>,
+    containers: Vec<ObjectId>,
     /// The story's paragraphs in reading order, as laid out.
     ids: Vec<ObjectId>,
     index: HashMap<ObjectId, usize>,
@@ -279,6 +283,8 @@ impl Editor {
             laid: Laid {
                 document: Document::new(),
                 paragraphs: Vec::new(),
+                entries: Vec::new(),
+                containers: Vec::new(),
                 ids: Vec::new(),
                 index: HashMap::new(),
                 units: Vec::new(),
@@ -373,93 +379,121 @@ impl Editor {
 
     /// Lays out what changed, and pours the story into pages again. With
     /// `all`, lays out every paragraph afresh.
+    ///
+    /// Typing changes one paragraph and no container, so then the flow is
+    /// kept, every other paragraph keeps its layout where it is, and only
+    /// the changed paragraph's block is made again before pouring.
     fn relayout(&mut self, all: bool) {
         let width = self.res.page.body_width();
-        // The story's paragraphs in reading order, each in its place; the
-        // order first, so the selection is ordered by it from here on.
-        let entries = story::flow(&self.document, &self.res.sheet, width);
-        self.laid.ids = entries.iter().map(|e| e.id).collect();
-        self.laid.index = self
-            .laid
-            .ids
-            .iter()
-            .enumerate()
-            .map(|(i, &id)| (id, i))
-            .collect();
-        let mut old: HashMap<ObjectId, (ParagraphLayout, usize)> =
-            std::mem::take(&mut self.laid.paragraphs)
-                .into_iter()
-                .zip(std::mem::take(&mut self.laid.words))
-                .map(|(p, words)| (p.id, (p, words)))
+        // Whether `id` is the very object it was when last laid out.
+        let was = self.laid.document.clone();
+        let now = &self.document;
+        let unchanged = |id: ObjectId| match (was.object(id), now.object(id)) {
+            (Some(a), Some(b)) => std::ptr::eq(a as *const Object, b as *const Object),
+            _ => false,
+        };
+        // The story's paragraphs in reading order, each in its place:
+        // walked again only where a container changed. The order first, so
+        // the selection is ordered by it from here on.
+        let same_flow = !all
+            && !self.laid.containers.is_empty()
+            && self.laid.containers.iter().all(|&c| unchanged(c));
+        if !same_flow {
+            let flow = story::flow(now, &self.res.sheet, width);
+            self.laid.ids = flow.entries.iter().map(|e| e.id).collect();
+            self.laid.index = self
+                .laid
+                .ids
+                .iter()
+                .enumerate()
+                .map(|(i, &id)| (id, i))
                 .collect();
+            self.laid.entries = flow.entries;
+            self.laid.containers = flow.containers;
+        }
+        let entries = std::mem::take(&mut self.laid.entries);
         let composing = !self.composition.is_empty();
         let composed = composing.then(|| self.composed());
-        // What each paragraph keeps: its layout, if it and its place are
-        // unchanged, and its word count, which is the document's, not the
-        // composition's.
-        let kept: Vec<(Option<ParagraphLayout>, Option<usize>)> = entries
-            .iter()
-            .map(|entry| {
-                let id = entry.id;
-                let same = !all
-                    && match (self.laid.document.object(id), self.document.object(id)) {
-                        (Some(a), Some(b)) => std::ptr::eq(a as *const Object, b as *const Object),
-                        _ => false,
-                    };
-                let reuse = same && !(composing && id == self.focus.paragraph);
-                match old.remove(&id) {
-                    Some((layout, count)) if same => (
-                        (reuse && layout.place == entry.place).then_some(layout),
-                        Some(count),
-                    ),
-                    _ => (None, None),
-                }
-            })
-            .collect();
+        let focus = self.focus.paragraph;
+        let fresh_for = |id: ObjectId| !unchanged(id) || (composing && id == focus);
+        // Each paragraph's layout and word count, the word count being the
+        // document's, not the composition's: kept where they are when the
+        // flow is, and otherwise found by ID, kept if the paragraph and its
+        // place are unchanged. What isn't kept is laid out below.
+        let mut paragraphs: Vec<ParagraphLayout> = Vec::new();
+        let mut slots: Vec<Option<ParagraphLayout>> = Vec::new();
+        let (mut words, todo): (Vec<Option<usize>>, Vec<usize>);
+        if same_flow {
+            paragraphs = std::mem::take(&mut self.laid.paragraphs);
+            words = std::mem::take(&mut self.laid.words)
+                .into_iter()
+                .enumerate()
+                .map(|(k, count)| unchanged(entries[k].id).then_some(count))
+                .collect();
+            todo = (0..entries.len())
+                .filter(|&k| fresh_for(entries[k].id))
+                .collect();
+        } else {
+            let mut old: HashMap<ObjectId, (ParagraphLayout, usize)> =
+                std::mem::take(&mut self.laid.paragraphs)
+                    .into_iter()
+                    .zip(std::mem::take(&mut self.laid.words))
+                    .map(|(p, words)| (p.id, (p, words)))
+                    .collect();
+            let mut kept_words = Vec::with_capacity(entries.len());
+            slots = entries
+                .iter()
+                .map(|entry| {
+                    let id = entry.id;
+                    let same = !all && unchanged(id);
+                    match old.remove(&id) {
+                        Some((layout, count)) if same => {
+                            kept_words.push(Some(count));
+                            (!fresh_for(id) && layout.place == entry.place).then_some(layout)
+                        }
+                        _ => {
+                            kept_words.push(None);
+                            None
+                        }
+                    }
+                })
+                .collect();
+            words = kept_words;
+            todo = (0..entries.len()).filter(|&k| slots[k].is_none()).collect();
+        }
         // The rest laid out and counted afresh: on the worker pool when
         // there are several, as when a document opens, and here when
         // there's one, as when typing, which waking the pool would slow.
-        let todo: Vec<(&story::Entry, Option<usize>)> = entries
-            .iter()
-            .zip(&kept)
-            .filter(|(_, (layout, _))| layout.is_none())
-            .map(|(entry, &(_, count))| (entry, count))
-            .collect();
-        let (document, res, focus) = (&self.document, &self.res, self.focus.paragraph);
-        let lay_out = |&(entry, count): &(&story::Entry, Option<usize>)| {
-            let id = entry.id;
+        let (document, res) = (&self.document, &self.res);
+        let lay_out = |&k: &usize| {
+            let entry = &entries[k];
             let source = match &composed {
-                Some(c) if id == focus => c,
+                Some(c) if entry.id == focus => c,
                 _ => document,
             };
             let hyphenation = res.hyphenation();
-            let layout = story::lay_out_at(
+            story::lay_out_at(
                 source,
-                id,
+                entry.id,
                 &entry.place,
                 &res.sheet,
                 res.fonts(),
                 &hyphenation,
-            );
-            let count = count.unwrap_or_else(|| {
-                let p = document.paragraph(id).expect("a paragraph of the document");
-                story::word_count(p, &res.sheet)
-            });
-            (layout, count)
+            )
         };
-        let mut fresh: Vec<(ParagraphLayout, usize)> = if todo.len() > 1 {
+        let mut fresh: Vec<ParagraphLayout> = if todo.len() > 1 {
             todo.par_iter().map(lay_out).collect()
         } else {
             todo.iter().map(lay_out).collect()
         };
         // A character the fonts lack brings in those kept until text needs
         // them, such as the CJK faces, and its paragraphs are laid out again.
-        if fresh.iter().any(|(p, _)| p.layout.missing) {
+        if fresh.iter().any(|p| p.layout.missing) {
             match res.load_on_demand() {
                 Ok(true) => {
-                    for (todo, fresh) in todo.iter().zip(&mut fresh) {
-                        if fresh.0.layout.missing {
-                            *fresh = lay_out(todo);
+                    for (k, fresh) in todo.iter().zip(&mut fresh) {
+                        if fresh.layout.missing {
+                            *fresh = lay_out(k);
                         }
                     }
                 }
@@ -471,14 +505,14 @@ impl Editor {
         // bring them in, and their paragraphs are laid out again.
         let wanted: Vec<text::Language> = fresh
             .iter()
-            .flat_map(|(p, _)| p.layout.unhyphenated.iter().cloned())
+            .flat_map(|p| p.layout.unhyphenated.iter().cloned())
             .collect();
         if !wanted.is_empty() {
             match res.load_hyphenation(&wanted) {
                 Ok(true) => {
-                    for (todo, fresh) in todo.iter().zip(&mut fresh) {
-                        if !fresh.0.layout.unhyphenated.is_empty() {
-                            *fresh = lay_out(todo);
+                    for (k, fresh) in todo.iter().zip(&mut fresh) {
+                        if !fresh.layout.unhyphenated.is_empty() {
+                            *fresh = lay_out(k);
                         }
                     }
                 }
@@ -486,24 +520,47 @@ impl Editor {
                 Err(e) => self.message = format!("Couldn't load hyphenation: {e}"),
             }
         }
-        let mut fresh = fresh.into_iter();
-        let (paragraphs, words): (Vec<ParagraphLayout>, Vec<usize>) = kept
-            .into_iter()
-            .map(|kept| match kept {
-                (Some(layout), Some(count)) => (layout, count),
-                _ => fresh
-                    .next()
-                    .expect("a fresh layout for each paragraph not kept"),
-            })
-            .unzip();
-        let units = canvas::units(&paragraphs);
-        let blocks = canvas::blocks(&paragraphs, &self.res.sheet.blocks);
+        for (&k, layout) in todo.iter().zip(fresh) {
+            if same_flow {
+                paragraphs[k] = layout;
+            } else {
+                slots[k] = Some(layout);
+            }
+            if words[k].is_none() {
+                let p = document.paragraph(entries[k].id).expect("a paragraph");
+                words[k] = Some(story::word_count(p, &res.sheet));
+            }
+        }
+        if !same_flow {
+            paragraphs = slots
+                .into_iter()
+                .map(|p| p.expect("every paragraph laid out"))
+                .collect();
+        }
+        let words: Vec<usize> = words.into_iter().map(|w| w.unwrap_or(0)).collect();
+        // The blocks to pour: those of changed paragraphs made again, when
+        // the flow is kept.
+        let look = &self.res.sheet.blocks;
+        let (units, blocks) = if same_flow && self.laid.blocks.len() == self.laid.units.len() {
+            let units = std::mem::take(&mut self.laid.units);
+            let mut blocks = std::mem::take(&mut self.laid.blocks);
+            for &k in &todo {
+                let u = units.partition_point(|r| r.end <= k);
+                blocks[u] = canvas::block(&paragraphs, units[u].clone(), look);
+            }
+            (units, blocks)
+        } else {
+            (
+                canvas::units(&paragraphs),
+                canvas::blocks(&paragraphs, look),
+            )
+        };
         let pages = canvas::paginate(self.res.page.body_height(), &blocks);
         let mut places: Vec<Vec<(usize, i64)>> = paragraphs
             .iter()
             .map(|p| vec![(0, 0); p.layout.lines.len()])
             .collect();
-        let pad = self.res.sheet.blocks.cell_padding.units();
+        let pad = look.cell_padding.units();
         for (n, pieces) in pages.iter().enumerate() {
             for piece in pieces {
                 let unit = units[piece.block].clone();
@@ -526,6 +583,8 @@ impl Editor {
         }
         self.laid = Laid {
             document: self.document.clone(),
+            entries,
+            containers: std::mem::take(&mut self.laid.containers),
             ids: std::mem::take(&mut self.laid.ids),
             index: std::mem::take(&mut self.laid.index),
             units,

@@ -86,19 +86,34 @@ pub struct Entry {
 /// lays out in time linear in its size.
 pub const DEEPEST: usize = 32;
 
+/// A story's paragraphs in reading order, each in its place, and the
+/// containers that placed them.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Flow {
+    /// The paragraphs, in reading order, with their places.
+    pub entries: Vec<Entry>,
+    /// Every container in the story, the story first: while none of them
+    /// changes, nor does the flow.
+    pub containers: Vec<ObjectId>,
+}
+
 /// Every paragraph of `document`'s story, in reading order, with its
 /// place, for a body `width` wide. It walks the tree without recursion,
 /// so a deeply nested document can't exhaust the stack.
-pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Vec<Entry> {
+pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
     let blocks = &sheet.blocks;
     let (list_indent, quote_indent) = (blocks.list_indent.units(), blocks.quote_indent.units());
     let padding = blocks.cell_padding.units();
     let mut out = Vec::new();
+    let mut containers = Vec::new();
     let mut stack = vec![(document.root(), Place::top(width))];
     while let Some((id, place)) = stack.pop() {
         let Some(object) = document.object(id) else {
             continue;
         };
+        if object.is_container() {
+            containers.push(id);
+        }
         let block = match object {
             Object::Paragraph(_) => {
                 out.push(Entry { id, place });
@@ -169,6 +184,7 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Vec<Entry> {
                     .unwrap_or(0)
                     .max(1) as u32;
                 let column_width = place.width / i64::from(columns);
+                containers.extend(rows);
                 for (index, &row) in rows.iter().enumerate() {
                     for (column, &cell) in document.children(row).iter().enumerate() {
                         let x = place.indent + column as i64 * column_width;
@@ -208,5 +224,8 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Vec<Entry> {
         }
         stack.extend(children.into_iter().rev());
     }
-    out
+    Flow {
+        entries: out,
+        containers,
+    }
 }

@@ -68,7 +68,7 @@ fn every_kind() -> Vec<BlockSpec> {
 fn the_tree_reads_in_order_with_its_places() {
     let sheet = sheet();
     let document = story::build(&every_kind());
-    let flow = story::flow(&document, &sheet, WIDTH);
+    let flow = story::flow(&document, &sheet, WIDTH).entries;
     let texts: Vec<&str> = flow
         .iter()
         .map(|e| document.paragraph(e.id).unwrap().text.as_str())
@@ -275,7 +275,7 @@ fn nesting_past_the_deepest_lays_out_as_if_it_stopped() {
     document
         .apply(&Op::DeleteBlock { block: first })
         .expect("it goes");
-    let flow = story::flow(&document, &sheet, WIDTH);
+    let flow = story::flow(&document, &sheet, WIDTH).entries;
     assert_eq!(flow.len(), 1);
     assert_eq!(flow[0].place.path.len(), story::DEEPEST);
 }

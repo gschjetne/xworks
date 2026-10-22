@@ -31,7 +31,7 @@
 
 mod flow;
 
-pub use flow::{Ancestor, Cell, DEEPEST, Entry, Place, flow};
+pub use flow::{Ancestor, Cell, DEEPEST, Entry, Flow, Place, flow};
 
 use std::ops::Range;
 
@@ -529,6 +529,7 @@ pub fn lay_out(
 ) -> Vec<ParagraphLayout> {
     let hyphenation = Hyphenation::new();
     flow(document, sheet, width)
+        .entries
         .iter()
         .map(|entry| lay_out_at(document, entry.id, &entry.place, sheet, fonts, &hyphenation))
         .collect()
