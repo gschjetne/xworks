@@ -17,7 +17,7 @@ office suite built from scratch to be usable, fast and correct.
 M0 (architecture) is done. M1, the walking skeleton, is under way:
 `calc`'s decimal numbers, `doc`, `locale`, `text`, `scene`, `render-cpu`,
 `render-pdf`, `story`, `canvas`, `store`, `chrome`, `toolkit`, `app`,
-`render-gpu` and the generic shell are in place
+`render-gpu`, the generic shell and the budgets harness are in place
 ([docs/ROADMAP.md](docs/ROADMAP.md)).
 
 The tests lay text out in the bundled fonts, which aren't committed. Fetch

@@ -281,6 +281,19 @@ and check the document. Typing undoes as one run, kept across reopening
 by a new kind of log entry. Cut, copy and paste stay within xWorks until
 the owner decides on the Windows clipboard crate's license.
 
+**Stage 10 is built (2026-10-22); its plans await the owner.**
+`tools/budgets` measures the six budgets that apply to M1, against
+`spec/budgets.ron`, and splits each into its parts: the shell's start into
+the phases it times itself in a measuring mode, and frames into update,
+view and drawing. Three fixes came from its first numbers: the status
+bar counted every word of the document each frame (5 ms of each frame on
+the 500-page report); the shell compiled GPU shaders it never used when
+drawing on the CPU (150 ms of the start under WSL); and paragraphs were
+laid out one after another (740 ms to open the report). Paragraphs are
+now laid out on rayon's pool, and the report opens in 100 to 150 ms. On
+the owner's workstation every budget holds on both systems but two:
+Windows' cold start, and memory on both (ARCHITECTURE.md, section 12).
+
 ### Exit criteria
 
 - A scripted session types a document of several pages, with headings, bold

@@ -624,6 +624,25 @@ judges each by its 95th percentile.
 | Save after a small edit, any document size | 50 ms |
 | Memory for an empty document window | 60 MB |
 
+**Measured at M1's exit** (2026-10-22), on the owner's workstation: 16
+threads, a GeForce GTX 1070. Windows draws with render-gpu on Vulkan;
+Linux runs under WSL, whose only GPU is software, so it draws with
+render-cpu. The 95th percentile of each:
+
+| Interaction | Linux (WSL) | Windows |
+|---|---|---|
+| Cold start to an editable blank document | 198 ms | **894 ms** |
+| Keystroke to the glyph on screen | 14.3 ms | 12.5 ms |
+| Open a 500-page report, first page shown | 100 ms | 153 ms |
+| Scroll any document | 10.7 ms | 7.4 ms |
+| Save after a small edit, any document size | 0.1 ms (worst 9 ms) | 0.1 ms (worst 16 ms) |
+| Memory for an empty document window | **193 MB** | **191 MB** |
+
+Two budgets are missed. Most of Windows' start is the GPU: opening it
+takes 270 ms and compiling vello_gpu's shaders 250 ms. Of the memory, the
+fonts take 84 MB, of which the CJK faces take all but 4 MB, and opening the
+GPU takes 60 to 70 MB.
+
 ## 13. Engineering approach
 
 As with Fauré, most code will be written by agents, so checking it, not
