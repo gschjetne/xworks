@@ -672,6 +672,45 @@ placed, so print matches the screen, and the file keeps the original's
 bytes, so better colour management later loses nothing. Every decoder gets
 a fuzz target.
 
+**What M2's stage 4 built** (images and drawing):
+
+- **The display list** has images and groups. A `scene::Image` is sRGB and
+  premultiplied, at most 4 094 pixels a side, and holds copies of itself
+  halved down to a pixel, made by an area-averaging resampler in integers,
+  so every platform gets the same pixels. Renderers draw an image from its
+  smallest copy at least as large as it's drawn, bilinearly: the copies
+  stand in for the mipmaps neither vello renderer has. A group draws its
+  items through a transform, within a clip. Items outside groups are drawn
+  at their coordinates scaled, as in M1, so M1's goldens kept their hashes.
+- **The app decodes pictures** (`app::picture`) with png, zune-jpeg, gif
+  and image-webp, and converts them to sRGB from their ICC profiles with
+  moxcms. A JPEG turns as its EXIF orientation says. A picture with more
+  pixels than `spec/pictures.ron` allows is refused from its header.
+- **render-gpu keeps images in vello_gpu's atlas** only while they're
+  drawn, at most 64 at once in as many atlas pages, so the atlas can't run
+  out of room, and each with a texel of border copied from its edge:
+  vello_gpu clamps a sample before taking half a texel off it, which blends
+  an image's last two texels at its right and bottom edges, where
+  vello_cpu holds the edge.
+- **render-pdf writes images as figures**, with their alternative text,
+  from the same sRGB pixels the screen draws.
+- **Underline and strikethrough** are fills that `text` places from each
+  run's font's own `post` and `OS/2` tables, as long as its glyphs but for
+  the spaces hanging at a line's end. As fills they're decoration in PDF,
+  outside the reading order.
+- **Windows draw only what changed.** A window keeps a canvas, a texture
+  of its own; each frame diffs the view's display list against the one the
+  canvas shows and draws only the damage into it, then copies it whole to
+  the window, as wgpu presents only whole frames. The display lists are
+  diffed, rather than the view saying what changed, so the view stays a
+  function of the editor's state and nothing that changes the state has to
+  say where; chrome, documents and parts are all covered alike. The diff
+  is Myers' algorithm over hashes of the items, and each changed item
+  damages its bounds; a glyph run's are its font's bounding box.
+- **Tests read PDF text with a second reader** (`testkit::pdf`), through
+  the fonts' ToUnicode maps and krilla's `/ActualText`, which pdf-extract
+  ignores, misreading Arabic.
+
 ## 11. Security, robustness and licensing
 
 - **License:** MIT / Apache-2.0, at the user's option (project owner,
