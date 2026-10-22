@@ -13,8 +13,9 @@ scripting track. The 2D renderer (D7) was chosen in M1's stage 3.
 
 ## M1: Walking skeleton
 
-*Plan approved by the project owner in review session yyhb2j3d
-(2026-10-18).* The owner chose:
+*Done: the project owner accepted its exit in review gqbnbar4
+(2026-10-22). Plan approved by the project owner in review session
+yyhb2j3d (2026-10-18).* The owner chose:
 - **Platforms at the exit:** M1 is used live on Linux and Windows. macOS is
   built and tested headless in CI only.
 - **Budgets:** measured by hand on the owner's workstation at the exit. A
@@ -303,6 +304,17 @@ them, and the GPU opens on a thread while render-cpu draws the first
 frames. Every budget now holds on both systems (ARCHITECTURE.md, section
 12).
 
+**M1 is done (2026-10-22).** Checking the exit criteria found one gap: no
+session yet typed several pages and undid and redid through them.
+`spec/sessions/exit.ron` now types three pages in every M1 script, with
+headings, bold and italic, undoes them to an empty page, redoes them and
+reopens the document; the owner approved its pages as the golden
+`exit-pages`. A test checks that the document it types reopens with the
+same dump and pages, and exports as a PDF of the same pages with its text
+extractable. The owner let the live use on Windows stand for Linux too,
+to be tried on native Linux once the workstation runs it (review
+gqbnbar4).
+
 ### Exit criteria
 
 - A scripted session types a document of several pages, with headings, bold
@@ -327,6 +339,12 @@ Noted for after M1, not yet planned:
 - **A self-hosted CI runner** on a fixed machine with a GPU, so the budgets
   are checked on every push and a regression fails the build (project owner,
   2026-10-18, review yyhb2j3d).
+- **Native Linux, live and measured,** once the owner's workstation runs
+  Linux alone: M1's live use there, and the budgets on a hardware GPU
+  (project owner, 2026-10-22, review gqbnbar4).
+- **PDF text checked with a second reader,** in F4: pdf-extract misreads
+  some Arabic letters in the exit document's PDF, which pdftotext reads
+  correctly.
 - **UX design opens F5** (project owner, 2026-10-22, review v0qk8k5d).
   Before the toolkit grows more widgets, a design document and mockups
   drawn with `shot`, reviewed by the owner, settle what the tracks would
