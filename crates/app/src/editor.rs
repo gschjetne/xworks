@@ -383,18 +383,33 @@ impl Editor {
                 Some(c) if id == focus => c,
                 _ => document,
             };
-            let layout = story::lay_out_paragraph(source, id, &res.sheet, &res.fonts, width);
+            let layout = story::lay_out_paragraph(source, id, &res.sheet, res.fonts(), width);
             let count = count.unwrap_or_else(|| {
                 let p = document.paragraph(id).expect("a paragraph of the document");
                 p.text.split_whitespace().count()
             });
             (layout, count)
         };
-        let fresh: Vec<(ParagraphLayout, usize)> = if todo.len() > 1 {
+        let mut fresh: Vec<(ParagraphLayout, usize)> = if todo.len() > 1 {
             todo.par_iter().map(lay_out).collect()
         } else {
             todo.iter().map(lay_out).collect()
         };
+        // A character the fonts lack brings in those kept until text needs
+        // them, such as the CJK faces, and its paragraphs are laid out again.
+        if fresh.iter().any(|(p, _)| p.layout.missing) {
+            match res.load_on_demand() {
+                Ok(true) => {
+                    for (todo, fresh) in todo.iter().zip(&mut fresh) {
+                        if fresh.0.layout.missing {
+                            *fresh = lay_out(todo);
+                        }
+                    }
+                }
+                Ok(false) => {}
+                Err(e) => self.message = format!("Couldn't load fonts: {e}"),
+            }
+        }
         let mut fresh = fresh.into_iter();
         let (paragraphs, words): (Vec<ParagraphLayout>, Vec<usize>) = kept
             .into_iter()
@@ -1396,7 +1411,7 @@ impl Editor {
                 &self.res.page,
                 &self.laid.paragraphs,
                 &self.laid.pages,
-                &self.res.fonts,
+                self.res.fonts(),
             ),
             structure: canvas::structure(&self.laid.paragraphs),
         }
@@ -1521,7 +1536,13 @@ impl Editor {
             .res
             .commands
             .menu_bar(self.res.mac, |id| self.state(id));
-        MenuBar::new(&self.res.fonts, &self.res.theme, bar, self.width, self.menu)
+        MenuBar::new(
+            self.res.fonts(),
+            &self.res.theme,
+            bar,
+            self.width,
+            self.menu,
+        )
     }
 
     fn press(&mut self, x: i64, y: i64, shift: bool) -> Vec<Effect> {

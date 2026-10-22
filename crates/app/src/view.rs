@@ -9,7 +9,7 @@ use crate::Editor;
 pub(crate) fn draw(editor: &Editor) -> Page {
     let res = editor.resources();
     let parts = editor.view_parts();
-    let fonts = &res.fonts;
+    let fonts = res.fonts();
     let style = &res.page;
     let mut out = Page::new(parts.width, parts.height);
     out.fill_background(res.theme.desk);

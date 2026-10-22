@@ -2,7 +2,7 @@
 //! where documents live.
 
 use std::path::{Path, PathBuf};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
 use canvas::{PageStyle, PageStyleSpec};
 use chrome::Commands;
@@ -38,8 +38,10 @@ use ResourceError as Error;
 /// shares the fonts.
 #[derive(Clone, Debug)]
 pub struct Resources {
-    /// The bundled fonts, with their fallbacks.
-    pub fonts: Arc<Fonts>,
+    /// The bundled fonts, with their fallbacks, but for those loaded on
+    /// demand: see [`Resources::fonts`].
+    fonts: Arc<Fonts>,
+    on_demand: Arc<OnDemand>,
     /// The paragraph styles.
     pub sheet: StyleSheet,
     /// The page style of automatic pages.
@@ -62,6 +64,19 @@ struct FontFiles {
 #[derive(Deserialize)]
 struct FontFile {
     file: String,
+    #[serde(default)]
+    on_demand: bool,
+}
+
+/// The fonts loaded only once text needs them, shared by every clone of
+/// the resources.
+#[derive(Debug, Default)]
+struct OnDemand {
+    files: Vec<PathBuf>,
+    /// Every bundled font, once these are loaded.
+    loaded: OnceLock<Arc<Fonts>>,
+    /// Held while loading; whether loading was tried.
+    tried: Mutex<bool>,
 }
 
 #[derive(Deserialize)]
@@ -90,16 +105,14 @@ impl Resources {
         let fonts_spec = root.join("spec/text/fonts.ron");
         let files: FontFiles = spec(&fonts_spec)?;
         let mut fonts = Fonts::new();
+        let mut on_demand = OnDemand::default();
         for f in files.files {
             let path = root.join("fonts").join(&f.file);
-            let bytes = std::fs::read(&path).map_err(|source| Error::Io {
-                path: path.clone(),
-                source,
-            })?;
-            fonts.add(bytes).map_err(|e| Error::Spec {
-                path,
-                message: e.to_string(),
-            })?;
+            if f.on_demand {
+                on_demand.files.push(path);
+            } else {
+                add_font(&mut fonts, path)?;
+            }
         }
         let fallbacks: FontSpec = spec(&fonts_spec)?;
         fonts.set_fallbacks(&fallbacks);
@@ -115,6 +128,7 @@ impl Resources {
         let theme: ThemeSpec = spec(&root.join("spec/themes/m1.ron"))?;
         Ok(Resources {
             fonts: Arc::new(fonts),
+            on_demand: Arc::new(on_demand),
             sheet,
             page: PageStyle::from_spec(&page.page),
             commands,
@@ -123,4 +137,47 @@ impl Resources {
             mac,
         })
     }
+
+    /// The bundled fonts, with their fallbacks: every one once
+    /// [`Resources::load_on_demand`] has loaded those kept until text needs
+    /// them, and the rest until then. Faces keep their IDs when the rest
+    /// are added, so layouts made before still draw.
+    pub fn fonts(&self) -> &Arc<Fonts> {
+        self.on_demand.loaded.get().unwrap_or(&self.fonts)
+    }
+
+    /// Loads the fonts kept until text needs them, such as the CJK faces,
+    /// for every window. True if this call loaded them; false if they were
+    /// loaded or tried before, or there are none.
+    pub fn load_on_demand(&self) -> Result<bool, Error> {
+        let mut tried = self
+            .on_demand
+            .tried
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        if *tried || self.on_demand.files.is_empty() {
+            return Ok(false);
+        }
+        *tried = true;
+        let mut all = (*self.fonts).clone();
+        for path in &self.on_demand.files {
+            add_font(&mut all, path.clone())?;
+        }
+        // Only this call, holding `tried`, sets it.
+        let _ = self.on_demand.loaded.set(Arc::new(all));
+        Ok(true)
+    }
+}
+
+/// Adds the faces in the font file at `path` to `fonts`.
+fn add_font(fonts: &mut Fonts, path: PathBuf) -> Result<(), Error> {
+    let bytes = std::fs::read(&path).map_err(|source| Error::Io {
+        path: path.clone(),
+        source,
+    })?;
+    fonts.add(bytes).map_err(|e| Error::Spec {
+        path,
+        message: e.to_string(),
+    })?;
+    Ok(())
 }

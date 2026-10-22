@@ -53,3 +53,31 @@ fn export_writes_beside_the_document_and_shows_it() {
     let bytes = std::fs::read(&pdf).expect("the PDF");
     assert!(bytes.starts_with(b"%PDF-"));
 }
+
+/// The CJK faces load only once text needs them, for every window, and the
+/// text is then drawn in them.
+#[test]
+fn cjk_faces_load_when_text_needs_them() {
+    let root = testkit::workspace_root();
+    let documents = testkit::scratch_dir("app-on-demand").expect("a folder");
+    let res = Arc::new(Resources::load(&root, documents, false).expect("resources"));
+    let cjk = |res: &Resources| {
+        res.fonts()
+            .faces()
+            .find(|(_, f)| f.family() == "Noto Serif CJK SC" && f.weight() == 400)
+            .map(|(_, f)| f.font())
+    };
+    // A copy made before, as another window's would be.
+    let copy = (*res).clone();
+    let mut editor = app::Editor::create(res.clone()).expect("a document");
+    editor.update(app::Event::Text("Hello".to_string()));
+    assert!(cjk(&res).is_none(), "loaded before any CJK text");
+    editor.update(app::Event::Text(", 世界".to_string()));
+    let face = cjk(&res).expect("loaded once CJK is typed");
+    let drawn = editor.view().items.iter().any(|item| match item {
+        scene::Item::Glyphs(g) => g.font.same(&face),
+        _ => false,
+    });
+    assert!(drawn, "the Chinese is drawn in the CJK face");
+    assert!(cjk(&copy).is_some(), "every copy shares them");
+}

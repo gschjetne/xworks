@@ -341,6 +341,8 @@ fn report(
 ) -> anyhow::Result<(usize, usize)> {
     let sample = std::fs::read_to_string(root.join("spec/documents/m1-sample.ron"))?;
     let sample: Vec<(String, Vec<(String, Props)>)> = ron::from_str(&sample)?;
+    // The sample holds Chinese, whose fonts load on demand.
+    res.load_on_demand()?;
     let count = |copies: usize| {
         let all: Vec<_> = sample
             .iter()
@@ -349,7 +351,7 @@ fn report(
             .cloned()
             .collect();
         let document = story::document(&all);
-        let laid = canvas::automatic(&document, &res.sheet, &res.page, &res.fonts);
+        let laid = canvas::automatic(&document, &res.sheet, &res.page, res.fonts());
         (all, document, laid.pages.len())
     };
     // Twenty copies say how many pages a copy fills.
