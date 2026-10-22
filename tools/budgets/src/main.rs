@@ -16,8 +16,9 @@
 //!   editor, on a report it makes from the sample document. Frames are
 //!   drawn as the shell draws them, in a window of the shell's size (times
 //!   `--scale`, for a display that scales): with render-gpu on a hardware
-//!   GPU, or render-cpu where the GPU is software or missing. A frame
-//!   counts until the GPU has finished it.
+//!   GPU, or render-cpu where the GPU is software or missing, into the
+//!   window's canvas where the view changed, and the canvas copied to the
+//!   frame. A frame counts until the GPU has finished it.
 //!
 //! Measure on a quiet machine. Each line gives the median and the worst,
 //! and the parts of a frame where the time goes.
@@ -376,11 +377,24 @@ fn report(
     }
 }
 
-/// What draws frames: the GPU if it's hardware, the CPU otherwise.
+/// What draws frames, as the shell does: the GPU if it's hardware, the CPU
+/// otherwise, into a canvas where the view changed, and the canvas copied
+/// to the frame.
 struct Frames {
-    gpu: Option<(render_gpu::Device, render_gpu::Renderer, wgpu::Texture)>,
+    gpu: Option<Gpu>,
+    /// render-cpu, and the page its canvas shows.
+    cpu: (render_cpu::Renderer, Option<scene::Page>),
     ppi: f64,
     size: (u16, u16),
+}
+
+/// A hardware GPU, its renderer, the window's canvas and a frame to copy
+/// it to.
+struct Gpu {
+    device: render_gpu::Device,
+    renderer: render_gpu::Renderer,
+    canvas: render_gpu::Canvas,
+    frame: wgpu::Texture,
 }
 
 impl Frames {
@@ -397,7 +411,7 @@ impl Frames {
         let gpu = gpu.map(|device| {
             let format = wgpu::TextureFormat::Rgba8Unorm;
             let renderer = render_gpu::Renderer::new(&device.device, format);
-            let texture = device.device.create_texture(&wgpu::TextureDescriptor {
+            let frame = device.device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("frame"),
                 size: wgpu::Extent3d {
                     width: u32::from(size.0),
@@ -408,13 +422,20 @@ impl Frames {
                 sample_count: 1,
                 dimension: wgpu::TextureDimension::D2,
                 format,
-                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT | wgpu::TextureUsages::COPY_DST,
                 view_formats: &[],
             });
-            (device, renderer, texture)
+            let canvas = render_gpu::Canvas::new(&device, size.0, size.1, format);
+            Gpu {
+                device,
+                renderer,
+                canvas,
+                frame,
+            }
         });
         Frames {
             gpu,
+            cpu: (render_cpu::Renderer::new(), None),
             ppi: 96.0 * scale,
             size,
         }
@@ -423,12 +444,20 @@ impl Frames {
     fn by(&self) -> String {
         let (w, h) = self.size;
         match &self.gpu {
-            Some((device, _, _)) => {
-                let info = device.adapter.get_info();
+            Some(gpu) => {
+                let info = gpu.device.adapter.get_info();
                 format!("render-gpu on {} ({:?}), {w}×{h}", info.name, info.backend)
             }
             None => format!("render-cpu, {w}×{h}"),
         }
+    }
+
+    /// Forgets what the canvas shows, as a new window's shows nothing.
+    fn forget(&mut self) {
+        if let Some(gpu) = &mut self.gpu {
+            gpu.canvas.forget();
+        }
+        self.cpu.1 = None;
     }
 
     /// Draws `editor`'s window as the shell would, and waits for it to be
@@ -439,21 +468,44 @@ impl Frames {
         let viewed = began.elapsed();
         let (w, h) = self.size;
         match &mut self.gpu {
-            Some((device, renderer, texture)) => {
-                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
-                renderer
-                    .render(device, &page, self.ppi, &view, w, h, scene::Color::WHITE)
+            Some(gpu) => {
+                let rects = gpu.canvas.damage(&page, self.ppi);
+                gpu.canvas
+                    .draw(
+                        &gpu.device,
+                        &mut gpu.renderer,
+                        page,
+                        self.ppi,
+                        scene::Color::WHITE,
+                        &rects,
+                    )
                     .map_err(anyhow::Error::msg)?;
-                device.device.poll(wgpu::PollType::wait_indefinitely())?;
+                gpu.canvas.copy_to(&gpu.device, &gpu.frame);
+                gpu.device
+                    .device
+                    .poll(wgpu::PollType::wait_indefinitely())?;
             }
             None => {
-                render_cpu::render(&page, self.ppi, render_cpu::Level::Fastest);
+                let (renderer, shown) = &mut self.cpu;
+                let all = scene::PixelRect {
+                    x: 0,
+                    y: 0,
+                    width: u32::from(w),
+                    height: u32::from(h),
+                };
+                let rects = match shown {
+                    Some(old) => scene::redraw(old, &page, self.ppi, u32::from(w), u32::from(h)),
+                    None => vec![all],
+                };
+                for rect in rects {
+                    renderer.render_rect(&page, self.ppi, render_cpu::Level::Fastest, rect);
+                }
+                *shown = Some(page);
             }
         }
         Ok((millis(viewed), millis(began.elapsed() - viewed)))
     }
 }
-
 /// Times `event` in `editor` and its frame: the whole, and its parts.
 fn frame(
     editor: &mut Editor,
@@ -503,6 +555,8 @@ fn in_editor(
         let mut editor = Editor::open(res.clone(), path)?;
         editor.update(window());
         let opened = millis(began.elapsed());
+        // A new window draws all of it.
+        frames.forget();
         let (view, draw) = frames.draw(&editor)?;
         opening.push(millis(began.elapsed()));
         parts[0].push(read);

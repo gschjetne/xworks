@@ -7,7 +7,10 @@
 //!
 //! Each window holds one [`app::Editor`]: the shell turns winit's events into
 //! the editor's, carries out the effects it returns, and draws its view with
-//! render-gpu. It also feeds the input method and screen readers, through
+//! render-gpu, or render-cpu on a software GPU and while vello_gpu compiles
+//! its shaders. A window keeps a canvas of its own, which each frame draws
+//! into only where the view's display list changed and copies whole to the
+//! window. It also feeds the input method and screen readers, through
 //! AccessKit. Cut, Copy and Paste go through the system clipboard, as plain
 //! text.
 //!
@@ -63,6 +66,15 @@ struct Win {
     editor: Editor,
     access: accesskit_winit::Adapter,
     pointer: (f64, f64),
+    /// The window's own picture, drawn where the view changed and copied
+    /// to each frame, where the surface takes copies.
+    canvas: Option<render_gpu::Canvas>,
+    /// Whether the GPU renderer drew what the canvas shows, rather than
+    /// render-cpu.
+    canvas_by_gpu: bool,
+    /// render-cpu, with the images it keeps, for a software GPU and the
+    /// first frames.
+    cpu: render_cpu::Renderer,
 }
 
 struct Shell {
@@ -339,50 +351,6 @@ fn tree(editor: &Editor) -> accesskit::TreeUpdate {
     }
 }
 
-/// Draws `page` with render-cpu and copies it into `texture`, for a GPU
-/// that's software.
-fn upload(
-    gpu: &render_gpu::Device,
-    texture: &wgpu::Texture,
-    page: &scene::Page,
-    ppi: f64,
-    format: wgpu::TextureFormat,
-) {
-    let image = render_cpu::render(page, ppi, render_cpu::Level::Fastest);
-    let (w, h) = (
-        image.width.min(texture.width()),
-        image.height.min(texture.height()),
-    );
-    let bgra = matches!(
-        format,
-        wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
-    );
-    let mut pixels = Vec::with_capacity((w * h * 4) as usize);
-    for row in image
-        .pixels
-        .chunks_exact(image.width as usize * 4)
-        .take(h as usize)
-    {
-        for &[r, g, b, a] in row[..w as usize * 4].as_chunks::<4>().0 {
-            pixels.extend_from_slice(&if bgra { [b, g, r, a] } else { [r, g, b, a] });
-        }
-    }
-    gpu.queue.write_texture(
-        texture.as_image_copy(),
-        &pixels,
-        wgpu::TexelCopyBufferLayout {
-            offset: 0,
-            bytes_per_row: Some(w * 4),
-            rows_per_image: Some(h),
-        },
-        wgpu::Extent3d {
-            width: w,
-            height: h,
-            depth_or_array_layers: 1,
-        },
-    );
-}
-
 /// Hands `path` to the system to open with whatever opens it.
 fn open_externally(path: &Path) -> std::io::Result<()> {
     let mut command = if cfg!(target_os = "windows") {
@@ -553,6 +521,9 @@ impl Shell {
             editor,
             access,
             pointer: (0.0, 0.0),
+            canvas: None,
+            canvas_by_gpu: false,
+            cpu: render_cpu::Renderer::new(),
         };
         let logical = win
             .window
@@ -591,17 +562,49 @@ impl Shell {
             false => self.renderers.get_mut(&win.config.format),
         };
         let drawn_by_gpu = renderer.is_some();
-        match renderer {
-            Some(renderer) => {
-                let view = frame
-                    .texture
-                    .create_view(&wgpu::TextureViewDescriptor::default());
-                let desk = self.res.theme.desk;
-                if let Err(e) = renderer.render(gpu, &page, ppi, &view, w, h, desk) {
-                    eprintln!("xworks: drawing the window: {e}");
-                }
+        let desk = self.res.theme.desk;
+        let drawn = if win.config.usage.contains(wgpu::TextureUsages::COPY_DST) {
+            // Drawn into the window's canvas where the view changed, and
+            // the canvas copied whole to the frame.
+            let format = win.config.format;
+            let canvas = match win.canvas.take() {
+                Some(c) if c.size() == (w, h) && c.format() == format => c,
+                _ => render_gpu::Canvas::new(gpu, w, h, format),
+            };
+            let canvas = win.canvas.insert(canvas);
+            if win.canvas_by_gpu != drawn_by_gpu {
+                // Another renderer draws all of it again.
+                canvas.forget();
+                win.canvas_by_gpu = drawn_by_gpu;
             }
-            None => upload(gpu, &frame.texture, &page, ppi, win.config.format),
+            let rects = canvas.damage(&page, ppi);
+            let drawn = match renderer {
+                Some(renderer) => canvas.draw(gpu, renderer, page, ppi, desk, &rects),
+                None => {
+                    for rect in &rects {
+                        let level = render_cpu::Level::Fastest;
+                        let image = win.cpu.render_rect(&page, ppi, level, *rect);
+                        canvas.write(gpu, *rect, &image.pixels);
+                    }
+                    canvas.shows(page, ppi);
+                    Ok(())
+                }
+            };
+            canvas.copy_to(gpu, &frame.texture);
+            drawn
+        } else {
+            // A surface that takes no copies is drawn whole, by the GPU.
+            win.canvas = None;
+            let view = frame
+                .texture
+                .create_view(&wgpu::TextureViewDescriptor::default());
+            match renderer {
+                Some(renderer) => renderer.render(gpu, &page, ppi, &view, w, h, desk),
+                None => Err("no renderer for the surface".to_string()),
+            }
+        };
+        if let Err(e) = drawn {
+            eprintln!("xworks: drawing the window: {e}");
         }
         win.window.pre_present_notify();
         gpu.queue.present(frame);
