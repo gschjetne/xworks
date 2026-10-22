@@ -1,0 +1,47 @@
+// M1's commands and menus (docs/ROADMAP.md, M1 stage 9). Each command has an
+// ID the app acts on, a title for menus, and maybe a shortcut: keys joined
+// by "+", where "Primary" is Ctrl, or Command on a Mac. Menus list command
+// IDs in order, "-" for a separator.
+(
+    commands: [
+        (id: "new", title: "New", shortcut: Some("Primary+N")),
+        (id: "open", title: "Open…", shortcut: Some("Primary+O")),
+        (id: "save-version", title: "Save a Version", shortcut: Some("Primary+S")),
+        (id: "export-pdf", title: "Export as PDF", shortcut: Some("Primary+Shift+E")),
+        (id: "print", title: "Print…", shortcut: Some("Primary+P")),
+        (id: "quit", title: "Quit", shortcut: Some("Primary+Q")),
+
+        (id: "undo", title: "Undo", shortcut: Some("Primary+Z")),
+        (id: "redo", title: "Redo", shortcut: Some("Primary+Shift+Z")),
+        (id: "cut", title: "Cut", shortcut: Some("Primary+X")),
+        (id: "copy", title: "Copy", shortcut: Some("Primary+C")),
+        (id: "paste", title: "Paste", shortcut: Some("Primary+V")),
+        (id: "select-all", title: "Select All", shortcut: Some("Primary+A")),
+
+        (id: "bold", title: "Bold", shortcut: Some("Primary+B")),
+        (id: "italic", title: "Italic", shortcut: Some("Primary+I")),
+        (id: "style-body", title: "Body", shortcut: Some("Primary+0")),
+        (id: "style-heading-1", title: "Heading 1", shortcut: Some("Primary+1")),
+        (id: "style-heading-2", title: "Heading 2", shortcut: Some("Primary+2")),
+        (id: "style-heading-3", title: "Heading 3", shortcut: Some("Primary+3")),
+        (id: "size-bigger", title: "Bigger", shortcut: Some("Primary+Shift+.")),
+        (id: "size-smaller", title: "Smaller", shortcut: Some("Primary+Shift+,")),
+        (id: "size-9", title: "9 pt", shortcut: None),
+        (id: "size-10", title: "10 pt", shortcut: None),
+        (id: "size-11", title: "11 pt", shortcut: None),
+        (id: "size-12", title: "12 pt", shortcut: None),
+        (id: "size-14", title: "14 pt", shortcut: None),
+        (id: "size-18", title: "18 pt", shortcut: None),
+        (id: "size-24", title: "24 pt", shortcut: None),
+    ],
+    menus: [
+        (title: "File", items: ["new", "open", "-", "save-version", "-", "export-pdf", "print", "-", "quit"]),
+        (title: "Edit", items: ["undo", "redo", "-", "cut", "copy", "paste", "-", "select-all"]),
+        (title: "Format", items: [
+            "bold", "italic", "-",
+            "style-body", "style-heading-1", "style-heading-2", "style-heading-3", "-",
+            "size-bigger", "size-smaller", "-",
+            "size-9", "size-10", "size-11", "size-12", "size-14", "size-18", "size-24",
+        ]),
+    ],
+)
