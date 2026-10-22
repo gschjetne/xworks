@@ -344,6 +344,38 @@ fn open_externally(path: &Path) -> std::io::Result<()> {
     command.arg(path).spawn().map(drop)
 }
 
+/// Shows `path` in Explorer, selected.
+#[cfg(target_os = "windows")]
+fn reveal(path: &Path) -> std::io::Result<()> {
+    use std::os::windows::process::CommandExt;
+    // Explorer reads its own command line: the path is quoted after the
+    // comma, where quoting the whole argument would hide it.
+    std::process::Command::new("explorer")
+        .raw_arg(format!("/select,\"{}\"", path.display()))
+        .spawn()
+        .map(drop)
+}
+
+/// Shows `path` in the Finder, selected.
+#[cfg(target_os = "macos")]
+fn reveal(path: &Path) -> std::io::Result<()> {
+    std::process::Command::new("open")
+        .arg("-R")
+        .arg(path)
+        .spawn()
+        .map(drop)
+}
+
+/// Shows the folder `path` is in.
+#[cfg(not(any(target_os = "windows", target_os = "macos")))]
+fn reveal(path: &Path) -> std::io::Result<()> {
+    let folder = path.parent().unwrap_or(Path::new("."));
+    std::process::Command::new("xdg-open")
+        .arg(folder)
+        .spawn()
+        .map(drop)
+}
+
 impl Shell {
     /// Opens a window on a new document, or the one at `path`.
     fn open(&mut self, event_loop: &ActiveEventLoop, path: Option<PathBuf>) -> anyhow::Result<()> {
@@ -508,6 +540,11 @@ impl Shell {
                 Effect::OpenExternally(path) => {
                     if let Err(e) = open_externally(&path) {
                         eprintln!("xworks: opening {}: {e}", path.display());
+                    }
+                }
+                Effect::Reveal(path) => {
+                    if let Err(e) = reveal(&path) {
+                        eprintln!("xworks: showing {}: {e}", path.display());
                     }
                 }
                 Effect::Quit => event_loop.exit(),

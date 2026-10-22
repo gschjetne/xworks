@@ -38,3 +38,18 @@ fn sessions_end_as_they_expect() {
     }
     assert!(failures.is_empty(), "\n{}", failures.join("\n"));
 }
+
+/// Export as PDF writes the PDF beside the document and asks the shell to
+/// show it, so the export is seen to happen.
+#[test]
+fn export_writes_beside_the_document_and_shows_it() {
+    let mut res = resources().clone();
+    res.documents = testkit::scratch_dir("app-export").expect("a folder");
+    let mut editor = app::Editor::create(Arc::new(res)).expect("a document");
+    editor.update(app::Event::Text("Exported".to_string()));
+    let pdf = editor.path().with_extension("pdf");
+    let effects = editor.update(app::Event::Command("export-pdf".to_string()));
+    assert_eq!(effects, vec![app::Effect::Reveal(pdf.clone())]);
+    let bytes = std::fs::read(&pdf).expect("the PDF");
+    assert!(bytes.starts_with(b"%PDF-"));
+}

@@ -120,7 +120,10 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
                 match effect {
                     Effect::Copy(text) => clipboard = text,
                     Effect::Paste => queue.extend(editor.update(Event::Pasted(clipboard.clone()))),
-                    Effect::Open(_) | Effect::OpenExternally(_) | Effect::Quit => {}
+                    Effect::Open(_)
+                    | Effect::OpenExternally(_)
+                    | Effect::Reveal(_)
+                    | Effect::Quit => {}
                 }
             }
         }

@@ -89,6 +89,8 @@ pub enum Effect {
     Open(Option<PathBuf>),
     /// Hand this file to the system to open, such as a PDF to print.
     OpenExternally(PathBuf),
+    /// Show this file in the system's file manager, such as an export.
+    Reveal(PathBuf),
     /// Quit the app.
     Quit,
 }
@@ -1323,10 +1325,14 @@ impl Editor {
             }
             "export-pdf" => {
                 let path = self.path.with_extension("pdf");
-                self.message = match self.export(&path) {
-                    Ok(()) => format!("Exported {}", path.display()),
-                    Err(e) => format!("Couldn't export: {e}"),
-                };
+                match self.export(&path) {
+                    Ok(()) => {
+                        let name = path.file_name().unwrap_or_default().to_string_lossy();
+                        self.message = format!("Exported {name}");
+                        effects.push(Effect::Reveal(path));
+                    }
+                    Err(e) => self.message = format!("Couldn't export: {e}"),
+                }
             }
             "print" => {
                 let path = std::env::temp_dir().join(format!("{} (print).pdf", self.title()));
