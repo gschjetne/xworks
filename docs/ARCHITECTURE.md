@@ -510,6 +510,14 @@ rather than invent it.
 - **Views:** a Markdown document opens as a draft, one continuous column
   without pages, with pages a command away. A word-processing document
   opens on pages.
+- **xWorks draws its own title bar** in the generic shell, holding the
+  menus, the document's name, the contextual buttons and the window's own
+  buttons (project owner, 2026-10-22, review 3ce247c2). The macOS port
+  uses AppKit's unified title bar and toolbar instead.
+
+The owner approved mockups of all this as goldens (`mockup-pages`,
+`mockup-pages-dark`, `mockup-draft-dark` and `mockup-palette`, drawn by
+`shot`, review 3ce247c2); the chrome M2 builds matches them.
 
 ## 9. Text (`text`)
 

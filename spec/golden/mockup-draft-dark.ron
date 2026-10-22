@@ -1,0 +1,7 @@
+// An approved golden image (spec/golden/README.md), written by `shot --approve`.
+Golden(
+    name: "mockup-draft-dark",
+    size: (1280, 800),
+    sha256: "6060bb3edc72a932afc2b208268ca3c4d06c068eac97e7e0c1476ad95a59a478",
+    approved_by: "Grim Schjetne",
+)
