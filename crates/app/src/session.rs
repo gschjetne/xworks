@@ -56,6 +56,9 @@ pub enum Step {
     Scroll(f64),
     /// Closes the document and opens it again.
     Reopen,
+    /// Checks the paragraphs at this point, each one's style and text, as
+    /// `expect` does at the end.
+    Expect(Vec<(String, String)>),
 }
 
 /// A session played: the editor as it ends, and the clipboard.
@@ -64,15 +67,18 @@ pub struct Played {
     pub editor: Editor,
     /// The clipboard's text.
     pub clipboard: String,
+    /// What was wrong at the session's [`Step::Expect`]s.
+    pub problems: Vec<String>,
 }
 
 /// Plays `session` into a new document in `res`'s documents folder.
 pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorError> {
     let mut editor = Editor::create(res.clone())?;
     let mut clipboard = String::new();
+    let mut problems = Vec::new();
     let (width, height) = session.size;
     editor.update(Event::Resize { width, height });
-    for step in &session.events {
+    for (n, step) in session.events.iter().enumerate() {
         let events = match step {
             Step::Type(text) => vec![Event::Text(text.clone())],
             Step::Key(keys) => vec![key(keys)],
@@ -113,6 +119,15 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
                 editor.update(Event::Resize { width, height });
                 Vec::new()
             }
+            Step::Expect(want) => {
+                let got = paragraphs(editor.document());
+                if &got != want {
+                    problems.push(format!(
+                        "at step {n}, paragraphs {got:?}, expected {want:?}"
+                    ));
+                }
+                Vec::new()
+            }
         };
         for event in events {
             let mut queue = editor.update(event);
@@ -128,7 +143,11 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
             }
         }
     }
-    Ok(Played { editor, clipboard })
+    Ok(Played {
+        editor,
+        clipboard,
+        problems,
+    })
 }
 
 /// The key event a shortcut-like string names.
@@ -146,20 +165,9 @@ fn key(keys: &str) -> Event {
 /// Everything wrong with how `played` ended, against what `session`
 /// expects.
 pub fn check(session: &Session, played: &Played) -> Vec<String> {
-    let mut problems = Vec::new();
+    let mut problems = played.problems.clone();
     let document = played.editor.document();
-    let got: Vec<(String, String)> = document
-        .paragraphs()
-        .iter()
-        .map(|&id| {
-            let p = document.paragraph(id).expect("a paragraph");
-            let style = match p.props.get(story::keys::STYLE) {
-                Some(Value::Text(name)) => name.clone(),
-                _ => String::new(),
-            };
-            (style, p.text.clone())
-        })
-        .collect();
+    let got = paragraphs(document);
     if got != session.expect {
         problems.push(format!("paragraphs {got:?}, expected {:?}", session.expect));
     }
@@ -203,6 +211,22 @@ pub fn check(session: &Session, played: &Played) -> Vec<String> {
         }
     }
     problems
+}
+
+/// Each paragraph's style and text.
+fn paragraphs(document: &doc::Document) -> Vec<(String, String)> {
+    document
+        .paragraphs()
+        .iter()
+        .map(|&id| {
+            let p = document.paragraph(id).expect("a paragraph");
+            let style = match p.props.get(story::keys::STYLE) {
+                Some(Value::Text(name)) => name.clone(),
+                _ => String::new(),
+            };
+            (style, p.text.clone())
+        })
+        .collect()
 }
 
 /// Reads a session from its RON.
