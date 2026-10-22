@@ -32,6 +32,10 @@ fn every_bundled_face_loads_with_its_family_weight_and_slant() {
             want.push((family.to_string(), weight, false));
         }
     }
+    // The interface's font: regular, medium and semibold.
+    for weight in [400, 500, 600] {
+        want.push(("Inter".to_string(), weight, false));
+    }
     want.sort();
     assert_eq!(faces, want);
 }

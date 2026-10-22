@@ -1,9 +1,14 @@
-// The fonts M1 bundles, and the families text falls back to for characters
-// a family lacks. All are Noto, under the SIL Open Font License 1.1.
+// The fonts xWorks bundles, and the families text falls back to for
+// characters a family lacks: Noto for documents, and Inter for the
+// interface, all under the SIL Open Font License 1.1.
 //
 // They aren't committed: `cargo run -p fetch-fonts` downloads them into
-// fonts/ from pinned commits of the Noto repositories and checks each
-// against its hash. CI does the same.
+// fonts/ from pinned commits and releases and checks each against its
+// hash. CI does the same.
+//
+// Inter is the interface's font (project owner, 2026-10-22, review
+// frhewnk0), under the SIL Open Font License 1.1 too. Its static faces come
+// only in its release's zip archive, so they're taken out of it.
 //
 // The CJK fonts are the pan-CJK ones: each holds Japanese, Korean and both
 // Chinese forms, and its `locl` feature picks them by language. Noto Serif
@@ -97,6 +102,24 @@
             sha256: "dfdb3056de1f4542b888c77a1a8a750548a802e271479f56e52152423b64dde8",
         ),
         (
+            file: "Inter-Regular.ttf",
+            url: "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip",
+            member: Some("extras/ttf/Inter-Regular.ttf"),
+            sha256: "40d692fce188e4471e2b3cba937be967878f631ad3ebbbdcd587687c7ebe0c82",
+        ),
+        (
+            file: "Inter-Medium.ttf",
+            url: "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip",
+            member: Some("extras/ttf/Inter-Medium.ttf"),
+            sha256: "97ad806f526e41546d46365bb3a393145f75b7b1568913db74549ad8b8dba872",
+        ),
+        (
+            file: "Inter-SemiBold.ttf",
+            url: "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip",
+            member: Some("extras/ttf/Inter-SemiBold.ttf"),
+            sha256: "78a843fade9d4612a5567302fb595b56976eb5fcebf4fea5a5912d638bafcde3",
+        ),
+        (
             file: "NotoSansCJKsc-Regular.otf",
             url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
             sha256: "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
@@ -131,6 +154,10 @@
         (
             family: "Noto Sans",
             fallback: ["Noto Sans Arabic", "Noto Sans Hebrew", "Noto Sans CJK SC"],
+        ),
+        (
+            family: "Inter",
+            fallback: ["Noto Sans", "Noto Sans Arabic", "Noto Sans Hebrew", "Noto Sans CJK SC"],
         ),
     ],
 )

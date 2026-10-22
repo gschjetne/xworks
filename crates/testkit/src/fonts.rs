@@ -20,10 +20,15 @@ pub struct Manifest {
 pub struct FontFile {
     /// Its name in `fonts/`.
     pub file: String,
-    /// Where it's downloaded from: a pinned commit, so it never changes.
+    /// Where it's downloaded from: a pinned commit or release, so it never
+    /// changes.
     pub url: String,
     /// The SHA-256 of its bytes, in lowercase hexadecimal.
     pub sha256: String,
+    /// Its path inside the zip archive `url` names, where the font comes
+    /// only in an archive.
+    #[serde(default)]
+    pub member: Option<String>,
 }
 
 /// The path of `spec/text/fonts.ron`.

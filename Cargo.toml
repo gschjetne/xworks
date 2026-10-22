@@ -58,6 +58,7 @@ skrifa = "0.48.0"       # reading fonts: tables, metrics, character maps and out
 thiserror = "2.0.21"    # error types in libraries
 vello_cpu = { version = "=0.3.0", default-features = false, features = ["std", "text", "u8_pipeline"] }  # the CPU renderer (D7, docs/ARCHITECTURE.md, section 10); single-threaded, so render-cpu stays pure
 winit = "0.30.13"       # the generic shell's windows and input (docs/ARCHITECTURE.md, section 8)
+zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"] }  # fetch-fonts takes fonts that come only in zip archives, such as Inter's static faces, out of them; deflate only, which flate2 already in the build reads
 vello_gpu = "=0.3.0"    # the GPU renderer (D7, docs/ARCHITECTURE.md, section 10), vello_cpu's twin
 wgpu = "=30.0.1"        # the GPU, for vello_gpu and the shells' windows
 unicode-bidi = { version = "0.3.18", default-features = false, features = ["std"] }  # the bidi algorithm, run on ICU4X's data
