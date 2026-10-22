@@ -49,16 +49,38 @@ One paragraph each, laid out and checked against what's written:
     // Optional: selecting `from` to `to`, in the text's order, highlights
     // `rects` separate stretches on screen.
     selections: [(from: 4, to: 11, rects: 2)],
+    // Optional: what a double click (Word) or triple click (Sentence) at a
+    // cursor selects, from and to, in characters.
+    units: [("5>", Word, 4, 9)],
+    // Optional: Justify too; whether words are hyphenated, by their
+    // language's patterns (hyphenation.ron); and tab stops, in points.
+    align: Justify,
+    hyphenate: true,
+    tabs: (stops: [(60, Start), (150, End), (300, Decimal('.'))], interval: 36),
+    // Optional: where the caret is drawn at a cursor, in layout units, and
+    // halfway between the carets at two cursors.
+    positions: [("2>", 762000)],
+    middles: [("19>", "25<", 2794000)],
 )
 ```
 
-`by` is `Right` or `Left` (on screen), or `Next` or `Previous` (in the
-text's order).
+A line may also say whether it ends in a hyphen that isn't in the text,
+`hyphen: true`.
+
+`by` is `Right` or `Left` (on screen), `Next` or `Previous` (in the
+text's order, a grapheme at a time), or `NextWord`, `PreviousWord`,
+`NextSentence` or `PreviousSentence`.
 
 Besides what a case states, every case is checked for what holds of all
 layouts: lines cover the text in order, fit the width unless a single
 character doesn't, align as asked, and put their glyphs side by side; and
 for every place the caret can stand, hit-testing there finds it again.
+
+Where justified lines' widths are given, they're the paragraph's width:
+that's what justifying means, whatever the fonts. Where tab stops place
+text, the expected positions are the stops'. The hyphenation cases break
+words where an implementation of Liang's algorithm independent of
+`text`'s, in Python, puts hyphens with the same pattern files.
 
 Where the expected widths come from: HarfBuzz 14.6.0 (C), through
 uharfbuzz, shaping each stretch of one font and one direction on its own,

@@ -1,0 +1,12 @@
+// French: ty-po-gra-phie, ex-tra-or-di-naire.
+(
+    text: "La typographie extraordinaire",
+    style: (family: "Source Serif 4", language: "fr"),
+    width: 70,
+    hyphenate: true,
+    lines: [
+        (text: "La typogra", hyphen: true),
+        (text: "phie extraor", hyphen: true),
+        (text: "dinaire", hyphen: false),
+    ],
+)

@@ -1,0 +1,12 @@
+// Norwegian Bokmål: its exceptions break "betre" be-tre, where Nynorsk's
+// break it bet-re (hyphenate-nn), though the two share their patterns.
+(
+    text: "Ja betre",
+    style: (family: "Source Serif 4", language: "nb"),
+    width: 34,
+    hyphenate: true,
+    lines: [
+        (text: "Ja be", hyphen: true),
+        (text: "tre", hyphen: false),
+    ],
+)

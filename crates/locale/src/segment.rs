@@ -1,5 +1,12 @@
-use icu_segmenter::options::LineBreakOptions;
-use icu_segmenter::{GraphemeClusterSegmenter, LineSegmenter};
+use std::ops::Range;
+
+use icu_segmenter::options::{
+    LineBreakOptions, LineBreakStrictness, SentenceBreakOptions, WordBreakInvariantOptions,
+    WordBreakOptions,
+};
+use icu_segmenter::{GraphemeClusterSegmenter, LineSegmenter, SentenceSegmenter, WordSegmenter};
+
+use crate::Language;
 
 /// A place a line may end.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -14,12 +21,46 @@ pub struct Break {
 /// Where lines in `text`, a paragraph, may break (UAX #14), in order. The
 /// last is always at the end of the text; a break at the start never is.
 ///
+/// `languages` are the text's languages, as ranges of it in order; text
+/// they leave out has none. Japanese and Chinese break by CSS's `normal`
+/// rules for their language, which allow a line to start with a small
+/// kana or a prolonged sound mark, as Japanese word processors do; other
+/// text by UAX #14's default, CSS's `strict`.
+///
 /// Thai, Lao, Khmer and Burmese, which don't mark word boundaries, are
 /// broken by ICU4X's models of those languages.
-pub fn line_breaks(text: &str) -> Vec<Break> {
-    let segmenter = LineSegmenter::new_auto(LineBreakOptions::default());
-    let mut breaks: Vec<Break> = segmenter
-        .segment_str(text)
+pub fn line_breaks(text: &str, languages: &[(Range<usize>, Language)]) -> Vec<Break> {
+    let tailored =
+        |language: &Language| matches!(language.identifier().language.as_str(), "ja" | "zh");
+    let language_before = |offset: usize| {
+        languages
+            .iter()
+            .find(|(range, _)| range.start < offset && offset <= range.end)
+            .map(|(_, language)| language)
+    };
+    let mut offsets: Vec<usize> = segment_lines(text, LineBreakOptions::default())
+        .into_iter()
+        .filter(|&b| !language_before(b).is_some_and(tailored))
+        .collect();
+    let mut done: Vec<&Language> = Vec::new();
+    for (_, language) in languages {
+        if !tailored(language) || done.contains(&language) {
+            continue;
+        }
+        done.push(language);
+        let mut options = LineBreakOptions::default();
+        options.strictness = Some(LineBreakStrictness::Normal);
+        options.content_locale = Some(language.identifier());
+        offsets.extend(
+            segment_lines(text, options)
+                .into_iter()
+                .filter(|&b| language_before(b) == Some(language)),
+        );
+    }
+    offsets.sort_unstable();
+    offsets.dedup();
+    let mut breaks: Vec<Break> = offsets
+        .into_iter()
         .filter(|&offset| offset > 0)
         .map(|offset| Break {
             offset,
@@ -38,6 +79,10 @@ pub fn line_breaks(text: &str) -> Vec<Break> {
     breaks
 }
 
+fn segment_lines(text: &str, options: LineBreakOptions<'_>) -> Vec<usize> {
+    LineSegmenter::new_auto(options).segment_str(text).collect()
+}
+
 /// The boundaries of `text`'s grapheme clusters, the characters a reader
 /// sees (UAX #29), from 0 to the text's length.
 pub fn graphemes(text: &str) -> Vec<usize> {
@@ -46,6 +91,130 @@ pub fn graphemes(text: &str) -> Vec<usize> {
         boundaries.push(0);
     }
     boundaries
+}
+
+/// A stretch of text between word boundaries (UAX #29).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Word {
+    /// Where it is, as byte offsets.
+    pub range: Range<usize>,
+    /// Whether it's a word: letters, a number or ideographs, rather than
+    /// spaces or punctuation.
+    pub word_like: bool,
+}
+
+/// `text` divided at word boundaries (UAX #29), in order, covering it.
+///
+/// `languages` are the text's languages, as ranges of it in order; each
+/// stretch of one language is divided by that language's rules, and a
+/// change of language is a boundary. Chinese and Japanese, which don't put
+/// spaces between words, are divided by ICU4X's dictionary of their
+/// words; Thai, Lao, Khmer and Burmese by its models.
+pub fn words(text: &str, languages: &[(Range<usize>, Language)]) -> Vec<Word> {
+    let mut out = Vec::new();
+    for (range, language) in stretches(text, languages) {
+        let mut options = WordBreakOptions::default();
+        options.content_locale = language.as_ref().map(Language::identifier);
+        // Compiled data has every language, so this only falls back if
+        // that ever changes.
+        let owned = WordSegmenter::try_new_auto(options);
+        let boundaries: Vec<(usize, bool)> = match &owned {
+            Ok(s) => s
+                .as_borrowed()
+                .segment_str(&text[range.clone()])
+                .iter_with_word_type()
+                .map(|(offset, kind)| (offset, kind.is_word_like()))
+                .collect(),
+            Err(_) => WordSegmenter::new_auto(WordBreakInvariantOptions::default())
+                .segment_str(&text[range.clone()])
+                .iter_with_word_type()
+                .map(|(offset, kind)| (offset, kind.is_word_like()))
+                .collect(),
+        };
+        let mut start = range.start;
+        for (offset, word_like) in boundaries {
+            let end = range.start + offset;
+            if end > start {
+                out.push(Word {
+                    range: start..end,
+                    word_like,
+                });
+                start = end;
+            }
+        }
+    }
+    out
+}
+
+/// How many words `text` has: stretches of letters, numbers or
+/// ideographs between word boundaries, by its languages' rules
+/// ([`words`]).
+pub fn word_count(text: &str, languages: &[(Range<usize>, Language)]) -> usize {
+    words(text, languages)
+        .iter()
+        .filter(|w| w.word_like)
+        .count()
+}
+
+/// `text` divided into sentences (UAX #29), in order, covering it. Each
+/// takes the spaces after it.
+///
+/// `languages` are as for [`words`]: Greek, for one, ends a question
+/// with `;`.
+pub fn sentences(text: &str, languages: &[(Range<usize>, Language)]) -> Vec<Range<usize>> {
+    let mut out = Vec::new();
+    for (range, language) in stretches(text, languages) {
+        let mut options = SentenceBreakOptions::default();
+        options.content_locale = language.as_ref().map(Language::identifier);
+        let boundaries: Vec<usize> = match SentenceSegmenter::try_new(options) {
+            Ok(s) => s.as_borrowed().segment_str(&text[range.clone()]).collect(),
+            Err(_) => SentenceSegmenter::new(Default::default())
+                .segment_str(&text[range.clone()])
+                .collect(),
+        };
+        let mut start = range.start;
+        for offset in boundaries {
+            let end = range.start + offset;
+            if end > start {
+                out.push(start..end);
+                start = end;
+            }
+        }
+    }
+    out
+}
+
+/// `text` in stretches of one language, covering it: `languages` with
+/// neighbours of the same language joined, and what they leave out as
+/// stretches of none.
+fn stretches(
+    text: &str,
+    languages: &[(Range<usize>, Language)],
+) -> Vec<(Range<usize>, Option<Language>)> {
+    let mut out: Vec<(Range<usize>, Option<Language>)> = Vec::new();
+    let mut at = 0;
+    let mut push = |range: Range<usize>, language: Option<Language>| {
+        if range.is_empty() {
+            return;
+        }
+        match out.last_mut() {
+            Some((last, l)) if *l == language && last.end == range.start => last.end = range.end,
+            _ => out.push((range, language)),
+        }
+    };
+    for (range, language) in languages {
+        let range = range.start.max(at).min(text.len())..range.end.min(text.len());
+        if range.start > at {
+            push(at..range.start, None);
+        }
+        if range.end > range.start {
+            let language = (*language != Language::und()).then(|| language.clone());
+            push(range.clone(), language);
+            at = range.end;
+        }
+    }
+    push(at..text.len(), None);
+    out
 }
 
 /// Whether a line must break after `c` (UAX #14 classes BK, CR, LF and NL).
@@ -61,7 +230,11 @@ mod tests {
     use super::*;
 
     fn offsets(text: &str) -> Vec<usize> {
-        line_breaks(text).iter().map(|b| b.offset).collect()
+        line_breaks(text, &[]).iter().map(|b| b.offset).collect()
+    }
+
+    fn tagged(text: &str, tag: &str) -> Vec<(Range<usize>, Language)> {
+        vec![(0..text.len(), Language::parse(tag).unwrap())]
     }
 
     #[test]
@@ -73,7 +246,7 @@ mod tests {
 
     #[test]
     fn hard_breaks_are_mandatory() {
-        let breaks = line_breaks("one\u{2028}two three");
+        let breaks = line_breaks("one\u{2028}two three", &[]);
         assert_eq!(
             breaks,
             [
@@ -106,6 +279,32 @@ mod tests {
     }
 
     #[test]
+    fn japanese_lines_may_start_with_a_small_kana() {
+        // ちょっと: in Japanese, a line may start at ょ or っ; by UAX #14's
+        // default, small kana stay with the kana before them.
+        let text = "ちょっと";
+        let ja: Vec<usize> = line_breaks(text, &tagged(text, "ja"))
+            .iter()
+            .map(|b| b.offset)
+            .collect();
+        assert!(ja.contains(&3) && ja.contains(&6), "{ja:?}");
+        let default = offsets(text);
+        assert!(
+            !default.contains(&3) && !default.contains(&6),
+            "{default:?}"
+        );
+        // Only the Japanese part of mixed text breaks the Japanese way.
+        let mixed = "ちょっと ちょっと";
+        let languages = vec![(0..13, Language::parse("ja").unwrap())];
+        let breaks: Vec<usize> = line_breaks(mixed, &languages)
+            .iter()
+            .map(|b| b.offset)
+            .collect();
+        assert!(breaks.contains(&3), "{breaks:?}");
+        assert!(!breaks.contains(&16), "{breaks:?}");
+    }
+
+    #[test]
     fn thai_breaks_between_words() {
         // ภาษาไทย ง่าย: "Thai language is easy", with no spaces inside words.
         let breaks = offsets("ภาษาไทยง่าย");
@@ -121,5 +320,77 @@ mod tests {
         // Hangul syllables built from jamo.
         assert_eq!(graphemes("\u{1100}\u{1161}\u{11a8}"), [0, 9]);
         assert_eq!(graphemes(""), [0]);
+    }
+
+    fn word_texts<'a>(
+        text: &'a str,
+        languages: &[(Range<usize>, Language)],
+    ) -> Vec<(&'a str, bool)> {
+        words(text, languages)
+            .into_iter()
+            .map(|w| (&text[w.range], w.word_like))
+            .collect()
+    }
+
+    #[test]
+    fn words_are_letters_and_numbers_between_spaces_and_punctuation() {
+        assert_eq!(
+            word_texts("Don't stop, 3.5 times!", &[]),
+            [
+                ("Don't", true),
+                (" ", false),
+                ("stop", true),
+                (",", false),
+                (" ", false),
+                ("3.5", true),
+                (" ", false),
+                ("times", true),
+                ("!", false),
+            ]
+        );
+        assert_eq!(word_texts("", &[]), []);
+        assert_eq!(word_count("Γειά σου, κόσμε!", &[]), 3);
+    }
+
+    #[test]
+    fn japanese_words_come_from_a_dictionary() {
+        let text = "こんにちは世界";
+        let words = word_texts(text, &tagged(text, "ja"));
+        assert_eq!(words, [("こんにちは", true), ("世界", true)]);
+    }
+
+    #[test]
+    fn a_change_of_language_is_a_word_boundary() {
+        let text = "abcdef";
+        let languages = vec![
+            (0..3, Language::parse("en").unwrap()),
+            (3..6, Language::parse("de").unwrap()),
+        ];
+        assert_eq!(word_texts(text, &languages), [("abc", true), ("def", true)]);
+        // Neighbours of one language join.
+        let languages = vec![
+            (0..3, Language::parse("en").unwrap()),
+            (3..6, Language::parse("en").unwrap()),
+        ];
+        assert_eq!(word_texts(text, &languages), [("abcdef", true)]);
+    }
+
+    #[test]
+    fn sentences_take_the_spaces_after_them() {
+        let text = "One. Two? Three";
+        let got: Vec<&str> = sentences(text, &[]).into_iter().map(|r| &text[r]).collect();
+        assert_eq!(got, ["One. ", "Two? ", "Three"]);
+        assert_eq!(sentences("", &[]), Vec::<Range<usize>>::new());
+    }
+
+    #[test]
+    fn greek_asks_with_a_semicolon() {
+        let text = "Τι κάνεις; Καλά.";
+        let got: Vec<&str> = sentences(text, &tagged(text, "el"))
+            .into_iter()
+            .map(|r| &text[r])
+            .collect();
+        assert_eq!(got, ["Τι κάνεις; ", "Καλά."]);
+        assert_eq!(sentences(text, &[]).len(), 1);
     }
 }

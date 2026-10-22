@@ -4,9 +4,11 @@
 
 mod common;
 
-use common::{StyleSpec, byte_offset, char_offset, fonts, parse, points};
+use common::{StyleSpec, byte_offset, char_offset, fonts, hyphenation, parse, points};
 use serde::Deserialize;
-use text::{Affinity, Align, Cursor, Direction, Layout, Paragraph, Span};
+use text::{
+    Affinity, Align, Cursor, Direction, Layout, Paragraph, Setting, Span, TabAlign, TabStop, Tabs,
+};
 
 #[derive(Debug, Deserialize)]
 struct Case {
@@ -27,6 +29,22 @@ struct Case {
     carets: Vec<Walk>,
     #[serde(default)]
     selections: Vec<Selection>,
+    #[serde(default)]
+    hyphenate: bool,
+    tabs: Option<TabsSpec>,
+    #[serde(default)]
+    positions: Vec<(String, i64)>,
+    #[serde(default)]
+    middles: Vec<(String, String, i64)>,
+    #[serde(default)]
+    units: Vec<(String, Unit, usize, usize)>,
+}
+
+#[derive(Debug, Deserialize)]
+struct TabsSpec {
+    stops: Vec<(f64, TabAlign)>,
+    #[serde(default)]
+    interval: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -57,6 +75,7 @@ enum AlignSpec {
     Start,
     Center,
     End,
+    Justify,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize)]
@@ -79,6 +98,7 @@ struct LineSpec {
     width: Option<i64>,
     baseline: Option<i64>,
     height: Option<i64>,
+    hyphen: Option<bool>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -94,6 +114,17 @@ enum Move {
     Left,
     Next,
     Previous,
+    NextWord,
+    PreviousWord,
+    NextSentence,
+    PreviousSentence,
+}
+
+/// What a double click (`Word`) or a triple click (`Sentence`) selects.
+#[derive(Clone, Copy, Debug, Deserialize)]
+enum Unit {
+    Word,
+    Sentence,
 }
 
 #[test]
@@ -133,7 +164,18 @@ fn lay_out(case: &Case) -> Layout {
     } else if at < text.len() {
         spans.last_mut().expect("a span").len += text.len() - at;
     }
-    text::layout(
+    let tabs = case.tabs.as_ref().map(|t| Tabs {
+        stops: t
+            .stops
+            .iter()
+            .map(|&(at, align)| TabStop {
+                position: points(at),
+                align,
+            })
+            .collect(),
+        interval: points(t.interval),
+    });
+    text::layout_with(
         fonts(),
         &Paragraph {
             text,
@@ -147,8 +189,14 @@ fn lay_out(case: &Case) -> Layout {
                 AlignSpec::Start => Align::Start,
                 AlignSpec::Center => Align::Center,
                 AlignSpec::End => Align::End,
+                AlignSpec::Justify => Align::Justify,
             },
             width: points(case.width),
+        },
+        &Setting {
+            hyphenate: case.hyphenate,
+            hyphenation: Some(hyphenation()),
+            tabs: tabs.as_ref(),
         },
     )
 }
@@ -183,6 +231,11 @@ fn check(case: &Case) -> Vec<String> {
                     "line {i} reads {got:?} on screen, expected {visual:?}"
                 ));
             }
+        }
+        if let Some(want) = spec.hyphen
+            && line.hyphen != want
+        {
+            problems.push(format!("line {i} ends in a hyphen: {}", line.hyphen));
         }
         for (what, got, want) in [
             ("width", line.width, spec.width),
@@ -224,6 +277,38 @@ fn check(case: &Case) -> Vec<String> {
             ));
         }
     }
+    for (cursor, want) in &case.positions {
+        let got = layout.caret(parse_cursor(text, cursor)).x;
+        if got != *want {
+            problems.push(format!(
+                "the caret at {cursor} is at {got}, expected {want}"
+            ));
+        }
+    }
+    for (from, to, want) in &case.middles {
+        let a = layout.caret(parse_cursor(text, from)).x;
+        let b = layout.caret(parse_cursor(text, to)).x;
+        if (a + b - 2 * want).abs() > 1 {
+            problems.push(format!(
+                "between the carets at {from} and {to} is {}, expected {want}",
+                (a + b) / 2
+            ));
+        }
+    }
+    for (cursor, unit, from, to) in &case.units {
+        let at = parse_cursor(text, cursor);
+        let range = match unit {
+            Unit::Word => layout.word_at(at),
+            Unit::Sentence => layout.sentence_at(at),
+        };
+        let got = (char_offset(text, range.start), char_offset(text, range.end));
+        if got != (*from, *to) {
+            problems.push(format!(
+                "the {unit:?} at {cursor} is {got:?}, expected {:?}",
+                (from, to)
+            ));
+        }
+    }
     for selection in &case.selections {
         let range = byte_offset(text, selection.from)..byte_offset(text, selection.to);
         let rects = layout.selection(range);
@@ -244,6 +329,10 @@ fn step(layout: &Layout, at: Cursor, by: Move) -> Option<Cursor> {
         Move::Left => layout.left(at),
         Move::Next => layout.next(at),
         Move::Previous => layout.previous(at),
+        Move::NextWord => layout.next_word(at),
+        Move::PreviousWord => layout.previous_word(at),
+        Move::NextSentence => layout.next_sentence(at),
+        Move::PreviousSentence => layout.previous_sentence(at),
     }
 }
 
@@ -354,8 +443,8 @@ fn invariants(case: &Case, layout: &Layout) -> Vec<String> {
         let rtl = layout.direction() == Direction::Rtl;
         let (left, right) = (line.x, width - (line.x + line.width));
         let aligned = match (&case.align, rtl) {
-            (AlignSpec::Start, false) | (AlignSpec::End, true) => left == 0,
-            (AlignSpec::Start, true) | (AlignSpec::End, false) => right == 0,
+            (AlignSpec::Start | AlignSpec::Justify, false) | (AlignSpec::End, true) => left == 0,
+            (AlignSpec::Start | AlignSpec::Justify, true) | (AlignSpec::End, false) => right == 0,
             (AlignSpec::Center, _) => (left - right).abs() <= 1,
         };
         if !aligned {

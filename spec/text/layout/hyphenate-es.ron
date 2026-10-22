@@ -1,0 +1,12 @@
+// Spanish: ti-po-gra-fía, ex-tra-or-di-na-ria.
+(
+    text: "La tipografía extraordinaria",
+    style: (family: "Source Serif 4", language: "es"),
+    width: 60,
+    hyphenate: true,
+    lines: [
+        (text: "La tipogra", hyphen: true),
+        (text: "fía extraor", hyphen: true),
+        (text: "dinaria", hyphen: false),
+    ],
+)

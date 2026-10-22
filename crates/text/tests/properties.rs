@@ -1,11 +1,14 @@
 //! What holds of every layout, over random paragraphs of mixed scripts and
-//! directions, widths and alignments.
+//! directions, widths and alignments, justified, hyphenated and tabbed.
 
 mod common;
 
-use common::{fonts, points};
+use common::{fonts, hyphenation, points};
 use proptest::prelude::*;
-use text::{Affinity, Align, Cursor, Direction, Layout, Paragraph, Span, Style};
+use text::{
+    Affinity, Align, Cursor, Direction, Layout, Paragraph, Setting, Span, Style, TabAlign, TabStop,
+    Tabs,
+};
 
 /// Words in the M1 scripts, with what goes between them.
 const WORDS: &[&str] = &[
@@ -13,6 +16,9 @@ const WORDS: &[&str] = &[
     "quick",
     "fox",
     "Antidisestablishment",
+    "hyphenation",
+    "soft\u{ad}hyphen",
+    "lime-tree",
     "ΓΕΙΆ",
     "κόσμε",
     "Привет",
@@ -34,7 +40,7 @@ const WORDS: &[&str] = &[
     "(",
     ")",
 ];
-const GAPS: &[&str] = &[" ", " ", " ", "  ", "\u{2028}", "", "\u{a0}"];
+const GAPS: &[&str] = &[" ", " ", " ", "  ", "\u{2028}", "", "\u{a0}", "\t"];
 
 fn paragraph() -> impl Strategy<Value = (String, f64, Option<Direction>, Align, bool)> {
     let words = prop::collection::vec((0..WORDS.len(), 0..GAPS.len()), 0..24);
@@ -43,7 +49,12 @@ fn paragraph() -> impl Strategy<Value = (String, f64, Option<Direction>, Align, 
         Just(Some(Direction::Ltr)),
         Just(Some(Direction::Rtl))
     ];
-    let align = prop_oneof![Just(Align::Start), Just(Align::Center), Just(Align::End)];
+    let align = prop_oneof![
+        Just(Align::Start),
+        Just(Align::Center),
+        Just(Align::End),
+        Just(Align::Justify)
+    ];
     (words, 8.0..300.0f64, direction, align, any::<bool>()).prop_map(
         |(words, width, direction, align, bold)| {
             let text: String = words
@@ -72,7 +83,12 @@ fn lay_out(
         size: points(12.0),
         weight: if bold { 700 } else { 400 },
         italic: false,
-        language: text::Language::und(),
+        // English, so its words hyphenate where they're bold.
+        language: if bold {
+            text::Language::parse("en").expect("a tag")
+        } else {
+            text::Language::und()
+        },
     };
     let spans = [
         Span {
@@ -84,7 +100,20 @@ fn lay_out(
             style: style(false),
         },
     ];
-    text::layout(
+    let tabs = Tabs {
+        stops: vec![
+            TabStop {
+                position: points(40.0),
+                align: TabAlign::End,
+            },
+            TabStop {
+                position: points(90.0),
+                align: TabAlign::Decimal('.'),
+            },
+        ],
+        interval: points(30.0),
+    };
+    text::layout_with(
         fonts(),
         &Paragraph {
             text,
@@ -92,6 +121,11 @@ fn lay_out(
             direction,
             align,
             width: points(width),
+        },
+        &Setting {
+            hyphenate: bold,
+            hyphenation: Some(hyphenation()),
+            tabs: Some(&tabs),
         },
     )
 }

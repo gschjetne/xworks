@@ -41,6 +41,9 @@ pub(crate) struct Shaped {
     pub unsafe_to_break: bool,
     /// A hard line break, which is never drawn.
     pub hidden: bool,
+    /// A hyphen layout added at a line's end, which shows no character
+    /// of the text.
+    pub inserted: bool,
 }
 
 /// `text` divided into items and shaped. `spans` cover the text; items
@@ -177,6 +180,9 @@ pub(crate) fn shape(
     let shaper = ShaperFont::new(&face.font);
     let mut buffer = Buffer::new();
     for (i, c) in text[range.clone()].char_indices() {
+        // A tab is shaped as a space, whose glyph every font has and which
+        // draws nothing; layout makes it as wide as its stop asks.
+        let c = if c == '\t' { ' ' } else { c };
         buffer.push(u32::from(c), (range.start + i) as u32);
     }
     buffer.set_pre_context(&text[..range.start]);
@@ -226,6 +232,7 @@ pub(crate) fn shape(
                 y_offset: scale(pos.y_offset, size, upem),
                 unsafe_to_break: info.unsafe_to_break(),
                 hidden,
+                inserted: false,
             }
         })
         .collect()

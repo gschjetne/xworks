@@ -1,0 +1,10 @@
+// Greek asks with ";", its question mark, so a sentence ends there in
+// Greek text.
+(
+    text: "Τι κάνεις; Καλά.",
+    style: (family: "Source Serif 4", language: "el"),
+    width: 400,
+    lines: [(text: "Τι κάνεις; Καλά.")],
+    carets: [(from: "0>", by: NextSentence, visits: ["10<", "16<"])],
+    units: [("3>", Sentence, 0, 11)],
+)

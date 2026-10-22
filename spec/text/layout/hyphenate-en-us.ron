@@ -1,0 +1,12 @@
+// US English hyphenates hy-phen-ation and man-u-scripts.
+(
+    text: "The hyphenation of manuscripts",
+    style: (family: "Source Serif 4", language: "en-US"),
+    width: 80,
+    hyphenate: true,
+    lines: [
+        (text: "The hyphen", hyphen: true),
+        (text: "ation of manu", hyphen: true),
+        (text: "scripts", hyphen: false),
+    ],
+)

@@ -98,7 +98,7 @@ impl Layout {
     /// `cursor` made exact: at a grapheme boundary within the text, and
     /// belonging with the character after it at the start of the text or
     /// of a line begun by a hard break.
-    fn normalize(&self, cursor: Cursor) -> Cursor {
+    pub(crate) fn normalize(&self, cursor: Cursor) -> Cursor {
         let end = self.graphemes.last().copied().unwrap_or(0);
         let offset = match self.graphemes.binary_search(&cursor.offset.min(end)) {
             Ok(i) => self.graphemes[i],
@@ -298,10 +298,18 @@ impl Layout {
         if x >= last.right {
             return right_of(last);
         }
-        let cell = cells
-            .iter()
-            .find(|c| c.left <= x && x < c.right)
-            .unwrap_or(last);
+        // The cell at `x`, or the nearest: a hyphen layout added, where an
+        // left-to-right word breaks in a right-to-left line, has none.
+        let distance = |c: &&Cell| {
+            if x < c.left {
+                c.left - x
+            } else if x >= c.right {
+                x - c.right
+            } else {
+                -1
+            }
+        };
+        let cell = cells.iter().min_by_key(distance).unwrap_or(last);
         if 2 * x < cell.left + cell.right {
             left_of(cell)
         } else {

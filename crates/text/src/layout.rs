@@ -1,12 +1,17 @@
-//! Paragraph layout: lines broken first fit, each ordered for display by
-//! the bidi algorithm, aligned, and stacked.
+//! Paragraph layout: lines broken first fit, or optimally where they're
+//! justified, each ordered for display by the bidi algorithm, aligned,
+//! and stacked.
 
+use std::cell::OnceCell;
 use std::ops::Range;
 
 use locale::{Bidi, Direction, Language};
 
+use crate::breaking::{self, Candidate, Glue, Kind};
 use crate::font::{FaceId, Fonts};
+use crate::hyphen::Hyphenation;
 use crate::shape::{self, Item, Shaped};
+use crate::tabs::{self, After, Tabs};
 use crate::units::scale;
 
 /// How a stretch of text is set.
@@ -21,7 +26,8 @@ pub struct Style {
     pub weight: u16,
     /// Whether it's italic.
     pub italic: bool,
-    /// Its language, which picks the font's forms for it.
+    /// Its language, which picks the font's forms for it, where its lines
+    /// may break, how its words are hyphenated, and what its words are.
     pub language: Language,
 }
 
@@ -45,6 +51,11 @@ pub enum Align {
     Center,
     /// Against the other edge.
     End,
+    /// Against both edges: lines are broken by Knuth and Plass's optimal
+    /// algorithm and stretched to the width at their spaces, and between
+    /// the characters of Chinese and Japanese. The last line, and lines
+    /// ending at a hard break, sit at the start.
+    Justify,
 }
 
 /// A paragraph to lay out.
@@ -64,6 +75,20 @@ pub struct Paragraph<'a> {
     pub width: i64,
 }
 
+/// How a paragraph is set beyond its text and styles: whether its words
+/// are hyphenated, and where its tabs go. The default hyphenates nothing
+/// but at soft hyphens, and makes tabs as wide as spaces.
+#[derive(Clone, Copy, Debug, Default)]
+pub struct Setting<'a> {
+    /// Whether words may be hyphenated at lines' ends, by their language's
+    /// patterns in `hyphenation`. Soft hyphens (U+00AD) always may.
+    pub hyphenate: bool,
+    /// The patterns, by language.
+    pub hyphenation: Option<&'a Hyphenation>,
+    /// The tab stops.
+    pub tabs: Option<&'a Tabs>,
+}
+
 /// A paragraph laid out: its lines, top to bottom. Positions are in layout
 /// units from the paragraph's top left, with y growing down the page.
 #[derive(Clone, Debug)]
@@ -77,11 +102,17 @@ pub struct Layout {
     /// Whether a character had no face to come from, so it shows as a box:
     /// the fonts lack something the text needs.
     pub missing: bool,
+    /// The languages it had words to hyphenate in but no patterns for,
+    /// so the caller can load them and lay it out again.
+    pub unhyphenated: Vec<Language>,
     pub(crate) direction: Direction,
     /// Its text.
     pub(crate) text: String,
     /// Each span's language, as a tag; `None` where it isn't known.
     pub(crate) languages: Vec<Option<String>>,
+    /// The text's languages, as ranges of it, for finding its words and
+    /// sentences.
+    pub(crate) spans: Vec<(Range<usize>, Language)>,
     /// Where its graphemes begin and end, from 0 to the text's length.
     pub(crate) graphemes: Vec<usize>,
     /// The offsets just after hard line breaks.
@@ -114,8 +145,12 @@ pub struct Line {
     /// The left edge of its text, not counting spaces that hang past its
     /// end.
     pub x: i64,
-    /// The width of its text, not counting spaces that hang past its end.
+    /// The width of its text, not counting spaces that hang past its end,
+    /// as stretched if it's justified.
     pub width: i64,
+    /// Whether it ends in a hyphen that isn't in the text: a word broken
+    /// by hyphenation, or at a soft hyphen.
+    pub hyphen: bool,
     /// Its glyphs, in runs from left to right.
     pub runs: Vec<GlyphRun>,
     /// Its graphemes from left to right, where the caret can stand.
@@ -162,6 +197,9 @@ pub struct Glyph {
     /// Where its cluster of the text starts, as a byte offset into the
     /// paragraph.
     pub cluster: usize,
+    /// Whether it's a hyphen layout added where it broke a word, which
+    /// shows no character of the text; its cluster is the line's end.
+    pub hyphen: bool,
 }
 
 /// A grapheme on a line, for caret placement: its text and its extent.
@@ -173,13 +211,26 @@ pub(crate) struct Cell {
     pub rtl: bool,
 }
 
-/// Lays out `paragraph` in `fonts`.
+/// Lays out `paragraph` in `fonts`, with no hyphenation but at soft
+/// hyphens, and tabs as wide as spaces: [`layout_with`] and a default
+/// [`Setting`].
 ///
 /// # Panics
 ///
 /// If the spans don't cover the text exactly, a span doesn't end on a
 /// character boundary, or there are no fonts.
 pub fn layout(fonts: &Fonts, paragraph: &Paragraph<'_>) -> Layout {
+    layout_with(fonts, paragraph, &Setting::default())
+}
+
+/// Lays out `paragraph` in `fonts`, hyphenated and tabbed as `setting`
+/// says.
+///
+/// # Panics
+///
+/// If the spans don't cover the text exactly, a span doesn't end on a
+/// character boundary, or there are no fonts.
+pub fn layout_with(fonts: &Fonts, paragraph: &Paragraph<'_>, setting: &Setting<'_>) -> Layout {
     let text = paragraph.text;
     assert!(!paragraph.spans.is_empty(), "a paragraph needs a style");
     assert_eq!(
@@ -203,11 +254,27 @@ pub fn layout(fonts: &Fonts, paragraph: &Paragraph<'_>) -> Layout {
     for a in &advance {
         position.push(position.last().copied().unwrap_or(0) + a);
     }
+    let mut spans = Vec::with_capacity(paragraph.spans.len());
+    let mut at = 0;
+    for span in paragraph.spans {
+        spans.push((at..at + span.len, span.style.language.clone()));
+        at += span.len;
+    }
+    let no_tabs = Tabs::default();
+    let glue = Glue::new(text, &graphemes, |a, b| position[b] - position[a]);
     let shaping = Shaping {
         fonts,
         paragraph,
+        hyphens: items.iter().map(|_| OnceCell::new()).collect(),
         items,
         position,
+        tabs: setting.tabs.unwrap_or(&no_tabs),
+        tab_offsets: text
+            .char_indices()
+            .filter(|&(_, c)| c == '\t')
+            .map(|(i, _)| i)
+            .collect(),
+        glue,
     };
 
     let hard_breaks: Vec<usize> = text
@@ -215,11 +282,33 @@ pub fn layout(fonts: &Fonts, paragraph: &Paragraph<'_>) -> Layout {
         .filter(|&(_, c)| shape::is_hard_break(c))
         .map(|(i, c)| i + c.len_utf8())
         .collect();
-    let mut lines = Vec::new();
+    let mut unhyphenated = Vec::new();
+    let empty = Hyphenation::new();
+    let hyphenation = setting
+        .hyphenate
+        .then(|| setting.hyphenation.unwrap_or(&empty));
+    let candidates: Vec<Candidate> =
+        breaking::candidates(text, &graphemes, &spans, hyphenation, &mut unhyphenated);
+    let measure = |range: Range<usize>, hyphen: bool| shaping.measure(range, hyphen);
+    let justify = paragraph.align == Align::Justify;
+    let lines_at = if justify {
+        breaking::knuth_plass(
+            text,
+            &graphemes,
+            &candidates,
+            paragraph.width,
+            measure,
+            |range| shaping.stretch(range),
+        )
+    } else {
+        breaking::first_fit(text, &graphemes, &candidates, paragraph.width, measure)
+    };
+    let count = lines_at.len();
+    let mut lines = Vec::with_capacity(count);
     let mut top = 0;
-    let lines_at = break_lines(text, &graphemes, paragraph.width, |r| shaping.width(r));
-    for range in lines_at {
-        let line = build_line(&shaping, &bidi, &graphemes, range, top);
+    for (k, (range, kind)) in lines_at.into_iter().enumerate() {
+        let stretch = justify && k + 1 < count && kind != Kind::Mandatory;
+        let line = build_line(&shaping, &bidi, &graphemes, range, kind, stretch, top);
         top += line.height;
         lines.push(line);
     }
@@ -228,6 +317,7 @@ pub fn layout(fonts: &Fonts, paragraph: &Paragraph<'_>) -> Layout {
         width: paragraph.width,
         height: top,
         missing,
+        unhyphenated,
         direction: bidi.direction(),
         text: text.to_string(),
         languages: paragraph
@@ -235,72 +325,10 @@ pub fn layout(fonts: &Fonts, paragraph: &Paragraph<'_>) -> Layout {
             .iter()
             .map(|s| (s.style.language != Language::und()).then(|| s.style.language.to_string()))
             .collect(),
+        spans,
         graphemes,
         hard_breaks,
     }
-}
-
-/// Where `text`'s lines start and end: first fit, breaking where UAX #14
-/// allows, with spaces at a line's end hanging past it. A word too wide
-/// for a line on its own is broken between graphemes.
-/// `measure` gives a line's width, less the spaces hanging at its end.
-fn break_lines(
-    text: &str,
-    graphemes: &[usize],
-    width: i64,
-    measure: impl Fn(Range<usize>) -> i64,
-) -> Vec<Range<usize>> {
-    let breaks = locale::line_breaks(text);
-    let fits = |range: Range<usize>| measure(range) <= width;
-    let mut lines = Vec::new();
-    let mut start = 0;
-    let mut next = 0;
-    loop {
-        let mut fit = None;
-        let mut overflow = text.len();
-        while let Some(b) = breaks.get(next) {
-            if b.offset <= start {
-                next += 1;
-            } else if fits(start..b.offset) {
-                fit = Some(*b);
-                next += 1;
-                if b.mandatory {
-                    break;
-                }
-            } else {
-                overflow = b.offset;
-                break;
-            }
-        }
-        let end = match fit {
-            Some(b) => b.offset,
-            None => {
-                // Graphemes, as many as fit, and at least one.
-                let first = graphemes
-                    .get(graphemes.partition_point(|&g| g <= start))
-                    .copied()
-                    .unwrap_or(text.len());
-                let mut end = first;
-                for &g in between(graphemes, first, overflow) {
-                    if !fits(start..g) {
-                        break;
-                    }
-                    end = g;
-                }
-                end
-            }
-        };
-        lines.push(start..end);
-        start = end;
-        if start >= text.len() {
-            // A hard break at the very end leaves an empty last line.
-            if fit.is_some_and(|b| b.mandatory) {
-                lines.push(start..start);
-            }
-            break;
-        }
-    }
-    lines
 }
 
 /// Where `range` of `text` ends, less the spaces and hard break at its end,
@@ -322,6 +350,12 @@ struct Shaping<'a> {
     /// The running sums of clusters' advances, by byte offset: the width of
     /// a stretch of text as shaped whole.
     position: Vec<i64>,
+    /// Each item's hyphen, shaped once it's needed.
+    hyphens: Vec<OnceCell<Option<Shaped>>>,
+    tabs: &'a Tabs,
+    /// Where the text's tabs are.
+    tab_offsets: Vec<usize>,
+    glue: Glue,
 }
 
 impl Shaping<'_> {
@@ -376,25 +410,123 @@ impl Shaping<'_> {
         }
     }
 
-    /// How wide `range` is as a line, less the spaces hanging at its end:
-    /// with its edges shaped again where breaking there changes them.
-    fn width(&self, range: Range<usize>) -> i64 {
+    /// How wide `range` is as a line, less the spaces hanging at its end,
+    /// with a hyphen at its end if `hyphen`: with its edges shaped again
+    /// where breaking there changes them, and its tabs at their stops.
+    fn measure(&self, range: Range<usize>, hyphen: bool) -> i64 {
+        let hyphen = if hyphen {
+            self.hyphen_before(range.end).map_or(0, |h| h.advance)
+        } else {
+            0
+        };
         let end = trim(self.paragraph.text, range.clone());
-        if self
-            .parts(range.clone())
-            .all(|(i, part)| self.keeps(i, &part))
+        if self.tabs_in(range.start, end).is_empty()
+            && self
+                .parts(range.clone())
+                .all(|(i, part)| self.keeps(i, &part))
         {
-            return self.position[end] - self.position[range.start];
+            return self.position[end] - self.position[range.start] + hyphen;
         }
-        self.parts(range)
-            .map(|(i, part)| {
-                self.glyphs(i, part, self.items[i].level)
-                    .iter()
-                    .filter(|g| g.cluster < end)
-                    .map(|g| g.advance)
-                    .sum::<i64>()
+        // Each cluster's advance on the line.
+        let mut advances = vec![0; range.len()];
+        for (i, part) in self.parts(range.clone()) {
+            for g in self.glyphs(i, part, self.items[i].level) {
+                advances[g.cluster - range.start] += g.advance;
+            }
+        }
+        let width: i64 = advances[..end - range.start].iter().sum();
+        let tabs: i64 = self
+            .tab_advances(range.start, end, |o| advances[o - range.start])
+            .into_iter()
+            .map(|(t, a)| a - advances[t - range.start])
+            .sum();
+        width + tabs + hyphen
+    }
+
+    /// The tabs from `start` up to `end`.
+    fn tabs_in(&self, start: usize, end: usize) -> &[usize] {
+        let lo = self.tab_offsets.partition_point(|&t| t < start);
+        let hi = self.tab_offsets.partition_point(|&t| t < end);
+        &self.tab_offsets[lo..hi.max(lo)]
+    }
+
+    /// How far each tab on a line from `start`, whose text ends at `end`,
+    /// moves the pen, where the cluster at each offset is `advance` wide:
+    /// each tab's offset and advance, in order. Tabs are measured from
+    /// the line's start edge.
+    fn tab_advances(
+        &self,
+        start: usize,
+        end: usize,
+        advance: impl Fn(usize) -> i64,
+    ) -> Vec<(usize, i64)> {
+        let text = self.paragraph.text;
+        let tabbed = self.tabs_in(start, end);
+        let width = |a: usize, b: usize| (a..b).map(&advance).sum::<i64>();
+        let mut out = Vec::with_capacity(tabbed.len());
+        let mut pen = 0;
+        let mut from = start;
+        for (k, &t) in tabbed.iter().enumerate() {
+            pen += width(from, t);
+            let next = tabbed.get(k + 1).copied().unwrap_or(end);
+            let a = tabs::advance(self.tabs, pen, advance(t), |decimal| {
+                let segment = &text[t + 1..next];
+                After {
+                    width: width(t + 1, next),
+                    before_decimal: decimal
+                        .and_then(|c| segment.find(c))
+                        .map(|d| width(t + 1, t + 1 + d)),
+                }
+            });
+            out.push((t, a));
+            pen += a;
+            from = t + 1;
+        }
+        out
+    }
+
+    /// How much the line `range` stretches, if it's justified: at the
+    /// spaces and between Chinese and Japanese characters after its last
+    /// tab.
+    fn stretch(&self, range: Range<usize>) -> i64 {
+        let end = trim(self.paragraph.text, range.clone());
+        let start = self
+            .tabs_in(range.start, end)
+            .last()
+            .map_or(range.start, |&t| t + 1);
+        self.glue.stretch(start, end)
+    }
+
+    /// The hyphen shown when a line breaks at `offset`: in the face and
+    /// style of the text before it.
+    fn hyphen_before(&self, offset: usize) -> Option<Shaped> {
+        let before = offset.checked_sub(1)?;
+        let index = self.items.partition_point(|i| i.range.end <= before);
+        let item = self.items.get(index)?;
+        *self.hyphens[index].get_or_init(|| {
+            let face = self.fonts.face(item.face);
+            // The hyphen, U+2010, where the face has it; the hyphen-minus
+            // otherwise.
+            let hyphen = if face.has('\u{2010}') {
+                "\u{2010}"
+            } else {
+                "-"
+            };
+            let glyphs = shape::shape(
+                self.fonts,
+                hyphen,
+                0..hyphen.len(),
+                &self.paragraph.spans[item.span],
+                item.face,
+                item.level,
+                item.script,
+            );
+            glyphs.first().map(|g| Shaped {
+                advance: glyphs.iter().map(|g| g.advance).sum(),
+                inserted: true,
+                ..*g
             })
-            .sum()
+        })
     }
 }
 
@@ -411,6 +543,8 @@ fn build_line(
     bidi: &Bidi<'_>,
     graphemes: &[usize],
     range: Range<usize>,
+    kind: Kind,
+    stretch: bool,
     top: i64,
 ) -> Line {
     let (fonts, paragraph) = (shaping.fonts, shaping.paragraph);
@@ -418,7 +552,7 @@ fn build_line(
     let levels = bidi.line_levels(range.clone());
     let level_at = |offset: usize| levels[offset - range.start];
 
-    // The items' parts on this line, shaped as `Shaping::width` measured
+    // The items' parts on this line, shaped as `Shaping::measure` measured
     // them, then split where rule L1 changed levels: whitespace that now
     // runs the paragraph's way is shaped again in that direction.
     let mut pieces: Vec<Piece> = Vec::new();
@@ -459,10 +593,30 @@ fn build_line(
         }
     }
 
-    // Left to right, and how wide: the text, and the spaces hanging at its
-    // end.
-    let order = locale::visual_order(&pieces.iter().map(|p| p.level).collect::<Vec<_>>());
+    // A hyphen where a word breaks: in place of a soft hyphen's invisible
+    // glyph, or after the line's last character.
+    let hyphen = kind.shows_hyphen()
+        && shaping
+            .hyphen_before(range.end)
+            .is_some_and(|glyph| add_hyphen(&mut pieces, range.end, kind, glyph));
+
     let end = trim(text, range.clone());
+    // Tabs at their stops.
+    if !shaping.tabs_in(range.start, end).is_empty() {
+        let mut advances = vec![0; range.len()];
+        for g in pieces
+            .iter()
+            .flat_map(|p| &p.glyphs)
+            .filter(|g| !g.inserted)
+        {
+            advances[g.cluster - range.start] += g.advance;
+        }
+        for (t, a) in shaping.tab_advances(range.start, end, |o| advances[o - range.start]) {
+            set_advance(&mut pieces, t, a);
+        }
+    }
+
+    // How wide: the text, and the spaces hanging at its end.
     let total: i64 = pieces
         .iter()
         .flat_map(|p| &p.glyphs)
@@ -471,15 +625,26 @@ fn build_line(
     let hang: i64 = pieces
         .iter()
         .flat_map(|p| &p.glyphs)
-        .filter(|g| g.cluster >= end)
+        .filter(|g| !g.inserted && g.cluster >= end)
         .map(|g| g.advance)
         .sum();
-    let width = total - hang;
+    let mut width = total - hang;
+    if stretch && width < paragraph.width {
+        width += justify(
+            &mut pieces,
+            shaping,
+            range.start,
+            end,
+            paragraph.width - width,
+        );
+    }
+    // Left to right, aligned.
+    let order = locale::visual_order(&pieces.iter().map(|p| p.level).collect::<Vec<_>>());
     let rtl = bidi.paragraph_level() % 2 == 1;
     let free = paragraph.width - width;
     let text_x = match (paragraph.align, rtl) {
-        (Align::Start, false) | (Align::End, true) => 0,
-        (Align::Start, true) | (Align::End, false) => free,
+        (Align::Start | Align::Justify, false) | (Align::End, true) => 0,
+        (Align::Start | Align::Justify, true) | (Align::End, false) => free,
         (Align::Center, _) => free.div_euclid(2),
     };
     // Hanging spaces are at the line's end: the right in a left-to-right
@@ -501,6 +666,7 @@ fn build_line(
                     y: -g.y_offset,
                     advance: g.advance,
                     cluster: g.cluster,
+                    hyphen: g.inserted,
                 });
             }
             pen += g.advance;
@@ -546,9 +712,116 @@ fn build_line(
         height: ascent + descent,
         x: text_x,
         width,
+        hyphen,
         runs,
         cells,
     }
+}
+
+/// Puts `hyphen` at the end of the line ending at `end`: in place of the
+/// glyphs of the soft hyphen just before `end`, or after the line's last
+/// character, at the end of its piece in the text's order. Whether there
+/// was a piece to put it in.
+fn add_hyphen(pieces: &mut [Piece], end: usize, kind: Kind, hyphen: Shaped) -> bool {
+    let soft = kind == Kind::Soft;
+    let cluster = if soft { end - '\u{ad}'.len_utf8() } else { end };
+    let last = end - 1;
+    let Some(piece) = pieces
+        .iter_mut()
+        .find(|p| p.range.start <= last && last < p.range.end)
+    else {
+        return false;
+    };
+    if soft {
+        piece.glyphs.retain(|g| g.cluster != cluster);
+    }
+    let glyph = Shaped {
+        cluster,
+        inserted: !soft,
+        ..hyphen
+    };
+    if piece.level % 2 == 1 {
+        piece.glyphs.insert(0, glyph);
+    } else {
+        piece.glyphs.push(glyph);
+    }
+    true
+}
+
+/// Makes the cluster at `offset` `advance` wide: its first glyph takes it
+/// all.
+fn set_advance(pieces: &mut [Piece], offset: usize, advance: i64) {
+    let mut first = true;
+    for g in pieces
+        .iter_mut()
+        .flat_map(|p| &mut p.glyphs)
+        .filter(|g| g.cluster == offset && !g.inserted)
+    {
+        g.advance = if first { advance } else { 0 };
+        first = false;
+    }
+}
+
+/// Stretches the line from `start`, whose text ends at `end`, by `slack`
+/// at its gaps after its last tab, each in proportion to how much it
+/// stretches: the space goes on a space's glyph, or on the glyph of the
+/// character before a gap between Chinese or Japanese characters. What
+/// doesn't divide evenly goes a unit at a time to the first gaps. Returns
+/// how much it stretched.
+fn justify(
+    pieces: &mut [Piece],
+    shaping: &Shaping<'_>,
+    start: usize,
+    end: usize,
+    slack: i64,
+) -> i64 {
+    let from = shaping.tabs_in(start, end).last().map_or(start, |&t| t + 1);
+    let mut gaps: Vec<(usize, i64)> = shaping
+        .glue
+        .on_line(from, end)
+        .iter()
+        .map(|g| (g.grow, g.stretch.max(0)))
+        .collect();
+    gaps.sort_by_key(|&(grow, _)| grow);
+    let total: i64 = gaps.iter().map(|&(_, s)| s).sum();
+    if total <= 0 {
+        return 0;
+    }
+    let mut extra: Vec<(usize, i64)> = gaps
+        .iter()
+        .map(|&(grow, s)| {
+            let share = i128::from(slack) * i128::from(s) / i128::from(total);
+            (grow, share as i64)
+        })
+        .collect();
+    let mut left = slack - extra.iter().map(|&(_, e)| e).sum::<i64>();
+    for (_, e) in &mut extra {
+        if left <= 0 {
+            break;
+        }
+        *e += 1;
+        left -= 1;
+    }
+    let mut stretched = 0;
+    for (grow, e) in extra {
+        let Some(piece) = pieces.iter_mut().find(|p| p.range.contains(&grow)) else {
+            continue;
+        };
+        // The cluster's last glyph in the text's order takes it.
+        let rtl = piece.level % 2 == 1;
+        let mut found = piece
+            .glyphs
+            .iter()
+            .enumerate()
+            .filter(|(_, g)| g.cluster == grow && !g.inserted)
+            .map(|(k, _)| k);
+        let k = if rtl { found.next() } else { found.next_back() };
+        if let Some(k) = k {
+            piece.glyphs[k].advance += e;
+            stretched += e;
+        }
+    }
+    stretched
 }
 
 /// Whether `glyphs`, shaping `item`, can be cut at `offset` without shaping
@@ -576,7 +849,7 @@ fn span_at(spans: &[Span], offset: usize) -> usize {
 
 /// The boundaries in `graphemes`, which are sorted, after `start` and up to
 /// `end`.
-fn between(graphemes: &[usize], start: usize, end: usize) -> &[usize] {
+pub(crate) fn between(graphemes: &[usize], start: usize, end: usize) -> &[usize] {
     let from = graphemes.partition_point(|&g| g <= start);
     let to = graphemes.partition_point(|&g| g <= end);
     &graphemes[from..to.max(from)]
@@ -584,7 +857,9 @@ fn between(graphemes: &[usize], start: usize, end: usize) -> &[usize] {
 
 /// `piece`'s graphemes, left to right, with the piece's left edge at `x`.
 /// A cluster of several graphemes, such as a ligature, is shared evenly
-/// between them. Hard breaks have no cell.
+/// between them. Hard breaks have no cell, and a hyphen layout added is
+/// part of the cell of the grapheme before it, so the caret at the line's
+/// end stands after it.
 fn piece_cells(text: &str, graphemes: &[usize], piece: &Piece, x: i64) -> Vec<Cell> {
     let rtl = piece.level % 2 == 1;
     // Clusters left to right, with their extents.
@@ -592,8 +867,13 @@ fn piece_cells(text: &str, graphemes: &[usize], piece: &Piece, x: i64) -> Vec<Ce
     let mut pen = x;
     for g in &piece.glyphs {
         match clusters.last_mut() {
+            // A hyphen ending a left-to-right piece.
+            Some((_, _, right)) if g.inserted => *right += g.advance,
+            // One starting a right-to-left piece: the first cluster takes it.
+            None if g.inserted => {}
             Some((cluster, _, right)) if *cluster == g.cluster => *right += g.advance,
-            _ => clusters.push((g.cluster, pen, pen + g.advance)),
+            Some(_) => clusters.push((g.cluster, pen, pen + g.advance)),
+            None => clusters.push((g.cluster, x, pen + g.advance)),
         }
         pen += g.advance;
     }

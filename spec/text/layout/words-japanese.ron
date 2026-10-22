@@ -1,0 +1,11 @@
+// Japanese puts no spaces between words: they come from ICU4X's
+// dictionary of Japanese, so moving by words stops after こんにちは and
+// after 世界, and a double click selects either.
+(
+    text: "こんにちは世界。",
+    style: (family: "Source Serif 4", language: "ja"),
+    width: 400,
+    lines: [(text: "こんにちは世界。")],
+    carets: [(from: "0>", by: NextWord, visits: ["5<", "7<", "8<"])],
+    units: [("2>", Word, 0, 5), ("6>", Word, 5, 7)],
+)

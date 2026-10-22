@@ -1,0 +1,16 @@
+// Justified Hebrew stretches its spaces, and its lines meet both edges;
+// the last sits at the start, the right.
+(
+    text: "שלום עולם, זהו טקסט ארוך יותר שנועד לבדוק יישור לשני הצדדים בעברית.",
+    style: (family: "Source Serif 4", language: "he"),
+    width: 100,
+    align: Justify,
+    paragraph: Rtl,
+    lines: [
+        (text: "שלום עולם, זהו ", width: 1270000),
+        (text: "טקסט ארוך יותר ", width: 1270000),
+        (text: "שנועד לבדוק ", width: 1270000),
+        (text: "יישור לשני הצדדים ", width: 1270000),
+        (text: "בעברית."),
+    ],
+)

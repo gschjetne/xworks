@@ -1,0 +1,11 @@
+// Norwegian Nynorsk: its exceptions break "betre" bet-re.
+(
+    text: "Ja betre",
+    style: (family: "Source Serif 4", language: "nn"),
+    width: 34,
+    hyphenate: true,
+    lines: [
+        (text: "Ja bet", hyphen: true),
+        (text: "re", hyphen: false),
+    ],
+)

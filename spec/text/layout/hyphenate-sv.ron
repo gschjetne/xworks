@@ -1,0 +1,12 @@
+// Swedish: av-stav-ning, sjuk-skö-ters-kor.
+(
+    text: "Avstavning för sjuksköterskor",
+    style: (family: "Source Serif 4", language: "sv"),
+    width: 70,
+    hyphenate: true,
+    lines: [
+        (text: "Avstavning ", hyphen: false),
+        (text: "för sjukskö", hyphen: true),
+        (text: "terskor", hyphen: false),
+    ],
+)

@@ -1,0 +1,12 @@
+// German, by the 1996 orthography's patterns: Sil-ben-tren-nung.
+(
+    text: "Die Silbentrennung ist schwer",
+    style: (family: "Source Serif 4", language: "de"),
+    width: 60,
+    hyphenate: true,
+    lines: [
+        (text: "Die Silben", hyphen: true),
+        (text: "trennung ", hyphen: false),
+        (text: "ist schwer", hyphen: false),
+    ],
+)

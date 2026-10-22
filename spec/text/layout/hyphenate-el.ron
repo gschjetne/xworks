@@ -1,0 +1,13 @@
+// Monotonic Greek, whose patterns may leave a single letter:
+// συλ-λα-βι-σμός.
+(
+    text: "Ο συλλαβισμός των λέξεων",
+    style: (family: "Source Serif 4", language: "el"),
+    width: 60,
+    hyphenate: true,
+    lines: [
+        (text: "Ο συλλαβι", hyphen: true),
+        (text: "σμός των ", hyphen: false),
+        (text: "λέξεων", hyphen: false),
+    ],
+)

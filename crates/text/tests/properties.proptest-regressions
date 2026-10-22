@@ -5,3 +5,6 @@
 # It is recommended to check this file in to source control so that
 # everyone who runs the test benefits from these saved cases.
 cc 7c8a9d1d456696c5c15e723c0f212a8a590dc9958b627e25a0d613c1db4774bd # shrinks to (text, width, direction, align, bold) = ("עולם ", 9.44200518964192, None, Start, true)
+cc cc787e9a18545d78c9814dcd853bdcc565b179456c33afd39ea05ece27b3673d # shrinks to (text, width, direction, align, bold) = ("hyphenation the 日本語の\tAntidisestablishment the ", 299.20151387051385, Some(Rtl), Start, true)
+cc b658a99a7d0850615ad6be355538407421da977e7018654fe35f79cf35cf25ba # shrinks to (text, width, direction, align, bold) = ("e\u{301}\t« Antidisestablishment the ", 67.11634362060151, Some(Rtl), Start, true)
+cc 58feae2c35bed008e680273f52831a68f7ab44f8375ae7165feb1eb67c80fc8d # shrinks to (text, width, direction, align, bold) = ("Antidisestablishment the the ", 25.07809675285039, None, Justify, true)

@@ -1,0 +1,11 @@
+// The text of japanese-small-kana, of no language: by UAX #14's default,
+// ちょっと stays together.
+(
+    text: "あいうえおちょっと",
+    style: (family: "Source Serif 4"),
+    width: 72,
+    lines: [
+        (text: "あいうえお"),
+        (text: "ちょっと"),
+    ],
+)

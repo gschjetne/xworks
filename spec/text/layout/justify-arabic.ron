@@ -1,0 +1,14 @@
+// Justified Arabic stretches its spaces only, not its letters.
+(
+    text: "مرحبا بالعالم، هذا نص عربي أطول قليلا لاختبار ضبط السطور على الجانبين.",
+    style: (family: "Source Serif 4", language: "ar"),
+    width: 100,
+    align: Justify,
+    paragraph: Rtl,
+    lines: [
+        (text: "مرحبا بالعالم، هذا ", width: 1270000),
+        (text: "نص عربي أطول قليلا ", width: 1270000),
+        (text: "لاختبار ضبط السطور ", width: 1270000),
+        (text: "على الجانبين."),
+    ],
+)

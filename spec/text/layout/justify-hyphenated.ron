@@ -1,0 +1,17 @@
+// Justified and hyphenated: the optimal breaks use TeX's US English
+// patterns, type-set-ting, where a line would otherwise stretch too far.
+// A line that ends in a hyphen says so; the hyphen isn't in the text.
+(
+    text: "The quick brown fox jumps over the lazy dog. Typesetting justified paragraphs well needs hyphenation and optimal line breaking.",
+    style: (family: "Source Serif 4", language: "en-US"),
+    width: 150,
+    align: Justify,
+    hyphenate: true,
+    lines: [
+        (text: "The quick brown fox jumps ", width: 1905000, hyphen: false),
+        (text: "over the lazy dog. Typeset", width: 1905000, hyphen: true),
+        (text: "ting justified paragraphs ", width: 1905000, hyphen: false),
+        (text: "well needs hyphenation ", width: 1905000, hyphen: false),
+        (text: "and optimal line breaking.", hyphen: false),
+    ],
+)

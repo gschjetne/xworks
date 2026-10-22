@@ -1,0 +1,12 @@
+// In Japanese, a line may start with a small kana: ょ goes down alone, as
+// CSS's `normal` line breaking and Japanese word processors allow. Text of
+// no language keeps it with the kana before it (japanese-small-kana-und).
+(
+    text: "あいうえおちょっと",
+    style: (family: "Source Serif 4", language: "ja"),
+    width: 72,
+    lines: [
+        (text: "あいうえおち", width: 914400),
+        (text: "ょっと"),
+    ],
+)

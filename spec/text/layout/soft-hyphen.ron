@@ -1,0 +1,26 @@
+// A soft hyphen (U+00AD) is invisible, but where a line breaks at it, it
+// shows as a hyphen, whether or not words are hyphenated. A word too wide
+// for a line, with no soft hyphen in it, breaks between letters.
+(
+    text: "Soft\u{ad}hyphen\u{ad}ation everywhere",
+    style: (family: "Source Serif 4", language: "en"),
+    width: 50,
+    lines: [
+        (text: "Soft\u{ad}", hyphen: true),
+        (text: "hyphen\u{ad}", hyphen: true),
+        (text: "ation ", hyphen: false),
+        (text: "everywh", hyphen: false),
+        (text: "ere", hyphen: false),
+    ],
+    carets: [
+        (
+            from: "0>",
+            by: Right,
+            visits: [
+                "1<", "2<", "3<", "4<", "5<", "6<", "7<", "8<", "9<", "10<",
+                "11<", "12<", "13<", "14<", "15<", "16<", "17<", "18<", "19<",
+                "20<", "21<", "22<", "23<", "24<", "25<", "26<", "27<", "28<",
+            ],
+        ),
+    ],
+)

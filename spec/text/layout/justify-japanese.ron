@@ -1,0 +1,16 @@
+// Justified Japanese stretches the gaps between its characters; the last
+// line sits at the start. A line may start with a small kana, as Japanese
+// allows (japanese-small-kana).
+(
+    text: "日本語のテキストは単語の間で改行されます。ちょっと待ってください。",
+    style: (family: "Source Serif 4", language: "ja"),
+    width: 100,
+    align: Justify,
+    lines: [
+        (text: "日本語のテキスト", width: 1270000),
+        (text: "は単語の間で改行", width: 1270000),
+        (text: "されます。ちょっ", width: 1270000),
+        (text: "と待ってくださ", width: 1270000),
+        (text: "い。", width: 304800),
+    ],
+)

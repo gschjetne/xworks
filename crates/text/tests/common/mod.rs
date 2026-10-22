@@ -3,10 +3,10 @@
 
 #![allow(dead_code, reason = "each test uses what it needs of these")]
 
-use std::sync::OnceLock;
+use std::sync::{Arc, OnceLock};
 
 use serde::Deserialize;
-use text::{FontSpec, Fonts, Style, units};
+use text::{FontSpec, Fonts, Hyphenation, Hyphenator, Language, Style, units};
 
 /// The bundled fonts, loaded once, with their fallbacks.
 pub(crate) fn fonts() -> &'static Fonts {
@@ -22,6 +22,31 @@ pub(crate) fn fonts() -> &'static Fonts {
             ron::from_str(&testkit::fonts::spec().expect("spec/text/fonts.ron")).expect("valid");
         fonts.set_fallbacks(&spec);
         fonts
+    })
+}
+
+/// Every language's hyphenation patterns (`spec/text/hyphenation.ron`),
+/// loaded once.
+pub(crate) fn hyphenation() -> &'static Hyphenation {
+    static HYPHENATION: OnceLock<Hyphenation> = OnceLock::new();
+    HYPHENATION.get_or_init(|| {
+        let mut all = Hyphenation::new();
+        for loaded in testkit::hyphenation::load().expect("the hyphenation patterns") {
+            let l = &loaded.language;
+            let hyphenator = Arc::new(Hyphenator::parse(
+                &loaded.patterns,
+                &loaded.exceptions,
+                l.left,
+                l.right,
+            ));
+            for tag in &l.tags {
+                all.insert(
+                    &Language::parse(tag).expect("a language tag"),
+                    hyphenator.clone(),
+                );
+            }
+        }
+        all
     })
 }
 

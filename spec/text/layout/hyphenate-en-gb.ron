@@ -1,0 +1,13 @@
+// British English hyphenates hy-phen-a-tion and ma-nu-scripts, by its
+// own patterns: the text of hyphenate-en-us breaks differently.
+(
+    text: "The hyphenation of manuscripts",
+    style: (family: "Source Serif 4", language: "en-GB"),
+    width: 80,
+    hyphenate: true,
+    lines: [
+        (text: "The hyphena", hyphen: true),
+        (text: "tion of manu", hyphen: true),
+        (text: "scripts", hyphen: false),
+    ],
+)

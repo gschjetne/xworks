@@ -1,0 +1,12 @@
+// Russian: по-мо-га-ют.
+(
+    text: "Переносы слов помогают",
+    style: (family: "Source Serif 4", language: "ru"),
+    width: 70,
+    hyphenate: true,
+    lines: [
+        (text: "Переносы ", hyphen: false),
+        (text: "слов помо", hyphen: true),
+        (text: "гают", hyphen: false),
+    ],
+)

@@ -31,7 +31,8 @@ impl Layout {
     /// The paragraph drawn with its top left at `origin`: a glyph run for
     /// each of its lines' runs, in reading order, in `color` of the run's
     /// span. Each glyph
-    /// carries the text its cluster shows, and each run its language and,
+    /// carries the text its cluster shows (a hyphen layout added, a soft
+    /// hyphen after the run's text), and each run its language and,
     /// for a paragraph that's `block` of a document's structure, where its
     /// text belongs.
     pub fn paint(
@@ -75,13 +76,35 @@ impl Layout {
                     + self.text[run.range.clone()]
                         .trim_end_matches(is_hard_break)
                         .len();
-                let mut starts: Vec<usize> = run.glyphs.iter().map(|g| g.cluster).collect();
+                let mut text = self.text[run.range.clone()].to_string();
+                // A hyphen layout added where it broke a word reads as a
+                // soft hyphen, as PDF asks: it's no character of the text,
+                // and a reader joins the word again.
+                let hyphen = run.glyphs.iter().any(|g| g.hyphen).then(|| {
+                    let at = text.len();
+                    text.push('\u{ad}');
+                    at..text.len()
+                });
+                let mut starts: Vec<usize> = run
+                    .glyphs
+                    .iter()
+                    .filter(|g| !g.hyphen)
+                    .map(|g| g.cluster)
+                    .collect();
                 starts.sort_unstable();
                 starts.dedup();
                 let glyphs = run
                     .glyphs
                     .iter()
                     .map(|g| {
+                        let at = Point::new(origin.x + g.x, origin.y + line.baseline + g.y);
+                        if g.hyphen {
+                            return Glyph {
+                                id: g.id,
+                                at,
+                                text: hyphen.clone().unwrap_or_default(),
+                            };
+                        }
                         let next = starts
                             .get(starts.partition_point(|&s| s <= g.cluster))
                             .copied()
@@ -90,7 +113,7 @@ impl Layout {
                             .max(g.cluster);
                         Glyph {
                             id: g.id,
-                            at: Point::new(origin.x + g.x, origin.y + line.baseline + g.y),
+                            at,
                             text: g.cluster - run.range.start..next - run.range.start,
                         }
                     })
@@ -106,7 +129,7 @@ impl Layout {
                         block,
                         offset: run.range.start,
                     }),
-                    text: self.text[run.range.clone()].to_string(),
+                    text,
                     glyphs,
                 }));
             }
