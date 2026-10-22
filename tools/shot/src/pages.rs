@@ -294,3 +294,41 @@ pub fn document_pages() -> canvas::Pages {
     let document = story::document(&paragraphs);
     canvas::automatic(&document, &sheet, &style, fonts())
 }
+
+/// The editor's window after the tour session (`spec/sessions/tour.ron`),
+/// with a menu open if `menu` names one, as a display list.
+fn editor_after_tour(menu: Option<(f64, f64)>) -> Page {
+    let source = testkit::specs("sessions")
+        .expect("spec/sessions")
+        .into_iter()
+        .find(|(n, _)| n == "tour")
+        .expect("spec/sessions/tour.ron")
+        .1;
+    let mut session = app::session::read(&source).expect("a session");
+    if let Some((x, y)) = menu {
+        session.events.push(app::session::Step::Hover(x, y));
+        session.events.push(app::session::Step::Click(x, y));
+        session
+            .events
+            .push(app::session::Step::Hover(x + 20.0, 41.0));
+    }
+    let root = testkit::workspace_root();
+    // A folder of its own: tests draw scenes in several processes at once.
+    static DRAWN: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = DRAWN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let documents =
+        testkit::scratch_dir(&format!("shot-editor-{}-{n}", std::process::id())).expect("a folder");
+    let res = app::Resources::load(&root, documents, false).expect("resources");
+    let played = app::session::play(std::sync::Arc::new(res), &session).expect("the session plays");
+    played.editor.view()
+}
+
+/// The editor after the tour.
+pub fn editor_page() -> Page {
+    editor_after_tour(None)
+}
+
+/// The editor after the tour, with the Format menu open.
+pub fn editor_menu_page() -> Page {
+    editor_after_tour(Some((110.0, 13.0)))
+}

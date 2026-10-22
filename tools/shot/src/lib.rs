@@ -15,7 +15,9 @@ mod pages;
 
 use testkit::Image;
 
-pub use pages::{document_pages, document_sheet, fonts, shapes_page, text_page};
+pub use pages::{
+    document_pages, document_sheet, editor_menu_page, editor_page, fonts, shapes_page, text_page,
+};
 
 /// A named page, and the resolution it's drawn at.
 pub struct Scene {
@@ -62,6 +64,20 @@ pub fn scenes() -> &'static [Scene] {
             ppi: 48.0,
             page: document_sheet,
             pages: Some(document_pages),
+        },
+        Scene {
+            name: "editor",
+            description: "the editor's window after the tour session, a word selected",
+            ppi: 96.0,
+            page: editor_page,
+            pages: None,
+        },
+        Scene {
+            name: "editor-menu",
+            description: "the editor's window with the Format menu open",
+            ppi: 96.0,
+            page: editor_menu_page,
+            pages: None,
         },
         Scene {
             name: "text",

@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 anyhow.workspace = true
+app.workspace = true
 canvas.workspace = true
 doc.workspace = true
 render-cpu.workspace = true
