@@ -12,11 +12,13 @@
         right: Mm(25),
     ),
     // The first is the default, for paragraphs that name no style or one
-    // that isn't here. Headings keep with the paragraph after them.
+    // that isn't here. Headings, with their level for tagged PDF and
+    // accessibility, keep with the paragraph after them.
     paragraph: [
         (name: "Body", family: "Noto Serif", size: Pt(11), space_after: Pt(6)),
         (
             name: "Heading 1",
+            heading: Some(1),
             family: "Noto Sans",
             size: Pt(20),
             bold: true,
@@ -26,6 +28,7 @@
         ),
         (
             name: "Heading 2",
+            heading: Some(2),
             family: "Noto Sans",
             size: Pt(15),
             bold: true,
@@ -35,6 +38,7 @@
         ),
         (
             name: "Heading 3",
+            heading: Some(3),
             family: "Noto Sans",
             size: Pt(12.5),
             bold: true,

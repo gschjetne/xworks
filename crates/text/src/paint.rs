@@ -1,6 +1,6 @@
 //! A laid-out paragraph as display-list items.
 
-use scene::{Color, Glyph, Glyphs, Item, Point};
+use scene::{Color, Glyph, Glyphs, Item, Point, Source};
 
 use crate::font::Fonts;
 use crate::layout::Layout;
@@ -8,10 +8,19 @@ use crate::shape::is_hard_break;
 
 impl Layout {
     /// The paragraph drawn with its top left at `origin`: a glyph run for
-    /// each of its lines' runs, in `color` of the run's span. Each glyph
-    /// carries the text its cluster shows.
-    pub fn paint(&self, fonts: &Fonts, origin: Point, color: impl Fn(usize) -> Color) -> Vec<Item> {
-        self.paint_lines(fonts, 0..self.lines.len(), origin, color)
+    /// each of its lines' runs, in reading order, in `color` of the run's
+    /// span. Each glyph
+    /// carries the text its cluster shows, and each run its language and,
+    /// for a paragraph that's `block` of a document's structure, where its
+    /// text belongs.
+    pub fn paint(
+        &self,
+        fonts: &Fonts,
+        origin: Point,
+        block: Option<u32>,
+        color: impl Fn(usize) -> Color,
+    ) -> Vec<Item> {
+        self.paint_lines(fonts, 0..self.lines.len(), origin, block, color)
     }
 
     /// `lines` of the paragraph, drawn with the first one's top left at
@@ -22,6 +31,7 @@ impl Layout {
         fonts: &Fonts,
         lines: std::ops::Range<usize>,
         origin: Point,
+        block: Option<u32>,
         color: impl Fn(usize) -> Color,
     ) -> Vec<Item> {
         let mut items = Vec::new();
@@ -30,7 +40,11 @@ impl Layout {
         };
         let origin = Point::new(origin.x, origin.y - top);
         for line in &self.lines[lines] {
-            for run in &line.runs {
+            // In the order they read: they don't overlap, so it changes
+            // nothing drawn, but text written to PDF reads back in order.
+            let mut runs: Vec<_> = line.runs.iter().collect();
+            runs.sort_by_key(|run| run.range.start);
+            for run in runs {
                 if run.glyphs.is_empty() {
                     continue;
                 }
@@ -66,6 +80,11 @@ impl Layout {
                     color: color(run.span),
                     oblique: run.oblique,
                     baseline: origin.y + line.baseline,
+                    language: self.languages.get(run.span).cloned().flatten(),
+                    source: block.map(|block| Source {
+                        block,
+                        offset: run.range.start,
+                    }),
                     text: self.text[run.range.clone()].to_string(),
                     glyphs,
                 }));

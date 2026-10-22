@@ -74,14 +74,31 @@ fn main() -> anyhow::Result<()> {
         if approver.is_some() {
             bail!("goldens are images; approve without --pdf");
         }
-        let pages: Vec<_> = scenes
-            .iter()
-            .flat_map(|scene| match scene.pages {
-                Some(pages) => pages(),
-                None => vec![(scene.page)()],
-            })
-            .collect();
-        let bytes = render_pdf::pdf(&pages, Some("xWorks scenes"))?;
+        // A scene of pages brings their structure; the PDF's structure is
+        // its blocks, one after another.
+        let mut pages = Vec::new();
+        let mut structure = scene::Structure::default();
+        for scene in &scenes {
+            match scene.pages {
+                Some(make) => {
+                    let made = make();
+                    let first = structure.blocks.len() as u32;
+                    structure.blocks.extend(made.structure.blocks);
+                    for mut page in made.pages {
+                        for item in &mut page.items {
+                            if let scene::Item::Glyphs(run) = item
+                                && let Some(source) = &mut run.source
+                            {
+                                source.block += first;
+                            }
+                        }
+                        pages.push(page);
+                    }
+                }
+                None => pages.push((scene.page)()),
+            }
+        }
+        let bytes = render_pdf::pdf(&pages, &structure, Some("xWorks scenes"))?;
         std::fs::create_dir_all(&out).with_context(|| format!("creating {}", out.display()))?;
         let path = out.join("scenes.pdf");
         std::fs::write(&path, bytes).with_context(|| format!("writing {}", path.display()))?;

@@ -192,7 +192,9 @@ pub fn text_page() -> Page {
             },
         );
         page.items
-            .extend(layout.paint(fonts, Point::new(margin, y), |span| para.parts[span].color));
+            .extend(layout.paint(fonts, Point::new(margin, y), None, |span| {
+                para.parts[span].color
+            }));
         y += layout.height + 6 * POINT;
     }
     page
@@ -255,7 +257,7 @@ pub fn shapes_page() -> Page {
 /// The sample document (`spec/documents/m1-sample.ron`) in M1's styles,
 /// its automatic pages side by side on a grey sheet.
 pub fn document_sheet() -> Page {
-    let pages = document_pages();
+    let pages = document_pages().pages;
     let width = pages.first().map_or(0, |p| p.width);
     let height = pages.first().map_or(0, |p| p.height);
     let gap = INCH / 4;
@@ -270,7 +272,7 @@ pub fn document_sheet() -> Page {
 
 /// The sample document (`spec/documents/m1-sample.ron`) in M1's styles,
 /// in automatic pages.
-pub fn document_pages() -> Vec<Page> {
+pub fn document_pages() -> canvas::Pages {
     #[derive(serde::Deserialize)]
     struct Sheet {
         page: canvas::PageStyleSpec,

@@ -69,6 +69,9 @@ pub struct ParagraphStyle {
     /// How its lines are aligned.
     #[serde(default)]
     pub align: Align,
+    /// Its level as a heading, 1 to 6, if it's a heading's style.
+    #[serde(default)]
+    pub heading: Option<u8>,
 }
 
 fn zero() -> Length {
@@ -109,6 +112,8 @@ pub struct ParagraphLayout {
     pub space_after: i64,
     /// Whether it stays on the page where the next paragraph starts.
     pub keep_with_next: bool,
+    /// Its level as a heading, if it's one.
+    pub heading: Option<u8>,
 }
 
 /// `paragraph`'s text as spans: each run of its characters in its style,
@@ -209,6 +214,7 @@ pub fn lay_out_paragraph(
         space_before: style.space_before.units(),
         space_after: style.space_after.units(),
         keep_with_next: style.keep_with_next,
+        heading: style.heading.filter(|level| (1..=6).contains(level)),
     }
 }
 

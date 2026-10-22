@@ -556,7 +556,8 @@ What follows from them:
   paths (AVX2 on x86-64, NEON on Arm) and one for the narrow ones (SSE2,
   and the scalar fallback). Within each, Linux, Windows and macOS draw
   identical pixels, on any number of threads. Goldens therefore render at
-  one pinned level: the scalar fallback, render-cpu's `Level::Portable`,
+  one pinned level (project owner, 2026-10-22, review 64capttj): the
+  scalar fallback, render-cpu's `Level::Portable`,
   which every machine has, Arm included, and which CI checks on Linux,
   Windows and macOS. The screen uses the fastest level the machine has.
 
@@ -567,10 +568,17 @@ which every renderer slants by 12° about its baseline. render-cpu draws
 with `vello_cpu`, single-threaded, so it stays a pure crate; the app runs
 it on its workers. render-pdf writes with krilla (from the Typst project),
 which embeds each font subset to the glyphs used, with a Unicode mapping so
-text can be searched and copied. A PDF holds glyphs in the order they're
-drawn, left to right; readers that apply the bidi algorithm read Arabic and
-Hebrew back in order, others reversed. A tagged PDF, with its reading order
-explicit, comes with accessibility work after M1.
+text can be searched and copied.
+
+**PDF is tagged from M1** (project owner, 2026-10-22, review 64capttj).
+Pages come with the document's structure, its paragraphs and headings in
+reading order, and each glyph run says which block its text belongs to and
+in what language. The PDF's tag tree holds each block once, with its text
+from every page it falls on, in reading order. Text is written in the
+order it reads: a line's runs in logical order, and a right-to-left run's
+glyphs from its right end. So Arabic and Hebrew extract as typed even in
+readers that don't apply the bidi algorithm, and screen readers follow
+the document's structure. Fills and strokes are artifacts, outside it.
 
 ## 11. Security, robustness and licensing
 

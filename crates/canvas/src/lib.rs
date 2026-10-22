@@ -32,7 +32,7 @@
 use std::ops::Range;
 
 use doc::Document;
-use scene::{Color, Page, Point};
+use scene::{Color, Page, Point, Role, Structure};
 use serde::Deserialize;
 use story::{ParagraphLayout, StyleSheet};
 use text::Fonts;
@@ -252,12 +252,34 @@ pub fn draw(
                         fonts,
                         piece.lines.clone(),
                         origin,
+                        Some(piece.block as u32),
                         |_| Color::BLACK,
                     ));
             }
             page
         })
         .collect()
+}
+
+/// The structure of `paragraphs`: each a paragraph or a heading, in order.
+pub fn structure(paragraphs: &[ParagraphLayout]) -> Structure {
+    Structure {
+        language: None,
+        blocks: paragraphs
+            .iter()
+            .map(|p| p.heading.map_or(Role::Paragraph, Role::Heading))
+            .collect(),
+    }
+}
+
+/// A document drawn in pages, and its structure, which the pages' glyph
+/// runs point into.
+#[derive(Clone, Debug)]
+pub struct Pages {
+    /// The pages.
+    pub pages: Vec<Page>,
+    /// The document's blocks in reading order.
+    pub structure: Structure,
 }
 
 /// `document`'s story in automatic pages of `style`: laid out, poured and
@@ -267,10 +289,13 @@ pub fn automatic(
     sheet: &StyleSheet,
     style: &PageStyle,
     fonts: &Fonts,
-) -> Vec<Page> {
+) -> Pages {
     let paragraphs = story::lay_out(document, sheet, fonts, style.body_width());
     let pages = paginate(style.body_height(), &blocks(&paragraphs));
-    draw(style, &paragraphs, &pages, fonts)
+    Pages {
+        pages: draw(style, &paragraphs, &pages, fonts),
+        structure: structure(&paragraphs),
+    }
 }
 
 #[cfg(test)]

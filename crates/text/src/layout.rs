@@ -77,6 +77,8 @@ pub struct Layout {
     pub(crate) direction: Direction,
     /// Its text.
     pub(crate) text: String,
+    /// Each span's language, as a tag; `None` where it isn't known.
+    pub(crate) languages: Vec<Option<String>>,
     /// Where its graphemes begin and end, from 0 to the text's length.
     pub(crate) graphemes: Vec<usize>,
     /// The offsets just after hard line breaks.
@@ -223,6 +225,11 @@ pub fn layout(fonts: &Fonts, paragraph: &Paragraph<'_>) -> Layout {
         height: top,
         direction: bidi.direction(),
         text: text.to_string(),
+        languages: paragraph
+            .spans
+            .iter()
+            .map(|s| (s.style.language != Language::und()).then(|| s.style.language.to_string()))
+            .collect(),
         graphemes,
         hard_breaks,
     }

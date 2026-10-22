@@ -234,18 +234,21 @@ fonts stay fetched, the arrow keys move the caret on screen, italic in a
 family without an italic face is slanted, and Noto Serif falls back to Noto
 Serif CJK.
 
-**Stage 6 is built (2026-10-21); its goldens await approval.** `scene` is
+**Stage 6 is done (2026-10-22).** The owner approved its goldens and
+chose tagged PDF in M1 (review 64capttj); PDFs now carry the document's
+structure, and right-to-left text extracts as typed. `scene` is
 the display list: pages of fills, strokes and glyph runs that carry their
 text. `text` paints laid-out paragraphs into it. render-cpu draws it with
 `vello_cpu`, at a portable scalar level for tests and goldens and the
 machine's fastest for the screen; the approved `filled-rect` golden still
 matches, drawn this way. render-pdf writes it with krilla: fonts embedded
-and subset, page sizes exact, the same bytes every time, and text that
-extracts back as drawn, which for left-to-right text is as typed. `shot`
-draws two new scenes for approval, shapes and text in every M1 script, and
+and subset, page sizes exact, the same bytes every time, tagged with the
+document's paragraphs and headings, and text that extracts back as typed in
+every script. `shot` draws the shapes and text scenes, now goldens, and
 writes any scenes as PDF.
 
-**Stage 7 is built (2026-10-22); its golden awaits approval.** `story`
+**Stage 7 is done (2026-10-22).** The owner approved its golden and kept
+M1's styles (review 0y4qbpmt). `story`
 reads a document's paragraphs as styled text: paragraph styles from
 `spec/styles/m1.ron` (Body, Heading 1 to 3), with bold, italic, font,
 size and language over them. `canvas` paginates: paragraphs break between
@@ -256,7 +259,9 @@ pages. Tests check that its text stays within the margins and that an
 edit leaves every page before it as it was, on the sample and in property
 tests over random documents.
 
-**Stage 8 is built (2026-10-22).** `spec/format/` specifies schema 1 of
+**Stage 8 is done (2026-10-22).** The owner chose a binary encoding inside
+the file, kept commits durable against program crashes, and embeds only
+fonts that aren't bundled (review dfx97ttt). `spec/format/` specifies schema 1 of
 the `.xw` file, and `store` reads and writes it: new files are renamed
 into place whole, every transaction is appended as it's committed with a
 snapshot every hundred, and opening starts from the latest snapshot and

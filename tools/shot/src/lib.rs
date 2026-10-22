@@ -28,8 +28,8 @@ pub struct Scene {
     /// Makes its page.
     pub page: fn() -> scene::Page,
     /// For a scene that shows several pages on one sheet: the pages
-    /// themselves, for PDF.
-    pub pages: Option<fn() -> Vec<scene::Page>>,
+    /// themselves and their structure, for PDF.
+    pub pages: Option<fn() -> canvas::Pages>,
 }
 
 impl Scene {

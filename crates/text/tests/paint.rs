@@ -44,7 +44,7 @@ fn glyphs_carry_the_text_they_show() {
     );
     let origin = Point::new(1000, 2000);
     let colors = [Color::BLACK, Color::rgb(200, 0, 0)];
-    let items = layout.paint(fonts(), origin, |span| colors[span]);
+    let items = layout.paint(fonts(), origin, Some(7), |span| colors[span]);
 
     // Every character but the line separator is in some glyph's text, and
     // runs together hold the text in order.
@@ -75,9 +75,18 @@ fn glyphs_carry_the_text_they_show() {
                 shown[start + b] = true;
             }
         }
-        // Spans keep their colours.
+        // Spans keep their colours and languages, and runs say where
+        // their text starts in the block.
         let span = if start < split { 0 } else { 1 };
         assert_eq!(run.color, colors[span]);
+        assert_eq!(run.language.as_deref(), Some(["en", "ar"][span]));
+        assert_eq!(
+            run.source,
+            Some(scene::Source {
+                block: 7,
+                offset: start
+            })
+        );
     }
     runs.sort();
     let joined: String = runs.iter().map(|(_, t)| *t).collect();
@@ -123,7 +132,7 @@ fn some_lines_paint_from_their_own_top() {
     );
     assert!(layout.lines.len() >= 3);
     let origin = Point::new(0, 1_000_000);
-    let items = layout.paint_lines(fonts(), 1..3, origin, |_| Color::BLACK);
+    let items = layout.paint_lines(fonts(), 1..3, origin, None, |_| Color::BLACK);
     let want: Vec<i64> = layout.lines[1..3]
         .iter()
         .map(|l| origin.y + l.baseline - layout.lines[1].top)
@@ -139,7 +148,7 @@ fn some_lines_paint_from_their_own_top() {
     assert_eq!(got, want);
     assert!(
         layout
-            .paint_lines(fonts(), 9..9, origin, |_| Color::BLACK)
+            .paint_lines(fonts(), 9..9, origin, None, |_| Color::BLACK)
             .is_empty()
     );
 }

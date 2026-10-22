@@ -1,18 +1,25 @@
 //! PDF output of display lists, with fonts embedded and subset; printing goes
 //! through it (docs/ARCHITECTURE.md, section 10). It writes with krilla.
 //!
-//! [`pdf`] writes [`scene::Page`]s as a PDF document, a page each.
+//! [`pdf`] writes [`scene::Page`]s as a tagged PDF document, a page each,
+//! with the document's [`scene::Structure`]: its paragraphs and headings in
+//! reading order, each holding the text that belongs to it, wherever it's
+//! drawn, with its language.
 //!
 //! Invariants:
 //!
 //! - Text stays text: glyphs are drawn from fonts embedded in the file,
 //!   subset to the glyphs used, with the text each shows, so the PDF can
 //!   be searched and copied from.
+//! - Text is written in the order it reads, right-to-left runs included,
+//!   so it reads back in that order in any reader; fills and strokes are
+//!   artifacts, outside the reading order.
 //! - Each page is its display list's size, 12 700 layout units to the
 //!   point.
 //! - The same pages give the same bytes, every time.
 
 use std::collections::HashMap;
+use std::num::NonZeroU16;
 use std::ops::Range;
 
 use krilla::color::rgb;
@@ -20,9 +27,12 @@ use krilla::geom::{PathBuilder, Point, Transform};
 use krilla::num::NormalizedF32;
 use krilla::page::PageSettings;
 use krilla::paint::{Fill, FillRule, Stroke};
+use krilla::tagging::{
+    Artifact, ArtifactType, ContentTag, Identifier, SpanTag, Tag, TagGroup, TagKind, TagTree,
+};
 use krilla::text::{Font, GlyphId};
 use krilla::{Data, Document};
-use scene::{Color, Item, Page, Path, Segment};
+use scene::{Color, Item, Page, Path, Role, Segment, Structure};
 
 /// Why a PDF couldn't be written.
 #[derive(Debug, thiserror::Error)]
@@ -55,12 +65,22 @@ fn pt(units: i64) -> f32 {
     units as f32 / POINT
 }
 
-/// `pages` as a PDF document, titled `title` if given.
-pub fn pdf(pages: &[Page], title: Option<&str>) -> Result<Vec<u8>, Error> {
+/// `pages` as a tagged PDF document of `structure`, titled `title` if
+/// given. Glyph runs whose source isn't in the structure become paragraphs
+/// of their own, after it.
+pub fn pdf(pages: &[Page], structure: &Structure, title: Option<&str>) -> Result<Vec<u8>, Error> {
     let mut document = Document::new();
+    let mut metadata = krilla::metadata::Metadata::new();
     if let Some(title) = title {
-        document.set_metadata(krilla::metadata::Metadata::new().title(title.to_string()));
+        metadata = metadata.title(title.to_string());
     }
+    if let Some(language) = &structure.language {
+        metadata = metadata.language(language.clone());
+    }
+    document.set_metadata(metadata);
+    // What each block holds, by where in its text it starts.
+    let mut blocks: Vec<Vec<(usize, Identifier)>> = vec![Vec::new(); structure.blocks.len()];
+    let mut loose: Vec<Identifier> = Vec::new();
     let mut fonts: HashMap<(usize, u32), Font> = HashMap::new();
     for (index, page) in pages.iter().enumerate() {
         let settings =
@@ -77,14 +97,23 @@ pub fn pdf(pages: &[Page], title: Option<&str>) -> Result<Vec<u8>, Error> {
                     let Some(path) = krilla_path(path) else {
                         continue;
                     };
+                    surface.start_tagged(ContentTag::Artifact(Artifact::new(
+                        ArtifactType::Layout,
+                        None,
+                    )));
                     surface.set_stroke(None);
                     surface.set_fill(Some(fill(*color)));
                     surface.draw_path(&path);
+                    surface.end_tagged();
                 }
                 Item::Stroke { path, width, color } => {
                     let Some(path) = krilla_path(path) else {
                         continue;
                     };
+                    surface.start_tagged(ContentTag::Artifact(Artifact::new(
+                        ArtifactType::Layout,
+                        None,
+                    )));
                     surface.set_fill(None);
                     surface.set_stroke(Some(Stroke {
                         paint: rgb::Color::new(color.r, color.g, color.b).into(),
@@ -93,9 +122,10 @@ pub fn pdf(pages: &[Page], title: Option<&str>) -> Result<Vec<u8>, Error> {
                         ..Stroke::default()
                     }));
                     surface.draw_path(&path);
+                    surface.end_tagged();
                 }
                 Item::Glyphs(run) => {
-                    let Some(first) = run.glyphs.first() else {
+                    let (Some(left), Some(right)) = (run.glyphs.first(), run.glyphs.last()) else {
                         continue;
                     };
                     let font = match fonts.get(&run.font.key()) {
@@ -108,22 +138,32 @@ pub fn pdf(pages: &[Page], title: Option<&str>) -> Result<Vec<u8>, Error> {
                         }
                     };
                     let baseline = pt(run.baseline);
+                    // In the order they read: a right-to-left run, whose
+                    // text runs backwards along it, is written from its
+                    // right end.
+                    let mut order: Vec<&scene::Glyph> = run.glyphs.iter().collect();
+                    if right.text.start < left.text.start {
+                        order.reverse();
+                    }
+                    let first = order[0];
                     // In ems: krilla scales them by the size itself.
                     let em = run.size.max(1) as f32;
-                    let glyphs: Vec<PdfGlyph> = run
-                        .glyphs
+                    let glyphs: Vec<PdfGlyph> = order
                         .iter()
                         .enumerate()
                         .map(|(i, g)| PdfGlyph {
                             id: GlyphId::new(g.id),
                             text: g.text.clone(),
-                            advance: run
-                                .glyphs
+                            advance: order
                                 .get(i + 1)
                                 .map_or(0.0, |next| (next.at.x - g.at.x) as f32 / em),
                             rise: (run.baseline - g.at.y) as f32 / em,
                         })
                         .collect();
+                    let id = surface.start_tagged(ContentTag::Span(SpanTag {
+                        lang: run.language.as_deref(),
+                        ..SpanTag::empty()
+                    }));
                     surface.set_stroke(None);
                     surface.set_fill(Some(fill(run.color)));
                     if run.oblique {
@@ -150,12 +190,45 @@ pub fn pdf(pages: &[Page], title: Option<&str>) -> Result<Vec<u8>, Error> {
                     if run.oblique {
                         surface.pop();
                     }
+                    surface.end_tagged();
+                    match run.source {
+                        Some(source) if (source.block as usize) < blocks.len() => {
+                            blocks[source.block as usize].push((source.offset, id));
+                        }
+                        _ => loose.push(id),
+                    }
                 }
             }
         }
         surface.finish();
         pdf_page.finish();
     }
+    let mut tree = TagTree::new().with_lang(structure.language.clone());
+    for (role, mut held) in structure.blocks.iter().zip(blocks) {
+        if held.is_empty() {
+            continue;
+        }
+        // In reading order; a stable sort keeps the drawing order of runs
+        // that start together.
+        held.sort_by_key(|(offset, _)| *offset);
+        let kind: TagKind = match role {
+            Role::Paragraph => Tag::P.into(),
+            Role::Heading(level) => {
+                let level =
+                    NonZeroU16::new(u16::from(*level).clamp(1, 6)).unwrap_or(NonZeroU16::MIN);
+                Tag::Hn(level, None).into()
+            }
+        };
+        let mut group = TagGroup::new(kind);
+        for (_, id) in held {
+            group.push(id);
+        }
+        tree.push(group);
+    }
+    for id in loose {
+        tree.push(TagGroup::with_children(Tag::P, vec![id.into()]));
+    }
+    document.set_tag_tree(tree);
     document.finish().map_err(|e| Error::Pdf(format!("{e:?}")))
 }
 

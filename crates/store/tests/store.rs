@@ -54,6 +54,7 @@ fn renders(document: &Document) -> Vec<Vec<u8>> {
     let page: Sheet = ron::from_str(&styles).expect("a page style");
     let style = canvas::PageStyle::from_spec(&page.page);
     canvas::automatic(document, &sheet, &style, fonts())
+        .pages
         .iter()
         .map(|page| render_cpu::render(page, 36.0, render_cpu::Level::Portable).pixels)
         .collect()

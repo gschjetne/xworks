@@ -1,10 +1,10 @@
-//! PDF output (docs/ROADMAP.md, M1 stage 6): text extracts back as typed,
-//! fonts are embedded and subset, each page has its size, and the same
-//! pages give the same bytes.
+//! PDF output (docs/ROADMAP.md, M1 stage 6): a tagged PDF whose text
+//! extracts back as typed, in every script; fonts embedded and subset;
+//! each page its size; and the same pages giving the same bytes.
 
 use std::sync::OnceLock;
 
-use scene::{Color, Page, Point};
+use scene::{Color, Page, Point, Role, Structure};
 use text::units::{INCH, MILLIMETRE, POINT};
 use text::{Align, Fonts, Language, Paragraph, Span, Style};
 
@@ -33,12 +33,13 @@ const LINES: &[(&str, &str)] = &[
     ("zh-Hans", "中文排版测试"),
 ];
 
-/// A page `width` by `height` with `lines` set on it, one under another.
-fn page(width: i64, height: i64, lines: &[(&str, &str)], italic: bool) -> Page {
+/// A page `width` by `height` with `lines` set on it, one under another,
+/// each a block of the structure from `first` on.
+fn page_from(width: i64, height: i64, lines: &[(&str, &str)], italic: bool, first: u32) -> Page {
     let mut page = Page::new(width, height);
     page.fill_background(Color::WHITE);
     let mut y = INCH / 2;
-    for (language, line) in lines {
+    for (i, (language, line)) in lines.iter().enumerate() {
         let spans = [Span {
             len: line.len(),
             style: Style {
@@ -60,15 +61,31 @@ fn page(width: i64, height: i64, lines: &[(&str, &str)], italic: bool) -> Page {
             },
         );
         assert_eq!(layout.lines.len(), 1, "{line} fits on a line");
-        page.items
-            .extend(layout.paint(fonts(), Point::new(INCH / 2, y), |_| Color::BLACK));
+        page.items.extend(layout.paint(
+            fonts(),
+            Point::new(INCH / 2, y),
+            Some(first + i as u32),
+            |_| Color::BLACK,
+        ));
         y += layout.height + 6 * POINT;
     }
     page
 }
 
+fn page(width: i64, height: i64, lines: &[(&str, &str)], italic: bool) -> Page {
+    page_from(width, height, lines, italic, 0)
+}
+
 fn letter(lines: &[(&str, &str)]) -> Page {
     page(85 * INCH / 10, 11 * INCH, lines, false)
+}
+
+/// A structure of `n` paragraphs.
+fn paragraphs(n: usize) -> Structure {
+    Structure {
+        language: Some("en".to_string()),
+        blocks: vec![Role::Paragraph; n],
+    }
 }
 
 /// Text with its whitespace taken out, for comparing what's extracted.
@@ -76,53 +93,122 @@ fn squeeze(text: &str) -> String {
     text.chars().filter(|c| !c.is_whitespace()).collect()
 }
 
-/// The text of `items`' glyphs in the order they're drawn, left to right:
-/// each glyph's text once, however many glyphs show it.
-fn drawn(items: &[scene::Item]) -> String {
-    let mut out = String::new();
-    for item in items {
-        let scene::Item::Glyphs(run) = item else {
-            continue;
-        };
-        let mut last = None;
-        for glyph in &run.glyphs {
-            if last != Some(glyph.text.clone()) {
-                out.push_str(&run.text[glyph.text.clone()]);
-                last = Some(glyph.text.clone());
+/// Lines whose order on screen isn't their order in the text: a number in
+/// Arabic, and a Hebrew word in English.
+const MIXED: &[(&str, &str)] = &[
+    ("ar", "عام 2026 هو العام"),
+    ("en", "The word שלום means peace."),
+];
+
+#[test]
+fn text_extracts_back_as_typed() {
+    let lines: Vec<(&str, &str)> = LINES.iter().chain(MIXED).copied().collect();
+    let pdf = render_pdf::pdf(&[letter(&lines)], &paragraphs(lines.len()), Some("Scripts"))
+        .expect("a PDF");
+    let extracted = squeeze(&pdf_extract::extract_text_from_mem(&pdf).expect("text extracts"));
+    let missing: Vec<_> = lines
+        .iter()
+        .filter(|(_, line)| !extracted.contains(&squeeze(line)))
+        .collect();
+    assert!(
+        missing.is_empty(),
+        "not extracted: {missing:?}\nfrom: {extracted}"
+    );
+}
+
+/// The structure elements of `pdf`, by type, in the tree's order, each
+/// with the number of its kids.
+fn elements(pdf: &[u8]) -> Vec<(String, usize)> {
+    let document = lopdf::Document::load_mem(pdf).expect("the PDF reads");
+    let catalog = document.catalog().expect("a catalog");
+    let marked = catalog
+        .get(b"MarkInfo")
+        .and_then(|m| document.dereference(m))
+        .and_then(|(_, m)| m.as_dict())
+        .and_then(|m| m.get(b"Marked"))
+        .and_then(|m| m.as_bool())
+        .expect("MarkInfo says whether it's tagged");
+    assert!(marked, "the PDF is marked as tagged");
+    let root = catalog
+        .get(b"StructTreeRoot")
+        .and_then(|r| document.dereference(r))
+        .and_then(|(_, r)| r.as_dict())
+        .expect("a structure tree");
+    let mut out = Vec::new();
+    let mut stack = vec![root.get(b"K").expect("the root has kids").clone()];
+    while let Some(object) = stack.pop() {
+        let (_, object) = document.dereference(&object).expect("a kid");
+        match object {
+            lopdf::Object::Array(kids) => stack.extend(kids.iter().rev().cloned()),
+            lopdf::Object::Dictionary(dict) => {
+                let Ok(kind) = dict.get(b"S").and_then(|s| s.as_name()) else {
+                    continue;
+                };
+                let kind = String::from_utf8_lossy(kind).into_owned();
+                let kids = match dict.get(b"K") {
+                    Ok(lopdf::Object::Array(kids)) => kids.clone(),
+                    Ok(kid) => vec![kid.clone()],
+                    Err(_) => Vec::new(),
+                };
+                out.push((kind.clone(), kids.len()));
+                if kind == "Document" || kind == "Part" || kind == "Sect" {
+                    stack.extend(kids.into_iter().rev());
+                }
             }
+            _ => {}
         }
     }
     out
 }
 
-/// A PDF holds glyphs in the order they're drawn, left to right, each with
-/// the text it shows. Readers that apply the bidi algorithm, as Acrobat and
-/// poppler do, read right-to-left text back in its order; pdf-extract,
-/// which reads here, doesn't, so Arabic and Hebrew come back as drawn.
-/// Left-to-right text comes back exactly as typed.
 #[test]
-fn text_extracts_back_as_drawn() {
-    let page = letter(LINES);
-    let pdf = render_pdf::pdf(std::slice::from_ref(&page), Some("Scripts")).expect("a PDF");
-    let extracted = squeeze(&pdf_extract::extract_text_from_mem(&pdf).expect("text extracts"));
-    let mut wrong = Vec::new();
-    for (language, line) in LINES {
-        let single = self::page(85 * INCH / 10, 11 * INCH, &[(language, line)], false);
-        let order = squeeze(&drawn(&single.items));
-        let rtl = matches!(*language, "ar" | "he");
-        if !rtl && order != squeeze(line) {
-            wrong.push(format!("{language}: drawn as {order}, typed {line}"));
-        }
-        if !extracted.contains(&order) {
-            wrong.push(format!("{language}: {order} isn't in what extracts"));
-        }
-    }
-    assert!(wrong.is_empty(), "{wrong:#?}\nextracted: {extracted}");
+fn the_pdf_is_tagged_with_the_documents_structure() {
+    // A heading, then a paragraph that runs over two pages, then one more.
+    let heading = page_from(4 * INCH, 4 * INCH, &[("en", "A heading")], false, 0);
+    let mut first = page_from(
+        4 * INCH,
+        4 * INCH,
+        &[("en", "The paragraph starts")],
+        false,
+        1,
+    );
+    first.place(&heading, Point::new(0, INCH));
+    let second = page_from(
+        4 * INCH,
+        4 * INCH,
+        &[("en", "and ends here."), ("he", "שלום עולם")],
+        false,
+        1,
+    );
+    let structure = Structure {
+        language: Some("en".to_string()),
+        blocks: vec![Role::Heading(1), Role::Paragraph, Role::Paragraph],
+    };
+    let pdf = render_pdf::pdf(&[first, second], &structure, Some("Tagged")).expect("a PDF");
+    let found: Vec<(String, usize)> = elements(&pdf)
+        .into_iter()
+        .filter(|(kind, _)| matches!(kind.as_str(), "H1" | "P"))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            ("H1".to_string(), 1),
+            ("P".to_string(), 2),
+            ("P".to_string(), 1)
+        ]
+    );
+    // Spans say their language.
+    let document = lopdf::Document::load_mem(&pdf).expect("the PDF reads");
+    let content = document
+        .get_page_content(*document.get_pages().get(&2).expect("page 2"))
+        .expect("page 2's content");
+    let content = String::from_utf8_lossy(&content);
+    assert!(content.contains("/Lang(he)"), "{content}");
 }
 
 #[test]
 fn fonts_are_embedded_and_subset() {
-    let pdf = render_pdf::pdf(&[letter(LINES)], None).expect("a PDF");
+    let pdf = render_pdf::pdf(&[letter(LINES)], &paragraphs(LINES.len()), None).expect("a PDF");
     let document = lopdf::Document::load_mem(&pdf).expect("the PDF reads");
     let bundled = testkit::fonts::load().expect("the bundled fonts");
     let mut embedded = Vec::new();
@@ -185,7 +271,7 @@ fn fonts_are_embedded_and_subset() {
 #[test]
 fn pages_have_their_sizes() {
     let a4 = page(210 * MILLIMETRE, 297 * MILLIMETRE, &LINES[..1], false);
-    let pdf = render_pdf::pdf(&[letter(&LINES[..1]), a4], None).expect("a PDF");
+    let pdf = render_pdf::pdf(&[letter(&LINES[..1]), a4], &paragraphs(1), None).expect("a PDF");
     let document = lopdf::Document::load_mem(&pdf).expect("the PDF reads");
     let sizes: Vec<(f32, f32)> = document
         .get_pages()
@@ -210,18 +296,20 @@ fn pages_have_their_sizes() {
 #[test]
 fn the_same_pages_give_the_same_bytes() {
     let pages = [letter(LINES), page(4 * INCH, 4 * INCH, &LINES[4..5], true)];
+    let structure = paragraphs(LINES.len());
     assert_eq!(
-        render_pdf::pdf(&pages, Some("Same")).expect("a PDF"),
-        render_pdf::pdf(&pages, Some("Same")).expect("a PDF")
+        render_pdf::pdf(&pages, &structure, Some("Same")).expect("a PDF"),
+        render_pdf::pdf(&pages, &structure, Some("Same")).expect("a PDF")
     );
 }
 
 #[test]
 fn a_page_pdf_cant_hold_is_refused() {
-    let pdf = render_pdf::pdf(&[Page::new(INCH, INCH)], None).expect("a PDF");
+    let none = Structure::default();
+    let pdf = render_pdf::pdf(&[Page::new(INCH, INCH)], &none, None).expect("a PDF");
     assert!(pdf.starts_with(b"%PDF-"));
     assert!(matches!(
-        render_pdf::pdf(&[Page::new(0, INCH)], None),
+        render_pdf::pdf(&[Page::new(0, INCH)], &none, None),
         Err(render_pdf::Error::PageSize { page: 0, .. })
     ));
 }

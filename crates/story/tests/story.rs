@@ -154,5 +154,6 @@ fn paragraphs_lay_out_with_their_spacing() {
         ),
         (0, 6 * POINT, false)
     );
+    assert_eq!((laid[0].heading, laid[1].heading), (Some(1), None));
     assert!(laid[1].layout.lines.len() > 1);
 }

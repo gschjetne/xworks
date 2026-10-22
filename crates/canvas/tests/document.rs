@@ -62,7 +62,7 @@ fn breaks(document: &Document) -> Vec<Vec<Piece>> {
 #[test]
 fn the_sample_fills_pages_within_their_margins() {
     let (sheet, style) = styles();
-    let pages = canvas::automatic(&sample(), &sheet, &style, fonts());
+    let pages = canvas::automatic(&sample(), &sheet, &style, fonts()).pages;
     assert!(pages.len() >= 3, "{} pages", pages.len());
     for (n, page) in pages.iter().enumerate() {
         assert_eq!((page.width, page.height), (style.width, style.height));

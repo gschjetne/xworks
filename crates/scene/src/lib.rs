@@ -7,6 +7,8 @@
 //! - [`Glyphs`]: glyphs from one font, with the text they show, so PDF
 //!   output can be searched and copied and screen readers can read it.
 //! - [`Path`], [`Color`], [`Font`].
+//! - [`Structure`]: a document's blocks in reading order, which glyph runs
+//!   point into ([`Source`]), for tagged PDF and accessibility.
 //!
 //! Invariants:
 //!
@@ -161,10 +163,44 @@ pub struct Glyphs {
     /// The baseline they sit on, but for their own offsets; a slant leans
     /// about it.
     pub baseline: i64,
+    /// The language of their text, a BCP 47 tag, if it's known.
+    pub language: Option<String>,
+    /// Where their text belongs in the document's structure, if anywhere.
+    pub source: Option<Source>,
     /// The text they show, in the order it reads.
     pub text: String,
     /// The glyphs, left to right.
     pub glyphs: Vec<Glyph>,
+}
+
+/// Where a glyph run's text belongs in a document: which block of its
+/// [`Structure`], and where in that block's text it starts. Runs are drawn
+/// left to right, but read in this order.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct Source {
+    /// The block's index in the structure.
+    pub block: u32,
+    /// The byte offset of the run's text in the block's.
+    pub offset: usize,
+}
+
+/// What a block of a document is, for accessibility and tagged PDF.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Role {
+    /// A paragraph.
+    Paragraph,
+    /// A heading, of level 1 (the highest) to 6.
+    Heading(u8),
+}
+
+/// A document's logical structure: its blocks in reading order, whatever
+/// pages they fall on, and its language.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct Structure {
+    /// The document's language, a BCP 47 tag, if it's known.
+    pub language: Option<String>,
+    /// Its blocks, in reading order.
+    pub blocks: Vec<Role>,
 }
 
 /// One thing drawn.
@@ -331,6 +367,8 @@ mod tests {
                 color: Color::BLACK,
                 oblique: false,
                 baseline: 0,
+                language: None,
+                source: None,
                 text: String::new(),
                 glyphs: Vec::new(),
             })
