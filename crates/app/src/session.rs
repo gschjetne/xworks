@@ -25,6 +25,9 @@ pub struct Session {
     /// What the clipboard holds afterwards, if the session copies.
     #[serde(default)]
     pub clipboard: Option<String>,
+    /// What the status bar says afterwards.
+    #[serde(default)]
+    pub status: Option<String>,
 }
 
 /// One thing a person does.
@@ -189,6 +192,12 @@ pub fn check(session: &Session, played: &Played) -> Vec<String> {
             "the clipboard holds {:?}, expected {want:?}",
             played.clipboard
         ));
+    }
+    if let Some(want) = &session.status {
+        let got = played.editor.status();
+        if &got != want {
+            problems.push(format!("the status bar says {got:?}, expected {want:?}"));
+        }
     }
     problems
 }

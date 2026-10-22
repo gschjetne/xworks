@@ -1,0 +1,17 @@
+// The status bar keeps count of the words as they're typed, joined and
+// split, and not of a composition until it's committed.
+(
+    size: (900, 700),
+    events: [
+        Type("one two three"),
+        Key("Enter"),
+        Type("four five"),
+        Key("Primary+Home"),
+        Repeat("Right", 3),
+        Key("Delete"),
+        Key("Primary+End"),
+        Preedit(" six seven"),
+    ],
+    expect: [("Body", "onetwo three"), ("Body", "four five")],
+    status: Some("Page 1 of 1   ·   Body   ·   11 pt   ·   4 words"),
+)

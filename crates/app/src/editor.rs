@@ -1599,7 +1599,9 @@ impl Editor {
         self.line_origin(k, line)
     }
 
-    fn status(&self) -> String {
+    /// What the status bar says: the page, the style and size at the
+    /// caret, and the document's words.
+    pub fn status(&self) -> String {
         let (k, cursor) = self.cursor(self.focus);
         let line = self.laid.paragraphs[k].layout.line_of(cursor);
         let page = self.laid.places[k][line].0 + 1;
