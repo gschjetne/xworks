@@ -5,6 +5,8 @@
 //! - [`golden`]: approved renders, recorded as SHA-256 hashes of their
 //!   pixels under `spec/golden/` (spec/golden/README.md).
 //! - [`fonts`]: the bundled fonts, as `spec/text/fonts.ron` lists them.
+//! - [`pdf`]: a PDF's text read back through its fonts' ToUnicode maps
+//!   and its `/ActualText`, a second reader beside pdf-extract.
 //! - [`specs`]: the RON files in a directory of `spec/`, for tests to read.
 //! - [`scratch_dir`]: a fresh, empty directory under `target/` for a test's
 //!   files.
@@ -21,6 +23,7 @@ mod error;
 pub mod fonts;
 pub mod golden;
 mod image;
+pub mod pdf;
 
 use std::path::{Path, PathBuf};
 

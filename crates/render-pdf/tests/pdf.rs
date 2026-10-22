@@ -114,6 +114,15 @@ fn text_extracts_back_as_typed() {
         missing.is_empty(),
         "not extracted: {missing:?}\nfrom: {extracted}"
     );
+    // And by the second reader, which honours krilla's ActualText where a
+    // glyph shows different letters in different places, as Arabic's
+    // dotless forms do.
+    let read = squeeze(&testkit::pdf::text(&pdf).expect("text reads"));
+    let missing: Vec<_> = lines
+        .iter()
+        .filter(|(_, line)| !read.contains(&squeeze(line)))
+        .collect();
+    assert!(missing.is_empty(), "not read: {missing:?}\nfrom: {read}");
 }
 
 /// The structure elements of `pdf`, by type, in the tree's order, each

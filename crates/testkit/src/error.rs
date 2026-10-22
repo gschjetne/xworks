@@ -48,4 +48,7 @@ pub enum Error {
     /// An image couldn't be encoded as PNG.
     #[error("encoding PNG: {0}")]
     Png(#[from] png::EncodingError),
+    /// A PDF couldn't be read.
+    #[error("reading the PDF: {0}")]
+    Pdf(#[from] lopdf::Error),
 }

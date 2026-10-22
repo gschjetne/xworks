@@ -44,7 +44,7 @@ krilla = { version = "=0.8.2", default-features = false, features = ["raster-ima
 icu_locale_core = "2.3.0"   # language tags
 icu_properties = { version = "2.3.0", features = ["unicode_bidi"] }  # Unicode character properties: script, bidi class and its data for unicode-bidi
 icu_segmenter = "2.3.0"     # line, word and grapheme boundaries (docs/ARCHITECTURE.md, section 9)
-lopdf = { version = "0.42.0", default-features = false }  # reading PDFs back in tests: fonts, pages
+lopdf = { version = "0.42.0", default-features = false }  # reading PDFs back in tests: fonts, pages, and text through ToUnicode maps and ActualText (testkit::pdf)
 pdf-extract = "=0.12.1" # reading PDFs' text back in tests
 png = "0.18.1"          # writing test renders as PNG, and reading PNG pictures (docs/ARCHITECTURE.md, section 10)
 zune-jpeg = "0.5.15"    # reading JPEG pictures (review pysc65hp); already in the build through krilla's raster-images

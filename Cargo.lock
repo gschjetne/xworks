@@ -3914,6 +3914,7 @@ dependencies = [
 name = "testkit"
 version = "0.0.0"
 dependencies = [
+ "lopdf",
  "png",
  "ron",
  "serde",

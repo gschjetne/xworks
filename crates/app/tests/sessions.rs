@@ -122,8 +122,8 @@ fn the_exit_document_reopens_and_exports_the_same() {
     let squeeze = |text: &str| -> String { text.chars().filter(|c| !c.is_whitespace()).collect() };
     let text = squeeze(&pdf_extract::extract_text_from_mem(&pdf).expect("text extracts"));
     // pdf-extract 0.12 misreads some of this PDF's Arabic letters (ب as ن,
-    // ع as غ, ت as ي), which pdftotext reads right, so each paragraph is
-    // checked but for its Arabic.
+    // ع as غ, ت as ي), which pdftotext reads right, so with it each
+    // paragraph is checked but for its Arabic.
     let arabic = |c: char| matches!(c, '\u{0600}'..='\u{06FF}' | '\u{0750}'..='\u{077F}');
     let missing: Vec<&str> = exit
         .expect
@@ -132,6 +132,16 @@ fn the_exit_document_reopens_and_exports_the_same() {
         .filter(|stretch| !text.contains(&squeeze(stretch)))
         .collect();
     assert!(missing.is_empty(), "not extracted: {missing:?}");
+    // The second reader, through the fonts' ToUnicode maps and krilla's
+    // ActualText, reads every paragraph whole, its Arabic too.
+    let text = squeeze(&testkit::pdf::text(&pdf).expect("text reads"));
+    let missing: Vec<&str> = exit
+        .expect
+        .iter()
+        .map(|(_, paragraph)| paragraph.as_str())
+        .filter(|paragraph| !text.contains(&squeeze(paragraph)))
+        .collect();
+    assert!(missing.is_empty(), "not read: {missing:?}\nfrom: {text}");
 }
 
 /// Each page's pixels, drawn portably at 48 to the inch.
