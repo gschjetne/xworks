@@ -219,8 +219,8 @@ impl Store {
                 "commit" => {
                     history.push(Transaction {
                         name: row.get(2)?,
-                        ops: decode(&row.get::<_, String>(3)?)?,
-                        inverse: decode(&row.get::<_, String>(4)?)?,
+                        ops: decode(&row.get::<_, Vec<u8>>(3)?)?,
+                        inverse: decode(&row.get::<_, Vec<u8>>(4)?)?,
                     });
                     true
                 }
@@ -328,7 +328,7 @@ impl Store {
     /// The document as it was after log entry `seq`: from the latest
     /// snapshot at or before it, with the entries after that applied.
     pub fn document_at(&self, seq: i64) -> Result<Document, Error> {
-        let (from, text): (i64, String) = self
+        let (from, bytes): (i64, Vec<u8>) = self
             .connection
             .query_row(
                 "SELECT seq, document FROM snapshot WHERE seq <= ?1 ORDER BY seq DESC LIMIT 1",
@@ -337,7 +337,7 @@ impl Store {
             )
             .optional()?
             .ok_or_else(|| Error::Damaged("there's no snapshot to start from".to_string()))?;
-        let snapshot: Snapshot = decode(&text)?;
+        let snapshot: Snapshot = decode(&bytes)?;
         let mut document = Document::from_snapshot(snapshot)
             .map_err(|e| Error::Damaged(format!("the snapshot after entry {from}: {e}")))?;
         let mut statement = self
@@ -350,7 +350,7 @@ impl Store {
             if at != expected {
                 return Err(Error::Damaged(format!("log entry {expected} is missing")));
             }
-            let ops: Vec<Op> = decode(&row.get::<_, String>(1)?)?;
+            let ops: Vec<Op> = decode(&row.get::<_, Vec<u8>>(1)?)?;
             document
                 .apply_all(&ops)
                 .map_err(|e| Error::Damaged(format!("log entry {at} doesn't apply: {e}")))?;
@@ -434,10 +434,12 @@ pub fn dump(path: &Path) -> Result<String, Error> {
     Ok(out)
 }
 
-fn encode<T: serde::Serialize + ?Sized>(value: &T) -> Result<String, Error> {
-    ron::to_string(value).map_err(|e| Error::Damaged(format!("encoding: {e}")))
+/// `value` in the file's encoding, postcard (spec/format/README.md).
+pub fn encode<T: serde::Serialize + ?Sized>(value: &T) -> Result<Vec<u8>, Error> {
+    postcard::to_stdvec(value).map_err(|e| Error::Damaged(format!("encoding: {e}")))
 }
 
-fn decode<T: serde::de::DeserializeOwned>(text: &str) -> Result<T, Error> {
-    ron::from_str(text).map_err(|e| Error::Damaged(format!("reading: {e}")))
+/// A value read back from the file's encoding.
+pub fn decode<T: serde::de::DeserializeOwned>(bytes: &[u8]) -> Result<T, Error> {
+    postcard::from_bytes(bytes).map_err(|e| Error::Damaged(format!("reading: {e}")))
 }

@@ -343,11 +343,22 @@ and renamed into place. Each transaction is appended to the log in an
 SQLite transaction of its own, with a snapshot of the whole document every
 hundred entries; opening reads the latest snapshot and replays the log
 after it, and rebuilds undo and redo from the whole log, so history
-survives closing. Operations and snapshots are RON. SQLite runs in
-write-ahead-log mode with `synchronous = NORMAL`: a crash of the program
-loses nothing committed, and a power cut can lose the last transactions
-but never the file. Nothing read is trusted: a snapshot or log entry that
+survives closing. Nothing read is trusted: a snapshot or log entry that
 doesn't hold together is an error.
+
+- **Operations and snapshots are binary** (project owner, 2026-10-22,
+  review dfx97ttt), in postcard's specified wire format. Enums are written
+  by their variants' positions, so new variants of `doc`'s types go at the
+  end; a test pins the bytes.
+- **A commit survives a crash of the program** (project owner, 2026-10-22,
+  review dfx97ttt): SQLite runs in write-ahead-log mode with
+  `synchronous = NORMAL`. A power cut can lose the last transactions, but
+  never the file.
+- **A document carries only fonts that aren't bundled** (project owner,
+  2026-10-22, review dfx97ttt). The bundled Noto fonts are on every
+  install, and embedding the CJK faces would add 16 to 25 MB to any
+  document with one CJK character. In M1 every font is bundled, so none
+  is embedded.
 
 **Documents carry their fonts** (project owner, 2026-10-18). The fonts a
 document uses are embedded, subset where the font's license requires it, so it

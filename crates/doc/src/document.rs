@@ -45,7 +45,8 @@ impl Paragraph {
     }
 }
 
-/// An object in a document.
+/// An object in a document. Files store objects by their variants'
+/// positions (spec/format/README.md): new variants go at the end.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Object {
     /// A story.

@@ -279,40 +279,98 @@ fn damage_is_an_error_not_a_document() {
     }
     drop(store);
 
-    let damage = |sql: &str| {
+    let damage = |sql: &str, value: Vec<u8>| {
         let copy = dir.join("copy.xw");
         std::fs::copy(&path, &copy).unwrap();
         let connection = Connection::open(&copy).unwrap();
-        connection.execute_batch(sql).unwrap();
+        if sql.contains("?1") {
+            connection.execute(sql, rusqlite::params![value]).unwrap();
+        } else {
+            connection.execute_batch(sql).unwrap();
+        }
         drop(connection);
         let result = Store::open(&copy);
         std::fs::remove_file(&copy).unwrap();
         result
     };
+    let none = Vec::new;
     // Operations that aren't operations, or don't apply.
     assert!(matches!(
-        damage("UPDATE log SET ops = 'nonsense' WHERE seq = 2"),
+        damage(
+            "UPDATE log SET ops = ?1 WHERE seq = 2",
+            vec![0xff, 0xff, 0xff]
+        ),
         Err(Error::Damaged(_))
     ));
+    let impossible = store::encode(&vec![Op::DeleteText {
+        paragraph: doc::ObjectId(1),
+        offset: 100,
+        len: 1,
+    }])
+    .unwrap();
     assert!(matches!(
-        damage("UPDATE log SET ops = '[DeleteText(paragraph:(1),offset:100,len:1)]' WHERE seq = 2"),
+        damage("UPDATE log SET ops = ?1 WHERE seq = 2", impossible),
         Err(Error::Damaged(_))
     ));
     // A gap in the log, a snapshot that doesn't hold together, no kind.
     assert!(matches!(
-        damage("DELETE FROM log WHERE seq = 2"),
+        damage("DELETE FROM log WHERE seq = 2", none()),
+        Err(Error::Damaged(_))
+    ));
+    let empty = store::encode(&doc::Snapshot {
+        root: doc::ObjectId(1),
+        next_id: 2,
+        objects: Vec::new(),
+    })
+    .unwrap();
+    assert!(matches!(
+        damage("UPDATE snapshot SET document = ?1 WHERE seq = 0", empty),
         Err(Error::Damaged(_))
     ));
     assert!(matches!(
-        damage("UPDATE snapshot SET document = '(root:(1),next_id:2,objects:[])' WHERE seq = 0"),
+        damage("DELETE FROM meta", none()),
         Err(Error::Damaged(_))
     ));
-    assert!(matches!(damage("DELETE FROM meta"), Err(Error::Damaged(_))));
     // An undo with nothing to undo.
     assert!(matches!(
-        damage("UPDATE log SET kind = 'undo' WHERE seq = 1"),
+        damage("UPDATE log SET kind = 'undo' WHERE seq = 1", none()),
         Err(Error::Damaged(_))
     ));
     // Untouched, it opens.
     assert!(Store::open(&path).is_ok());
+}
+
+/// postcard writes enums by their variants' positions, so the encoding of
+/// operations is part of the format (spec/format/README.md). These bytes
+/// change only with a new schema.
+#[test]
+fn the_encoding_is_pinned() {
+    let ops = vec![
+        Op::InsertText {
+            paragraph: doc::ObjectId(1),
+            offset: 2,
+            text: "hé".to_string(),
+            runs: vec![Run::new(
+                2,
+                Props::from([("bold".to_string(), Value::Bool(true))]),
+            )],
+        },
+        Op::SetParaProp {
+            paragraph: doc::ObjectId(300),
+            key: "style".to_string(),
+            value: Some(Value::Text("Body".to_string())),
+        },
+    ];
+    let bytes = store::encode(&ops).unwrap();
+    assert_eq!(
+        bytes,
+        [
+            2, // two operations
+            0, 1, 2, 3, b'h', 0xc3, 0xa9, // InsertText: #1 at 2, "hé" (3 bytes)
+            1, 2, 1, 4, b'b', b'o', b'l', b'd', 0, 1, // a run of 2: bold = Bool(true)
+            5, 0xac, 0x02, 5, b's', b't', b'y', b'l', b'e', // SetParaProp: #300, "style"
+            1, 2, 4, b'B', b'o', b'd', b'y', // Some(Text("Body"))
+        ]
+    );
+    assert_eq!(store::decode::<Vec<Op>>(&bytes).unwrap(), ops);
 }

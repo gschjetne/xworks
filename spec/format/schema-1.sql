@@ -10,21 +10,22 @@ CREATE TABLE meta (
 
 -- Every transaction, as it was committed, in order: an edit ("commit"),
 -- or undoing or redoing one. `ops` are the operations that were applied
--- and `inverse` those that undo them, each a RON list of doc::Op.
+-- and `inverse` those that undo them, each a list of doc::Op in postcard
+-- (README.md, "Encoding").
 CREATE TABLE log (
     seq     INTEGER PRIMARY KEY NOT NULL CHECK (seq > 0),
     kind    TEXT NOT NULL CHECK (kind IN ('commit', 'undo', 'redo')),
     name    TEXT NOT NULL,
-    ops     TEXT NOT NULL,
-    inverse TEXT NOT NULL
+    ops     BLOB NOT NULL,
+    inverse BLOB NOT NULL
 ) STRICT;
 
--- The whole document after the log entry `seq` (0: as created), as RON
--- of doc::Snapshot. Opening starts from the latest and replays the log
--- after it.
+-- The whole document after the log entry `seq` (0: as created), a
+-- doc::Snapshot in postcard. Opening starts from the latest and replays
+-- the log after it.
 CREATE TABLE snapshot (
     seq      INTEGER PRIMARY KEY NOT NULL CHECK (seq >= 0),
-    document TEXT NOT NULL
+    document BLOB NOT NULL
 ) STRICT;
 
 -- Named versions: the document as it was after log entry `seq`.

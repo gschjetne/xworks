@@ -25,9 +25,18 @@ An xWorks document is one file with the extension `.xw`: an SQLite database
 | `version` | named versions, as log positions |
 | `font` | font files the document carries, by hash |
 
-Operations and snapshots are RON: `doc::Op` lists and `doc::Snapshot`
-values, as serde writes them. Text in them is UTF-8, and text offsets
-count Unicode scalar values.
+## Encoding
+
+Operations and snapshots are binary (project owner, 2026-10-22, review
+dfx97ttt): `doc::Op` lists and `doc::Snapshot` values, as serde writes
+them in [postcard](https://postcard.jamesmunns.com/wire-format)'s wire
+format 1. Integers are variable-length, strings and lists carry their
+length, text is UTF-8, and text offsets count Unicode scalar values.
+
+postcard writes an enum's variant as its position, so the order of
+variants in `doc::Op`, `doc::Object` and `doc::Value` is part of the
+format: new variants go at the end, and reordering or removing one is a
+new schema. A test in `store` pins the bytes of known values.
 
 ## Opening
 

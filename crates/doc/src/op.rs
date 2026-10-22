@@ -9,6 +9,9 @@ use crate::props::{Props, Run, Value};
 /// Operations name objects by ID, never by index, so they can be rebased
 /// over concurrent changes ([`crate::rebase`]). Each is small; edits people
 /// make are transactions of several ([`crate::Transaction`]).
+///
+/// Files store operations by their variants' positions
+/// (spec/format/README.md): new variants go at the end.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Op {
     /// Inserts text into a paragraph.

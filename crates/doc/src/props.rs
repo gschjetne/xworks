@@ -6,7 +6,8 @@ use std::sync::Arc;
 use serde::{Deserialize, Serialize};
 
 /// A property's value. Lengths are integers in layout units
-/// (docs/ARCHITECTURE.md, section 9).
+/// (docs/ARCHITECTURE.md, section 9). Files store values by their variants'
+/// positions (spec/format/README.md): new variants go at the end.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum Value {
     /// On or off, such as bold.
