@@ -586,7 +586,9 @@ the document's structure. Fills and strokes are artifacts, outside it.
   2026-10-18). As for Fauré, copyright in largely AI-generated code is
   uncertain in some jurisdictions and copyleft depends on it, so a permissive
   license is the safer fit. Dependencies must be permissively licensed too;
-  `cargo deny` checks it.
+  `cargo deny` checks it. The Boost license (BSL-1.0) is allowed, for the
+  crates that reach the Windows clipboard (project owner, 2026-10-22,
+  review yzmxnt0g).
 
 - **No macros run on open.** Scripts in a document run only after the user
   allows them, and then only with the capabilities they declare (this

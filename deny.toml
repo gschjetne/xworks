@@ -33,6 +33,10 @@ allow = [
     "Apache-2.0 WITH LLVM-exception",
     "BSD-2-Clause",
     "BSD-3-Clause",
+    # The Boost license: clipboard-win and error-code, through which every
+    # Rust crate reaches the Windows clipboard (project owner, 2026-10-22,
+    # review yzmxnt0g).
+    "BSL-1.0",
     "ISC",
     "MIT",
     "Unicode-3.0",
