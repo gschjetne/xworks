@@ -2,7 +2,8 @@
 //! justified, each ordered for display by the bidi algorithm, aligned,
 //! and stacked.
 
-use std::cell::OnceCell;
+use std::cell::{OnceCell, RefCell};
+use std::collections::BTreeMap;
 use std::ops::Range;
 
 use locale::{Bidi, Direction, Language};
@@ -262,9 +263,13 @@ pub fn layout_with(fonts: &Fonts, paragraph: &Paragraph<'_>, setting: &Setting<'
     }
     let no_tabs = Tabs::default();
     let glue = Glue::new(text, &graphemes, |a, b| position[b] - position[a]);
+    let cuts = cuts(text, &items);
     let shaping = Shaping {
         fonts,
         paragraph,
+        cut_points: (0..cuts.len()).filter(|&o| cuts[o]).collect(),
+        cuts,
+        reshaped: RefCell::new(BTreeMap::new()),
         hyphens: items.iter().map(|_| OnceCell::new()).collect(),
         items,
         position,
@@ -347,6 +352,12 @@ struct Shaping<'a> {
     fonts: &'a Fonts,
     paragraph: &'a Paragraph<'a>,
     items: Vec<Item>,
+    /// Where items can be cut without shaping again, by byte offset.
+    cuts: Vec<bool>,
+    /// The same, as a sorted list of those offsets.
+    cut_points: Vec<usize>,
+    /// Parts of items shaped again, by item and part.
+    reshaped: RefCell<BTreeMap<(usize, usize, usize), Vec<Shaped>>>,
     /// The running sums of clusters' advances, by byte offset: the width of
     /// a stretch of text as shaped whole.
     position: Vec<i64>,
@@ -375,39 +386,124 @@ impl Shaping<'_> {
             })
     }
 
-    /// Whether `part` of item `index` keeps the glyphs the item was shaped
+    /// Whether a part of an item keeps the glyphs the item was shaped
     /// with: it's cut, if at all, where breaking is safe.
-    fn keeps(&self, index: usize, part: &Range<usize>) -> bool {
-        let item = &self.items[index];
-        can_cut(&item.glyphs, part.start, &item.range)
-            && can_cut(&item.glyphs, part.end, &item.range)
+    fn keeps(&self, part: &Range<usize>) -> bool {
+        self.cuts[part.start] && self.cuts[part.end]
     }
 
     /// The glyphs of `part` of item `index` at bidi `level`, left to right:
     /// the item's own where they hold, otherwise shaped again.
     fn glyphs(&self, index: usize, part: Range<usize>, level: u8) -> Vec<Shaped> {
         let item = &self.items[index];
-        if level == item.level && self.keeps(index, &part) {
-            if part == item.range {
-                item.glyphs.clone()
-            } else {
-                item.glyphs
-                    .iter()
-                    .filter(|g| part.contains(&g.cluster))
-                    .copied()
-                    .collect()
-            }
-        } else {
-            shape::shape(
-                self.fonts,
-                self.paragraph.text,
-                part,
-                &self.paragraph.spans[item.span],
-                item.face,
-                level,
-                item.script,
-            )
+        if level != item.level {
+            return self.shape(index, part, level);
         }
+        if self.keeps(&part) {
+            return self.kept(index, part);
+        }
+        // Cut where breaking isn't safe: only the text between the cut and
+        // the nearest safe place is shaped again, as HarfBuzz's flags
+        // promise, and the item's own glyphs serve the rest.
+        let (from, to) = self.safe(&part);
+        if from >= to {
+            return self.reshaped(index, part);
+        }
+        let start = self.reshaped(index, part.start..from);
+        let middle = self.kept(index, from..to);
+        let end = self.reshaped(index, to..part.end);
+        let mut out = Vec::with_capacity(start.len() + middle.len() + end.len());
+        if item.level % 2 == 1 {
+            out.extend(end);
+            out.extend(middle);
+            out.extend(start);
+        } else {
+            out.extend(start);
+            out.extend(middle);
+            out.extend(end);
+        }
+        out
+    }
+
+    /// The item's own glyphs of `part`.
+    fn kept(&self, index: usize, part: Range<usize>) -> Vec<Shaped> {
+        let item = &self.items[index];
+        if part == item.range {
+            return item.glyphs.clone();
+        }
+        // HarfBuzz keeps clusters in order: rising along a left-to-right
+        // item's glyphs, falling along a right-to-left one's.
+        let glyphs = &item.glyphs;
+        let (lo, hi) = if item.level % 2 == 1 {
+            (
+                glyphs.partition_point(|g| g.cluster >= part.end),
+                glyphs.partition_point(|g| g.cluster >= part.start),
+            )
+        } else {
+            (
+                glyphs.partition_point(|g| g.cluster < part.start),
+                glyphs.partition_point(|g| g.cluster < part.end),
+            )
+        };
+        glyphs[lo..hi.max(lo)]
+            .iter()
+            .filter(|g| part.contains(&g.cluster))
+            .copied()
+            .collect()
+    }
+
+    /// Where `part` of an item is safe to cut nearest its edges: its
+    /// start, or the first safe place after it; its end, or the last safe
+    /// place before it.
+    fn safe(&self, part: &Range<usize>) -> (usize, usize) {
+        let cut = |o: usize| self.cuts[o];
+        let from = if cut(part.start) {
+            part.start
+        } else {
+            let k = self.cut_points.partition_point(|&o| o <= part.start);
+            self.cut_points
+                .get(k)
+                .copied()
+                .unwrap_or(part.end)
+                .min(part.end)
+        };
+        let to = if cut(part.end) {
+            part.end
+        } else {
+            let k = self.cut_points.partition_point(|&o| o < part.end);
+            k.checked_sub(1)
+                .map_or(part.start, |k| self.cut_points[k])
+                .max(part.start)
+        };
+        (from, to)
+    }
+
+    /// `part` of item `index` shaped again on its own, at the item's level,
+    /// once.
+    fn reshaped(&self, index: usize, part: Range<usize>) -> Vec<Shaped> {
+        if part.is_empty() {
+            return Vec::new();
+        }
+        let key = (index, part.start, part.end);
+        if let Some(glyphs) = self.reshaped.borrow().get(&key) {
+            return glyphs.clone();
+        }
+        let glyphs = self.shape(index, part, self.items[index].level);
+        self.reshaped.borrow_mut().insert(key, glyphs.clone());
+        glyphs
+    }
+
+    fn shape(&self, index: usize, part: Range<usize>, level: u8) -> Vec<Shaped> {
+        let item = &self.items[index];
+        shape::shape(
+            self.fonts,
+            self.paragraph.text,
+            part,
+            &self.paragraph.spans[item.span],
+            item.face,
+            level,
+            item.script,
+        )
     }
 
     /// How wide `range` is as a line, less the spaces hanging at its end,
@@ -420,12 +516,29 @@ impl Shaping<'_> {
             0
         };
         let end = trim(self.paragraph.text, range.clone());
-        if self.tabs_in(range.start, end).is_empty()
-            && self
-                .parts(range.clone())
-                .all(|(i, part)| self.keeps(i, &part))
-        {
+        let tabbed = !self.tabs_in(range.start, end).is_empty();
+        if !tabbed && self.cuts[range.start] && self.cuts[range.end] {
+            // Every part keeps its glyphs.
             return self.position[end] - self.position[range.start] + hyphen;
+        }
+        if !tabbed {
+            // Parts that keep their glyphs, by the running sums; the
+            // others, by the glyphs shaped again at their edges.
+            let mut width = 0;
+            for (i, part) in self.parts(range.clone()) {
+                let upto = part.end.min(end).max(part.start);
+                if self.keeps(&part) {
+                    width += self.position[upto] - self.position[part.start];
+                } else {
+                    width += self
+                        .glyphs(i, part, self.items[i].level)
+                        .iter()
+                        .filter(|g| g.cluster < end)
+                        .map(|g| g.advance)
+                        .sum::<i64>();
+                }
+            }
+            return width + hyphen;
         }
         // Each cluster's advance on the line.
         let mut advances = vec![0; range.len()];
@@ -824,15 +937,24 @@ fn justify(
     stretched
 }
 
-/// Whether `glyphs`, shaping `item`, can be cut at `offset` without shaping
-/// again: at the item's edges, or where a cluster starts with a glyph safe
-/// to break at.
-fn can_cut(glyphs: &[Shaped], offset: usize, item: &Range<usize>) -> bool {
-    if offset == item.start || offset == item.end {
-        return true;
+/// Where the paragraph's items can be cut without shaping again, by byte
+/// offset: at their edges, and where a cluster starts whose glyphs are all
+/// safe to break at.
+fn cuts(text: &str, items: &[Item]) -> Vec<bool> {
+    let mut seen = vec![false; text.len() + 1];
+    let mut safe = vec![true; text.len() + 1];
+    for g in items.iter().flat_map(|i| &i.glyphs) {
+        seen[g.cluster] = true;
+        safe[g.cluster] &= !g.unsafe_to_break;
     }
-    let mut at = glyphs.iter().filter(|g| g.cluster == offset).peekable();
-    at.peek().is_some() && at.all(|g| !g.unsafe_to_break)
+    let mut cuts: Vec<bool> = seen.iter().zip(&safe).map(|(&s, &f)| s && f).collect();
+    cuts[0] = true;
+    cuts[text.len()] = true;
+    for item in items {
+        cuts[item.range.start] = true;
+        cuts[item.range.end] = true;
+    }
+    cuts
 }
 
 /// The index of the span holding `offset`; at the end, the last span.

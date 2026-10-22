@@ -9,9 +9,12 @@ use text::{Hyphenator, Language};
 
 #[test]
 fn words_break_where_their_languages_allow() {
-    let source =
-        std::fs::read_to_string(testkit::workspace_root().join("spec/text/hyphenated.ron"))
-            .expect("spec/text/hyphenated.ron");
+    let source = testkit::specs("text")
+        .expect("spec/text")
+        .into_iter()
+        .find(|(name, _)| name == "hyphenated")
+        .expect("spec/text/hyphenated.ron")
+        .1;
     let cases: Vec<(String, Vec<String>)> = parse(&source).expect("valid");
     let mut failures = Vec::new();
     for (tag, words) in cases {
