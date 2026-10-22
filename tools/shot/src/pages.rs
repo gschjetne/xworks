@@ -404,6 +404,12 @@ pub fn editor_page() -> Page {
     editor_after_tour(None)
 }
 
+/// The editor after the lists session (`spec/sessions/lists.ron`): lists
+/// typed, nested, numbered, closed and opened again.
+pub fn editor_lists_page() -> Page {
+    play(&session("lists")).editor.view()
+}
+
 /// The editor after the tour, with the Format menu open.
 pub fn editor_menu_page() -> Page {
     editor_after_tour(Some((110.0, 13.0)))

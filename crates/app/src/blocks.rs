@@ -764,14 +764,19 @@ pub(crate) fn toggle_quote(
 }
 
 /// A table of two columns, a header and one row, after the caret's
-/// paragraph, or after its table if it's in one; the caret goes to its
-/// first cell.
+/// paragraph, or after its table if it's in one; before it if it's empty,
+/// so typing goes on after the table. The caret goes to its first cell.
 pub(crate) fn insert_table(doc: &Document, at: Position) -> Option<Outcome> {
     let mut place = at.paragraph;
     while matches!(parent_kind(doc, place), Some(Kind::Row | Kind::Table)) {
         place = doc.parent(place)?;
     }
     let parent = doc.parent(place)?;
+    let after = if doc.paragraph(place).is_some_and(Paragraph::is_empty) {
+        doc.previous(place)
+    } else {
+        Some(place)
+    };
     let mut b = Ops::new(doc);
     let table = b.fresh();
     let mut objects = vec![(table, container(Kind::Table, parent, Props::new()))];
@@ -798,7 +803,7 @@ pub(crate) fn insert_table(doc: &Document, at: Position) -> Option<Outcome> {
     }
     b.push(Op::InsertBlock {
         parent,
-        after: Some(place),
+        after,
         objects,
     })?;
     Some(b.edit("Table", start(first?)))

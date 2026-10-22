@@ -1,0 +1,52 @@
+// Joining across blocks (docs/ROADMAP.md, M2 stage 2): Backspace at the
+// start of a paragraph after a list joins it to the list's last item,
+// Delete at a paragraph's end before a list pulls the first item's text
+// in, and deleting a selection from a paragraph into a list deletes what's
+// between and leaves nothing empty behind. Undo puts it back.
+(
+    size: (900, 700),
+    events: [
+        Type("One"),
+        Key("Enter"),
+        Key("Primary+Shift+8"),
+        Type("two"),
+        Key("Enter"),
+        Type("three"),
+        Key("Enter"),
+        Key("Enter"),
+        Type("four"),
+        Key("Home"),
+        Key("Backspace"),
+        Outline([
+            "Body: One",
+            "list",
+            "  item",
+            "    Body: two",
+            "  item",
+            "    Body: threefour",
+        ]),
+        Key("Primary+Home"),
+        Key("End"),
+        Key("Delete"),
+        Outline([
+            "Body: Onetwo",
+            "list",
+            "  item",
+            "    Body: threefour",
+        ]),
+        Key("Primary+Home"),
+        Repeat("Right", 3),
+        Key("Shift+Down"),
+        Key("Shift+End"),
+        Key("Backspace"),
+        Outline(["Body: One"]),
+        Key("Primary+Z"),
+    ],
+    expect: [("Body", "Onetwo"), ("Body", "threefour")],
+    outline: Some([
+        "Body: Onetwo",
+        "list",
+        "  item",
+        "    Body: threefour",
+    ]),
+)

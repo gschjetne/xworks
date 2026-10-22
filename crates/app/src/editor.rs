@@ -1514,7 +1514,8 @@ impl Editor {
             "undo" => writable && self.history.undo_name().is_some(),
             "redo" => writable && self.history.redo_name().is_some(),
             "cut" | "copy" => !self.collapsed(),
-            "save-version" | "paste" | "bold" | "italic" => writable,
+            "save-version" | "paste" | "bold" | "italic" | "code" | "list-bullets"
+            | "list-numbers" | "quote" | "insert-table" => writable,
             _ if id.starts_with("language-") || id.starts_with("align-") => writable,
             _ => true,
         };

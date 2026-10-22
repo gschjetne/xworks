@@ -21,8 +21,8 @@ use testkit::Image;
 pub use typeset::typeset_page;
 
 pub use pages::{
-    blocks_pages, blocks_sheet, document_pages, document_sheet, editor_menu_page, editor_page,
-    exit_pages, exit_sheet, fonts, shapes_page, text_page,
+    blocks_pages, blocks_sheet, document_pages, document_sheet, editor_lists_page,
+    editor_menu_page, editor_page, exit_pages, exit_sheet, fonts, shapes_page, text_page,
 };
 
 /// A named page, and the resolution it's drawn at.
@@ -126,6 +126,13 @@ pub fn scenes() -> &'static [Scene] {
             ppi: 96.0,
             page: blocks_sheet,
             pages: Some(blocks_pages),
+        },
+        Scene {
+            name: "editor-lists",
+            description: "the editor's window after the lists session: lists typed, nested and numbered, closed and opened again",
+            ppi: 96.0,
+            page: editor_lists_page,
+            pages: None,
         },
         Scene {
             name: "text",

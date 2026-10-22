@@ -1,0 +1,50 @@
+// Quotes typed with the keyboard (docs/ROADMAP.md, M2 stage 2): the quote
+// command quotes a paragraph, Enter goes on in the quote, Enter in its
+// empty last paragraph leaves it, and Backspace at its first paragraph's
+// start takes that paragraph out. The command again, in a quote, takes
+// everything out of it.
+(
+    size: (900, 700),
+    events: [
+        Type("Before"),
+        Key("Enter"),
+        Key("Primary+Shift+9"),
+        Type("To be"),
+        Key("Enter"),
+        Type("or not"),
+        Key("Enter"),
+        Key("Enter"),
+        Type("After."),
+        Outline([
+            "Body: Before",
+            "quote",
+            "  Body: To be",
+            "  Body: or not",
+            "Body: After.",
+        ]),
+        Repeat("Up", 2),
+        Key("Home"),
+        Key("Backspace"),
+        Outline([
+            "Body: Before",
+            "Body: To be",
+            "quote",
+            "  Body: or not",
+            "Body: After.",
+        ]),
+        Key("Down"),
+        Key("Primary+Shift+9"),
+    ],
+    expect: [
+        ("Body", "Before"),
+        ("Body", "To be"),
+        ("Body", "or not"),
+        ("Body", "After."),
+    ],
+    outline: Some([
+        "Body: Before",
+        "Body: To be",
+        "Body: or not",
+        "Body: After.",
+    ]),
+)

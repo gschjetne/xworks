@@ -1,0 +1,45 @@
+// Code typed with the keyboard (docs/ROADMAP.md, M2 stage 2): the code
+// block command makes a paragraph code, Enter breaks its lines, and Enter
+// on an empty last line leaves it; code in a sentence is a mark, toggled
+// as bold is. Pasted lines stay lines of the code.
+(
+    size: (900, 700),
+    events: [
+        Type("Code follows:"),
+        Key("Enter"),
+        Key("Primary+Shift+C"),
+        Type("fn main() {"),
+        Key("Enter"),
+        Type("    println!(\"hi\");"),
+        Key("Enter"),
+        Type("}"),
+        Key("Enter"),
+        Key("Enter"),
+        Type("Then "),
+        Key("Primary+Shift+M"),
+        Type("cargo run"),
+        Key("Primary+Shift+M"),
+        Type(" runs it."),
+        // A paragraph and its end, copied, and pasted at the end of the
+        // code: its line break stays a line break in the code.
+        Key("Primary+Home"),
+        Key("Shift+Down"),
+        Key("Shift+Home"),
+        Command("copy"),
+        Key("Primary+End"),
+        Key("Up"),
+        Command("paste"),
+    ],
+    expect: [
+        ("Body", "Code follows:"),
+        ("Code", "fn main() {\u{2028}    println!(\"hi\");\u{2028}}Code follows:\u{2028}"),
+        ("Body", "Then cargo run runs it."),
+    ],
+    marks: [("cargo run", ["code"])],
+    clipboard: Some("Code follows:\n"),
+    outline: Some([
+        "Body: Code follows:",
+        "Code: fn main() {\u{2028}    println!(\"hi\");\u{2028}}Code follows:\u{2028}",
+        "Body: Then cargo run runs it.",
+    ]),
+)

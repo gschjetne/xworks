@@ -74,6 +74,16 @@
         (id: "language-ko", title: "Korean", shortcut: None),
         (id: "language-zh-Hans", title: "Chinese (Simplified)", shortcut: None),
         (id: "language-zh-Hant", title: "Chinese (Traditional)", shortcut: None),
+
+        // M2's blocks and marks (docs/ROADMAP.md, M2 stage 2), by shortcut
+        // until the designed chrome gives them places in the menus. Code
+        // in runs is M, for monospace.
+        (id: "code", title: "Code", shortcut: Some("Primary+Shift+M")),
+        (id: "style-code", title: "Code Block", shortcut: Some("Primary+Shift+C")),
+        (id: "list-bullets", title: "Bulleted List", shortcut: Some("Primary+Shift+8")),
+        (id: "list-numbers", title: "Numbered List", shortcut: Some("Primary+Shift+7")),
+        (id: "quote", title: "Quote", shortcut: Some("Primary+Shift+9")),
+        (id: "insert-table", title: "Table", shortcut: Some("Primary+Shift+T")),
     ],
     menus: [
         (title: "File", items: ["new", "open", "-", "save-version", "-", "export-pdf", "print", "-", "quit"]),

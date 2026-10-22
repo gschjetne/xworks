@@ -16,8 +16,14 @@ pub struct Session {
     pub size: (f64, f64),
     /// What the person does, in order.
     pub events: Vec<Step>,
-    /// The paragraphs afterwards: each one's style and text.
+    /// The paragraphs afterwards, in reading order: each one's style and
+    /// text.
     pub expect: Vec<(String, String)>,
+    /// The story's tree afterwards, if the session says, as
+    /// `story::outline` gives it: a line an object, indented a level a
+    /// container.
+    #[serde(default)]
+    pub outline: Option<Vec<String>>,
     /// Stretches of text, each with the properties set on every character
     /// of it.
     #[serde(default)]
@@ -71,6 +77,9 @@ pub enum Step {
     /// Checks the paragraphs at this point, each one's style and text, as
     /// `expect` does at the end.
     Expect(Vec<(String, String)>),
+    /// Checks the story's tree at this point, as `outline` does at the
+    /// end.
+    Outline(Vec<String>),
 }
 
 /// A session played: the editor as it ends, and the clipboard.
@@ -137,6 +146,15 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
                 }
                 Vec::new()
             }
+            Step::Outline(want) => {
+                let got = story::outline(editor.document(), &res.sheet);
+                if &got != want {
+                    problems.push(format!(
+                        "at step {n}, the outline is {got:#?}, expected {want:#?}"
+                    ));
+                }
+                Vec::new()
+            }
         };
         for event in events {
             let mut queue = editor.update(event);
@@ -197,6 +215,12 @@ pub fn check(session: &Session, played: &Played) -> Vec<String> {
     let got = paragraphs(document);
     if got != session.expect {
         problems.push(format!("paragraphs {got:?}, expected {:?}", session.expect));
+    }
+    if let Some(want) = &session.outline {
+        let outline = story::outline(document, &played.editor.resources().sheet);
+        if &outline != want {
+            problems.push(format!("the outline is {outline:#?}, expected {want:#?}"));
+        }
     }
     for (stretch, keys) in &session.marks {
         let Some((id, start)) = document.paragraphs().iter().find_map(|&id| {
