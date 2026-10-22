@@ -11,10 +11,13 @@
 //! Invariants:
 //!
 //! - Command IDs are unique, every menu item names a command, and no two
-//!   commands share a shortcut.
+//!   commands share a shortcut on one platform.
 //! - "Primary" is Command on a Mac and Ctrl elsewhere; shortcuts match the
 //!   key as it is without Shift, so they don't depend on the keyboard
 //!   layout's shifted characters.
+//! - A shortcut that differs on a Mac, beyond Primary, is given for the
+//!   Mac on its own: moving by words is Ctrl and an arrow on Windows and
+//!   Linux, Option and an arrow on a Mac.
 
 use serde::Deserialize;
 
@@ -36,6 +39,10 @@ pub struct CommandSpec {
     pub title: String,
     /// Its shortcut, such as "Primary+Shift+Z".
     pub shortcut: Option<String>,
+    /// Its shortcut on a Mac, where that's another; otherwise `shortcut`
+    /// is a Mac's too.
+    #[serde(default)]
+    pub mac: Option<String>,
 }
 
 /// A menu as a spec gives it.
@@ -206,8 +213,17 @@ pub struct Command {
     pub id: String,
     /// Its title in menus.
     pub title: String,
-    /// Its shortcut.
+    /// Its shortcut on Windows and Linux.
     pub shortcut: Option<Shortcut>,
+    /// Its shortcut on a Mac.
+    pub mac: Option<Shortcut>,
+}
+
+impl Command {
+    /// Its shortcut on a Mac, or elsewhere.
+    pub fn shortcut_on(&self, mac: bool) -> Option<Shortcut> {
+        if mac { self.mac } else { self.shortcut }
+    }
 }
 
 /// The commands and menus of a spec, checked.
@@ -270,23 +286,28 @@ impl Commands {
             if commands.iter().any(|d| d.id == c.id) {
                 return Err(Error::Duplicate(c.id.clone()));
             }
-            let shortcut = match &c.shortcut {
-                Some(s) => Some(Shortcut::parse(s).ok_or_else(|| Error::BadShortcut {
+            let parse = |s: &String| {
+                Shortcut::parse(s).ok_or_else(|| Error::BadShortcut {
                     command: c.id.clone(),
                     shortcut: s.clone(),
-                })?),
-                None => None,
+                })
             };
-            if let Some(other) = commands
-                .iter()
-                .find(|d| shortcut.is_some() && d.shortcut == shortcut)
-            {
+            let shortcut = c.shortcut.as_ref().map(parse).transpose()?;
+            let mac = match &c.mac {
+                Some(s) => Some(parse(s)?),
+                None => shortcut,
+            };
+            // No two commands share a shortcut on one platform.
+            if let Some(other) = commands.iter().find(|d| {
+                (shortcut.is_some() && d.shortcut == shortcut) || (mac.is_some() && d.mac == mac)
+            }) {
                 return Err(Error::SameShortcut(other.id.clone(), c.id.clone()));
             }
             commands.push(Command {
                 id: c.id.clone(),
                 title: c.title.clone(),
                 shortcut,
+                mac,
             });
         }
         for menu in &spec.menus {
@@ -315,14 +336,17 @@ impl Commands {
         &self.commands
     }
 
-    /// The command whose shortcut is `key` with `modifiers`, if any.
-    pub fn for_key(&self, key: Key, modifiers: Modifiers) -> Option<&Command> {
+    /// The command whose shortcut is `key` with `modifiers`, on a Mac or
+    /// elsewhere, if any.
+    pub fn for_key(&self, key: Key, modifiers: Modifiers, mac: bool) -> Option<&Command> {
         let key = match key {
             Key::Char(c) => Key::Char(c.to_ascii_lowercase()),
             other => other,
         };
         let wanted = Shortcut { modifiers, key };
-        self.commands.iter().find(|c| c.shortcut == Some(wanted))
+        self.commands
+            .iter()
+            .find(|c| c.shortcut_on(mac) == Some(wanted))
     }
 
     /// The menu bar, with each command's state from `state`, and shortcuts
@@ -344,7 +368,7 @@ impl Commands {
                                 MenuItem::Command {
                                     id: c.id.clone(),
                                     title: c.title.clone(),
-                                    shortcut: c.shortcut.map(|s| s.label(mac)),
+                                    shortcut: c.shortcut_on(mac).map(|s| s.label(mac)),
                                     enabled: s.enabled,
                                     checked: s.checked,
                                 }
@@ -369,6 +393,7 @@ mod tests {
                     id: id.to_string(),
                     title: id.to_uppercase(),
                     shortcut: s.map(str::to_string),
+                    mac: None,
                 })
                 .collect(),
             menus: menus
@@ -423,13 +448,16 @@ mod tests {
             ..primary
         };
         assert_eq!(
-            commands.for_key(Key::Char('z'), primary).unwrap().id,
+            commands.for_key(Key::Char('z'), primary, false).unwrap().id,
             "undo"
         );
-        assert_eq!(commands.for_key(Key::Char('Z'), both).unwrap().id, "redo");
+        assert_eq!(
+            commands.for_key(Key::Char('Z'), both, false).unwrap().id,
+            "redo"
+        );
         assert!(
             commands
-                .for_key(Key::Char('z'), Modifiers::default())
+                .for_key(Key::Char('z'), Modifiers::default(), false)
                 .is_none()
         );
 
@@ -464,6 +492,59 @@ mod tests {
                     checked: false
                 },
             ]
+        );
+    }
+
+    #[test]
+    fn a_mac_can_have_its_own_shortcut() {
+        let mut spec = spec(
+            &[
+                ("word-right", Some("Primary+Right")),
+                ("end", Some("Alt+Right")),
+            ],
+            &[("Edit", &["word-right"])],
+        );
+        spec.commands[0].mac = Some("Alt+Right".to_string());
+        // Alt+Right is the word's on a Mac, and another command's
+        // elsewhere: no clash.
+        spec.commands[1].mac = Some("Primary+Right".to_string());
+        let commands = Commands::from_spec(&spec).unwrap();
+        let primary = Modifiers {
+            primary: true,
+            ..Modifiers::default()
+        };
+        let alt = Modifiers {
+            alt: true,
+            ..Modifiers::default()
+        };
+        assert_eq!(
+            commands.for_key(Key::Right, primary, false).unwrap().id,
+            "word-right"
+        );
+        assert_eq!(
+            commands.for_key(Key::Right, alt, true).unwrap().id,
+            "word-right"
+        );
+        assert_eq!(commands.for_key(Key::Right, alt, false).unwrap().id, "end");
+        let label = |mac| match &commands
+            .menu_bar(mac, |_| CommandState {
+                enabled: true,
+                checked: false,
+            })
+            .menus[0]
+            .items[0]
+        {
+            MenuItem::Command { shortcut, .. } => shortcut.clone(),
+            MenuItem::Separator => None,
+        };
+        assert_eq!(label(false).as_deref(), Some("Ctrl+Right"));
+        assert_eq!(label(true).as_deref(), Some("⌥Right"));
+        // A shortcut that clashes on a Mac alone is refused.
+        let mut clash = spec.clone();
+        clash.commands[1].mac = Some("Alt+Right".to_string());
+        assert_eq!(
+            Commands::from_spec(&clash).unwrap_err(),
+            Error::SameShortcut("word-right".to_string(), "end".to_string())
         );
     }
 

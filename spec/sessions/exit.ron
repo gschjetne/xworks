@@ -3,7 +3,9 @@
 // Cyrillic, Arabic, Hebrew and Chinese. It's undone down to an empty page,
 // redone to the end, and closed and opened again. shot draws its pages
 // (`exit-pages`), and crates/app/tests/sessions.rs checks that it reopens
-// to the same dump and renders, and exports the same pages as a PDF.
+// to the same dump and renders, and exports the same pages as a PDF. Its
+// paragraph on fonts came with M2's, Source Serif 4 and Inter, which set
+// the rest in less room: with it, it still fills three pages.
 //
 // Chinese stands for CJK: M1 has no command to set a language, and the
 // CJK faces draw Chinese forms where no language says otherwise.
@@ -87,6 +89,8 @@
         Key("Enter"),
         Type("Each later track grows from these foundations rather than beside them: the spreadsheet's grid, the database's records and the modelling cube are new substrates with their own ways of addressing things, but they store their objects, record their operations, set their text and draw their pages the same way this document does."),
         Key("Enter"),
+        Type("Its text is set in Source Serif 4, a face made for reading at length, and its headings in Inter, a plain sans that the program's own menus share. Neither has Arabic, Hebrew or Chinese, so those come from Noto, whose families were made to sit beside each other, and nobody has to choose them. A character that no bundled face has shows as a box, which tells the reader exactly what is missing instead of hiding it."),
+        Key("Enter"),
         Type("The quick brown fox jumps over the lazy dog. "),
         Key("Primary+B"),
         Type("Pack my box with five dozen liquor jugs."),
@@ -126,6 +130,7 @@
         ("Heading 2", "What comes next"),
         ("Body", "Every transaction is appended to the file as it is committed, so a crash loses nothing that was done, and closing the document and opening it again brings back its text, its formatting and its history. Then the budgets are measured on a real workstation, and the skeleton is done."),
         ("Body", "Each later track grows from these foundations rather than beside them: the spreadsheet's grid, the database's records and the modelling cube are new substrates with their own ways of addressing things, but they store their objects, record their operations, set their text and draw their pages the same way this document does."),
+        ("Body", "Its text is set in Source Serif 4, a face made for reading at length, and its headings in Inter, a plain sans that the program's own menus share. Neither has Arabic, Hebrew or Chinese, so those come from Noto, whose families were made to sit beside each other, and nobody has to choose them. A character that no bundled face has shows as a box, which tells the reader exactly what is missing instead of hiding it."),
         ("Body", "The quick brown fox jumps over the lazy dog. Pack my box with five dozen liquor jugs. How vexingly quick daft zebras jump! Sphinx of black quartz, judge my vow."),
     ],
     marks: [
@@ -137,5 +142,5 @@
         ("Pack my box with five dozen liquor jugs.", ["bold"]),
         ("Sphinx of black quartz, judge my vow.", ["italic"]),
     ],
-    status: Some("Page 1 of 3   ·   Heading 1   ·   20 pt   ·   968 words"),
+    status: Some("Page 1 of 3   ·   Heading 1   ·   20 pt   ·   1060 words"),
 )

@@ -60,6 +60,7 @@ serde = { version = "1.0.229", features = ["derive"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }  # the .xw file is an SQLite database (docs/ARCHITECTURE.md, section 6); bundled, so every platform has the same SQLite
 sha2 = { version = "0.11.0", default-features = false }  # golden images are recorded as SHA-256 hashes of their pixels
 skrifa = "0.48.0"       # reading fonts: tables, metrics, character maps and outlines (docs/ARCHITECTURE.md, section 9)
+sys-locale = "0.3.2"    # the system's language, which new documents are in (review pysc65hp), on Linux, Windows and macOS, for the generic shell
 thiserror = "2.0.21"    # error types in libraries
 vello_cpu = { version = "=0.3.0", default-features = false, features = ["std", "text", "u8_pipeline"] }  # the CPU renderer (D7, docs/ARCHITECTURE.md, section 10); single-threaded, so render-cpu stays pure
 winit = "0.30.13"       # the generic shell's windows and input (docs/ARCHITECTURE.md, section 8)

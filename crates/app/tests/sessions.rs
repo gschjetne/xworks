@@ -82,6 +82,35 @@ fn cjk_faces_load_when_text_needs_them() {
     assert!(cjk(&copy).is_some(), "every copy shares them");
 }
 
+/// A new document is in the system's language. Justified, its words
+/// hyphenate: the patterns for its language load the first time they're
+/// needed, for every window, and the pages show hyphens, which read as soft
+/// hyphens.
+#[test]
+fn justified_text_loads_its_patterns_and_hyphenates() {
+    let root = testkit::workspace_root();
+    let documents = testkit::scratch_dir("app-hyphenation").expect("a folder");
+    let mut res = Resources::load(&root, documents, false).expect("resources");
+    res.language = text::Language::parse("en-US").expect("a tag");
+    let res = Arc::new(res);
+    let us = text::Language::parse("en-US").expect("a tag");
+    let mut editor = app::Editor::create(res.clone()).expect("a document");
+    editor.update(app::Event::Text(
+        "Supercalifragilisticexpialidocious, said the counterrevolutionaries. ".repeat(6),
+    ));
+    assert!(!res.hyphenation().has(&us), "loaded for ragged text");
+    editor.update(app::Event::Command("align-justify".to_string()));
+    assert!(res.hyphenation().has(&us), "loaded once text is justified");
+    let hyphens = editor
+        .pages()
+        .pages
+        .iter()
+        .flat_map(|page| &page.items)
+        .filter(|item| matches!(item, scene::Item::Glyphs(g) if g.text.ends_with('\u{ad}')))
+        .count();
+    assert!(hyphens > 0, "no word was hyphenated");
+}
+
 /// M1's exit (docs/ROADMAP.md): the document the exit session types
 /// reopens with the same dump and draws the same pages, and Export as PDF
 /// gives those pages, with every paragraph's text extractable.

@@ -1,0 +1,30 @@
+// A new document is in the system's language, here Norwegian Bokmål, and
+// a new paragraph is in its neighbour's. A Language command sets the
+// selected text's language, or with nothing selected, the caret's whole
+// paragraph's.
+(
+    size: (900, 700),
+    language: Some("nb-NO"),
+    events: [
+        Type("Hei verden. Hello world."),
+        Repeat("Shift+Left", 12),
+        Command("language-en-GB"),
+        Key("Primary+End"),
+        Key("Enter"),
+        Type("Ny linje"),
+        Key("Enter"),
+        Type("日本語の段落"),
+        Command("language-ja"),
+    ],
+    expect: [
+        ("Body", "Hei verden. Hello world."),
+        ("Body", "Ny linje"),
+        ("Body", "日本語の段落"),
+    ],
+    languages: [
+        ("Hei verden. ", "nb-NO"),
+        ("Hello world.", "en-GB"),
+        ("Ny linje", "nb-NO"),
+        ("日本語の段落", "ja"),
+    ],
+)

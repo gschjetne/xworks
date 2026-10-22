@@ -26,6 +26,15 @@ fn m1s_commands_hold_together() {
         "style-heading-2",
         "style-heading-3",
         "size-12",
+        "word-left",
+        "word-right",
+        "select-word-left",
+        "select-word-right",
+        "sentence-left",
+        "sentence-right",
+        "align-justify",
+        "language-en-US",
+        "language-ja",
     ] {
         assert!(commands.get(id).is_some(), "{id}");
     }
@@ -34,5 +43,5 @@ fn m1s_commands_hold_together() {
         checked: false,
     });
     let titles: Vec<&str> = bar.menus.iter().map(|m| m.title.as_str()).collect();
-    assert_eq!(titles, ["File", "Edit", "Format"]);
+    assert_eq!(titles, ["File", "Edit", "Format", "Language"]);
 }

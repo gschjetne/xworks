@@ -1,5 +1,6 @@
-//! What every window shares: fonts, styles, commands, the chrome's look, and
-//! where documents live.
+//! What every window shares: fonts, hyphenation patterns, styles,
+//! commands, the chrome's look, where documents live, and the language
+//! they're made in.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
@@ -8,7 +9,7 @@ use canvas::{PageStyle, PageStyleSpec};
 use chrome::Commands;
 use serde::Deserialize;
 use story::StyleSheet;
-use text::{FontSpec, Fonts};
+use text::{FontSpec, Fonts, Hyphenation, Hyphenator, Language};
 use toolkit::{Theme, ThemeSpec};
 
 /// Why resources couldn't be loaded.
@@ -56,6 +57,37 @@ pub struct Resources {
     pub mac: bool,
     /// How large a picture may be.
     pub pictures: crate::picture::Limits,
+    /// The language new documents are in: the system's, as the shell
+    /// reads it (project owner, 2026-10-22, review pysc65hp); none until
+    /// it's set.
+    pub language: Language,
+    hyphenation: Arc<Patterns>,
+}
+
+/// The hyphenation patterns, read from `hyphenation/` the first time text
+/// in their language is hyphenated, and shared by every clone of the
+/// resources.
+#[derive(Debug, Default)]
+struct Patterns {
+    dir: PathBuf,
+    languages: Vec<PatternFiles>,
+    /// Those loaded so far, and the files tried.
+    loaded: Mutex<(Arc<Hyphenation>, Vec<String>)>,
+}
+
+#[derive(Debug, Deserialize)]
+struct PatternSpec {
+    languages: Vec<PatternFiles>,
+}
+
+/// A language's files, as `spec/text/hyphenation.ron` lists them.
+#[derive(Clone, Debug, Deserialize)]
+struct PatternFiles {
+    tags: Vec<String>,
+    patterns: String,
+    exceptions: Option<String>,
+    left: usize,
+    right: usize,
 }
 
 #[derive(Deserialize)]
@@ -129,6 +161,7 @@ impl Resources {
         })?;
         let theme: ThemeSpec = spec(&root.join("spec/themes/m1.ron"))?;
         let pictures = spec(&root.join("spec/pictures.ron"))?;
+        let patterns: PatternSpec = spec(&root.join("spec/text/hyphenation.ron"))?;
         Ok(Resources {
             fonts: Arc::new(fonts),
             on_demand: Arc::new(on_demand),
@@ -139,7 +172,65 @@ impl Resources {
             documents,
             mac,
             pictures,
+            language: Language::und(),
+            hyphenation: Arc::new(Patterns {
+                dir: root.join("hyphenation"),
+                languages: patterns.languages,
+                loaded: Mutex::default(),
+            }),
         })
+    }
+
+    /// The hyphenation patterns loaded so far, by language.
+    pub fn hyphenation(&self) -> Arc<Hyphenation> {
+        let loaded = self
+            .hyphenation
+            .loaded
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        loaded.0.clone()
+    }
+
+    /// Loads the patterns `languages` are hyphenated with, those not
+    /// loaded or tried before, for every window. True if it loaded any.
+    pub fn load_hyphenation(&self, languages: &[Language]) -> Result<bool, Error> {
+        let patterns = &self.hyphenation;
+        let mut loaded = patterns
+            .loaded
+            .lock()
+            .unwrap_or_else(PoisonError::into_inner);
+        let mut all = (*loaded.0).clone();
+        let mut any = false;
+        for language in languages {
+            let Some(files) = patterns.languages.iter().find(|f| serves(f, language)) else {
+                continue;
+            };
+            if loaded.1.contains(&files.patterns) {
+                continue;
+            }
+            loaded.1.push(files.patterns.clone());
+            let read = |file: &str| read(&patterns.dir.join(file));
+            let exceptions = match &files.exceptions {
+                Some(file) => read(file)?,
+                None => String::new(),
+            };
+            let hyphenator = Arc::new(Hyphenator::parse(
+                &read(&files.patterns)?,
+                &exceptions,
+                files.left,
+                files.right,
+            ));
+            for tag in &files.tags {
+                if let Ok(tag) = Language::parse(tag) {
+                    all.insert(&tag, hyphenator.clone());
+                }
+            }
+            any = true;
+        }
+        if any {
+            loaded.0 = Arc::new(all);
+        }
+        Ok(any)
     }
 
     /// The bundled fonts, with their fallbacks: every one once
@@ -171,6 +262,19 @@ impl Resources {
         let _ = self.on_demand.loaded.set(Arc::new(all));
         Ok(true)
     }
+}
+
+/// Whether `files` hyphenate `language`: one of their tags is its own, its
+/// language and region's, or its language's, as text's `Hyphenation`
+/// looks them up.
+fn serves(files: &PatternFiles, language: &Language) -> bool {
+    let mut one = Hyphenation::new();
+    for tag in &files.tags {
+        if let Ok(tag) = Language::parse(tag) {
+            one.insert(&tag, Arc::new(Hyphenator::default()));
+        }
+    }
+    one.has(language)
 }
 
 /// Adds the faces in the font file at `path` to `fonts`.

@@ -1,0 +1,17 @@
+// Tab types a tab, which goes to the next tab stop; Ctrl and Tab doesn't.
+// A paragraph can be justified, centred or aligned to either edge by
+// command.
+(
+    size: (900, 700),
+    events: [
+        Type("Name"),
+        Key("Tab"),
+        Type("Value"),
+        Key("Primary+Tab"),
+        Key("Primary+J"),
+        Key("Enter"),
+        Type("Centred"),
+        Key("Primary+E"),
+    ],
+    expect: [("Body", "Name\tValue"), ("Body", "Centred")],
+)

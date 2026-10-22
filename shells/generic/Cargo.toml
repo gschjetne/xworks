@@ -17,6 +17,8 @@ chrome.workspace = true
 render-cpu.workspace = true
 render-gpu.workspace = true
 scene.workspace = true
+sys-locale.workspace = true
+text.workspace = true
 wgpu.workspace = true
 winit.workspace = true
 

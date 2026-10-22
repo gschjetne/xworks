@@ -18,6 +18,10 @@ use toolkit::{List, MenuBar, MenuHit};
 
 use crate::Resources;
 
+mod units;
+
+use units::Unit;
+
 /// A place in a document: a paragraph, an offset into its text in
 /// characters, and whether it belongs with the character before it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -45,7 +49,7 @@ pub enum Event {
     /// An input method's composition in progress; empty when it ends.
     Preedit(String),
     /// The pointer pressed at (`x`, `y`), in logical pixels from the
-    /// window's top left; `count` is 2 for a double click.
+    /// window's top left.
     Press {
         /// Across.
         x: f64,
@@ -53,6 +57,11 @@ pub enum Event {
         y: f64,
         /// Whether Shift is held, to extend the selection.
         shift: bool,
+        /// Which press of a run of quick presses in one place it is, as
+        /// the shell counts them: 1 for a click, 2 for a double click,
+        /// which selects a word, and 3 for a triple click, which selects a
+        /// sentence.
+        count: u32,
     },
     /// The pointer moved, with the button held or not.
     Move {
@@ -158,6 +167,8 @@ pub struct Editor {
     hover: Option<MenuHit>,
     panel: Option<Panel>,
     dragging: bool,
+    /// What a double or triple click selected, which dragging extends.
+    dragged: Option<(Unit, Position, Position)>,
     message: String,
 }
 
@@ -205,12 +216,22 @@ impl Editor {
         };
         let mut document = Document::new();
         let first = document.paragraphs()[0];
-        document
-            .apply(&Op::SetParaProp {
+        let mut ops = vec![Op::SetParaProp {
+            paragraph: first,
+            key: keys::STYLE.to_string(),
+            value: Some(Value::Text(res.sheet.paragraph_style(None).name.clone())),
+        }];
+        // A document is in the system's language (project owner,
+        // 2026-10-22, review pysc65hp); its paragraphs pass it on.
+        if res.language != text::Language::und() {
+            ops.push(Op::SetParaProp {
                 paragraph: first,
-                key: keys::STYLE.to_string(),
-                value: Some(Value::Text(res.sheet.paragraph_style(None).name.clone())),
-            })
+                key: keys::LANGUAGE.to_string(),
+                value: Some(Value::Text(res.language.to_string())),
+            });
+        }
+        document
+            .apply_all(&ops)
             .map_err(|e| EditorError::Store(store::Error::Damaged(e.to_string())))?;
         let store = Store::create(&path, &document, "story")?;
         Ok(Editor::with(res, path, store, document, History::new()))
@@ -272,6 +293,7 @@ impl Editor {
             hover: None,
             panel: None,
             dragging: false,
+            dragged: None,
             message: String::new(),
         };
         editor.relayout(true);
@@ -383,10 +405,18 @@ impl Editor {
                 Some(c) if id == focus => c,
                 _ => document,
             };
-            let layout = story::lay_out_paragraph(source, id, &res.sheet, res.fonts(), width);
+            let hyphenation = res.hyphenation();
+            let layout = story::lay_out_paragraph_with(
+                source,
+                id,
+                &res.sheet,
+                res.fonts(),
+                &hyphenation,
+                width,
+            );
             let count = count.unwrap_or_else(|| {
                 let p = document.paragraph(id).expect("a paragraph of the document");
-                p.text.split_whitespace().count()
+                story::word_count(p, &res.sheet)
             });
             (layout, count)
         };
@@ -408,6 +438,25 @@ impl Editor {
                 }
                 Ok(false) => {}
                 Err(e) => self.message = format!("Couldn't load fonts: {e}"),
+            }
+        }
+        // Words in a language whose hyphenation patterns aren't loaded
+        // bring them in, and their paragraphs are laid out again.
+        let wanted: Vec<text::Language> = fresh
+            .iter()
+            .flat_map(|(p, _)| p.layout.unhyphenated.iter().cloned())
+            .collect();
+        if !wanted.is_empty() {
+            match res.load_hyphenation(&wanted) {
+                Ok(true) => {
+                    for (todo, fresh) in todo.iter().zip(&mut fresh) {
+                        if !fresh.0.layout.unhyphenated.is_empty() {
+                            *fresh = lay_out(todo);
+                        }
+                    }
+                }
+                Ok(false) => {}
+                Err(e) => self.message = format!("Couldn't load hyphenation: {e}"),
             }
         }
         let mut fresh = fresh.into_iter();
@@ -704,7 +753,7 @@ impl Editor {
     }
 
     fn key(&mut self, key: Key, modifiers: Modifiers) -> Vec<Effect> {
-        if let Some(command) = self.res.commands.for_key(key, modifiers) {
+        if let Some(command) = self.res.commands.for_key(key, modifiers, self.res.mac) {
             let id = command.id.clone();
             return self.command(&id);
         }
@@ -780,6 +829,7 @@ impl Editor {
                 let focus = self.focus;
                 self.go(focus, false);
             }
+            Key::Tab if !modifiers.primary && !modifiers.alt => self.insert_text("\t"),
             Key::Tab | Key::Char(_) => {}
         }
         self.reveal();
@@ -921,7 +971,7 @@ impl Editor {
     fn insert_text(&mut self, text: &str) {
         let text: String = text
             .chars()
-            .filter(|&c| !c.is_control() || c == '\u{2028}')
+            .filter(|&c| !c.is_control() || c == '\u{2028}' || c == '\t')
             .collect();
         if text.is_empty() {
             return;
@@ -1096,7 +1146,10 @@ impl Editor {
                     upstream: false,
                 };
             }
-            let line: String = line.chars().filter(|c| !c.is_control()).collect();
+            let line: String = line
+                .chars()
+                .filter(|&c| !c.is_control() || c == '\t')
+                .collect();
             if line.is_empty() {
                 continue;
             }
@@ -1292,14 +1345,17 @@ impl Editor {
             "redo" => writable && self.history.redo_name().is_some(),
             "cut" | "copy" => !self.collapsed(),
             "save-version" | "paste" | "bold" | "italic" => writable,
+            _ if id.starts_with("language-") || id.starts_with("align-") => writable,
             _ => true,
         };
         let checked = match id {
             "bold" => self.all(keys::BOLD),
             "italic" => self.all(keys::ITALIC),
-            _ => id
-                .strip_prefix("style-")
-                .is_some_and(|style| self.style_id() == style),
+            _ => {
+                id.strip_prefix("style-")
+                    .is_some_and(|style| self.style_id() == style)
+                    || self.unit_checked(id)
+            }
         };
         CommandState { enabled, checked }
     }
@@ -1323,6 +1379,10 @@ impl Editor {
     fn command(&mut self, id: &str) -> Vec<Effect> {
         self.menu = None;
         if !self.state(id).enabled {
+            return Vec::new();
+        }
+        if self.unit_command(id) {
+            self.reveal();
             return Vec::new();
         }
         let mut effects = Vec::new();
@@ -1524,7 +1584,7 @@ impl Editor {
                 self.scroll += px(dy);
                 self.clamp_scroll();
             }
-            Event::Press { x, y, shift } => return self.press(px(x), px(y), shift),
+            Event::Press { x, y, shift, count } => return self.press(px(x), px(y), shift, count),
             Event::Move { x, y } => self.pointer_move(px(x), px(y)),
             Event::Release => self.dragging = false,
         }
@@ -1545,7 +1605,7 @@ impl Editor {
         )
     }
 
-    fn press(&mut self, x: i64, y: i64, shift: bool) -> Vec<Effect> {
+    fn press(&mut self, x: i64, y: i64, shift: bool, count: u32) -> Vec<Effect> {
         let theme = self.res.theme.clone();
         if let Some(list) = self.list() {
             match list.hit(&theme, x, y) {
@@ -1580,7 +1640,14 @@ impl Editor {
             return Vec::new();
         }
         let target = self.hit(x, y);
-        self.go(target, shift);
+        match count {
+            0 | 1 => {
+                self.go(target, shift);
+                self.dragged = None;
+            }
+            2 => self.select_unit(target, Unit::Word),
+            _ => self.select_unit(target, Unit::Sentence),
+        }
         self.dragging = true;
         Vec::new()
     }
@@ -1594,7 +1661,11 @@ impl Editor {
         }
         if self.dragging && self.menu.is_none() && self.panel.is_none() {
             let target = self.hit(x, y);
-            self.go(target, true);
+            if self.dragged.is_some() {
+                self.drag_unit(target);
+            } else {
+                self.go(target, true);
+            }
         }
         if let (Some(list), Some(panel)) = (self.list(), &mut self.panel)
             && let Some(Some(row)) = list.hit(&theme, x, y)

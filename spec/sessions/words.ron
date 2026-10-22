@@ -1,0 +1,38 @@
+// Ctrl and the arrows move by words, forward to a word's end and back to
+// its start, and with Shift they select; on a Mac, Option and the arrows
+// do. At a paragraph's edge they go on into the next or the one before.
+// Moving and selecting by sentences are commands.
+(
+    size: (900, 700),
+    events: [
+        Type("The cat's toy is lost. Find it."),
+        Key("Primary+Home"),
+        // To the end of "The", then of "cat's".
+        Repeat("Primary+Right", 2),
+        Type(" red"),
+        // Back to the start of "red", and "red" selected.
+        Key("Primary+Left"),
+        Key("Primary+Shift+Right"),
+        // On to the end of the sentence.
+        Command("select-sentence-right"),
+        Command("copy"),
+        // To the end of the next sentence.
+        Command("sentence-right"),
+        Type(" Now."),
+        Key("Enter"),
+        Type("Second line"),
+        // Back past "line" and "Second", into the paragraph before, to the
+        // start of its last word.
+        Repeat("Primary+Left", 3),
+        Type("X"),
+        // Forward past "XNow" and its full stop, and into the next
+        // paragraph, to the end of its first word.
+        Repeat("Primary+Right", 3),
+        Type("?"),
+    ],
+    expect: [
+        ("Body", "The cat's red toy is lost. Find it. XNow."),
+        ("Body", "Second? line"),
+    ],
+    clipboard: Some("red toy is lost."),
+)

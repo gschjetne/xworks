@@ -148,12 +148,20 @@ pub fn words(text: &str, languages: &[(Range<usize>, Language)]) -> Vec<Word> {
 
 /// How many words `text` has: stretches of letters, numbers or
 /// ideographs between word boundaries, by its languages' rules
-/// ([`words`]).
+/// ([`words`]). Words joined by a hyphen, as in "fixed-point", count as
+/// one, as word processors count them.
 pub fn word_count(text: &str, languages: &[(Range<usize>, Language)]) -> usize {
-    words(text, languages)
-        .iter()
-        .filter(|w| w.word_like)
-        .count()
+    let words = words(text, languages);
+    let mut count = 0;
+    for (k, word) in words.iter().enumerate() {
+        let joined = k >= 2
+            && matches!(&text[words[k - 1].range.clone()], "-" | "\u{2010}")
+            && words[k - 2].word_like;
+        if word.word_like && !joined {
+            count += 1;
+        }
+    }
+    count
 }
 
 /// `text` divided into sentences (UAX #29), in order, covering it. Each
@@ -350,6 +358,9 @@ mod tests {
         );
         assert_eq!(word_texts("", &[]), []);
         assert_eq!(word_count("Γειά σου, κόσμε!", &[]), 3);
+        // Hyphenated words count as one, but words around a dash don't.
+        assert_eq!(word_count("a fixed-point number", &[]), 3);
+        assert_eq!(word_count("well - known, well\u{2014}known", &[]), 4);
     }
 
     #[test]

@@ -75,7 +75,19 @@ struct Win {
     /// render-cpu, with the images it keeps, for a software GPU and the
     /// first frames.
     cpu: render_cpu::Renderer,
+    /// The last press of the pointer: when, where, and its count in its
+    /// run of quick presses in one place, for double and triple clicks,
+    /// which winit doesn't count.
+    pressed: Option<(Instant, (f64, f64), u32)>,
 }
+
+/// How soon after a press another in the same place counts as the next of
+/// a double or triple click: Windows' default, which winit can't ask the
+/// system for.
+const MULTI_CLICK_TIME: Duration = Duration::from_millis(500);
+/// How far apart, in logical pixels, presses in the same place may be:
+/// Windows' default.
+const MULTI_CLICK_DISTANCE: f64 = 4.0;
 
 struct Shell {
     res: Arc<Resources>,
@@ -264,8 +276,9 @@ fn main() -> anyhow::Result<()> {
     let root = root().context("can't find xWorks' spec/ and fonts/; set XWORKS_ROOT")?;
     let documents = documents();
     let mac = cfg!(target_os = "macos");
-    let res =
+    let mut res =
         Resources::load(&root, documents, mac).context("loading fonts, styles and commands")?;
+    res.language = system_language();
     mark(&mut measuring, "resources");
     let mut shell = Shell {
         res: Arc::new(res),
@@ -285,6 +298,16 @@ fn main() -> anyhow::Result<()> {
     };
     event_loop.run_app(&mut shell)?;
     Ok(())
+}
+
+/// The system's language, which new documents are in (project owner,
+/// 2026-10-22, review pysc65hp): the first of the person's languages that
+/// names one, or none, as for the C locale.
+fn system_language() -> text::Language {
+    sys_locale::get_locales()
+        .filter(|tag| !matches!(tag.as_str(), "C" | "POSIX") && !tag.starts_with("C."))
+        .find_map(|tag| text::Language::parse(&tag).ok())
+        .unwrap_or_default()
 }
 
 /// Where `spec/` and `fonts/` are.
@@ -524,6 +547,7 @@ impl Shell {
             canvas: None,
             canvas_by_gpu: false,
             cpu: render_cpu::Renderer::new(),
+            pressed: None,
         };
         let logical = win
             .window
@@ -800,11 +824,26 @@ impl ApplicationHandler<UserEvent> for Shell {
             } => {
                 let (x, y) = win.pointer;
                 let event = match state {
-                    ElementState::Pressed => Event::Press {
-                        x,
-                        y,
-                        shift: self.modifiers.shift_key(),
-                    },
+                    ElementState::Pressed => {
+                        let now = Instant::now();
+                        let count = match win.pressed {
+                            Some((at, (px, py), n))
+                                if now.duration_since(at) <= MULTI_CLICK_TIME
+                                    && (x - px).abs() <= MULTI_CLICK_DISTANCE
+                                    && (y - py).abs() <= MULTI_CLICK_DISTANCE =>
+                            {
+                                n + 1
+                            }
+                            _ => 1,
+                        };
+                        win.pressed = Some((now, (x, y), count));
+                        Event::Press {
+                            x,
+                            y,
+                            shift: self.modifiers.shift_key(),
+                            count,
+                        }
+                    }
                     ElementState::Released => Event::Release,
                 };
                 self.feed(event_loop, id, event);

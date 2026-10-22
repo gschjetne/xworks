@@ -28,6 +28,14 @@ pub struct Session {
     /// What the status bar says afterwards.
     #[serde(default)]
     pub status: Option<String>,
+    /// The system's language, which the new document is in, as a BCP 47
+    /// tag; none if it's left out.
+    #[serde(default)]
+    pub language: Option<String>,
+    /// Stretches of text, each with the language every character of it is
+    /// in, as a BCP 47 tag: its own, or its paragraph's.
+    #[serde(default)]
+    pub languages: Vec<(String, String)>,
 }
 
 /// One thing a person does.
@@ -46,6 +54,10 @@ pub enum Step {
     Click(f64, f64),
     /// Clicks with Shift held, extending the selection.
     ShiftClick(f64, f64),
+    /// Clicks twice in one place, selecting a word.
+    DoubleClick(f64, f64),
+    /// Clicks three times in one place, selecting a sentence.
+    TripleClick(f64, f64),
     /// Drags from one point to another.
     Drag((f64, f64), (f64, f64)),
     /// Moves the pointer.
@@ -73,6 +85,14 @@ pub struct Played {
 
 /// Plays `session` into a new document in `res`'s documents folder.
 pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorError> {
+    let res = match &session.language {
+        Some(tag) => {
+            let mut res = (*res).clone();
+            res.language = text::Language::parse(tag).unwrap_or_default();
+            Arc::new(res)
+        }
+        None => res,
+    };
     let mut editor = Editor::create(res.clone())?;
     let mut clipboard = String::new();
     let mut problems = Vec::new();
@@ -84,27 +104,16 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
             Step::Key(keys) => vec![key(keys)],
             Step::Repeat(keys, n) => vec![key(keys); *n],
             Step::Command(id) => vec![Event::Command(id.clone())],
-            Step::Click(x, y) => vec![
-                Event::Press {
-                    x: *x,
-                    y: *y,
-                    shift: false,
-                },
-                Event::Release,
-            ],
-            Step::ShiftClick(x, y) => vec![
-                Event::Press {
-                    x: *x,
-                    y: *y,
-                    shift: true,
-                },
-                Event::Release,
-            ],
+            Step::Click(x, y) => clicks(*x, *y, false, 1),
+            Step::ShiftClick(x, y) => clicks(*x, *y, true, 1),
+            Step::DoubleClick(x, y) => clicks(*x, *y, false, 2),
+            Step::TripleClick(x, y) => clicks(*x, *y, false, 3),
             Step::Drag((x1, y1), (x2, y2)) => vec![
                 Event::Press {
                     x: *x1,
                     y: *y1,
                     shift: false,
+                    count: 1,
                 },
                 Event::Move { x: *x2, y: *y2 },
                 Event::Release,
@@ -150,6 +159,24 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
     })
 }
 
+/// `count` clicks at (`x`, `y`), as the shell reports them: each press
+/// numbered in its run.
+fn clicks(x: f64, y: f64, shift: bool, count: u32) -> Vec<Event> {
+    (1..=count)
+        .flat_map(|n| {
+            [
+                Event::Press {
+                    x,
+                    y,
+                    shift,
+                    count: n,
+                },
+                Event::Release,
+            ]
+        })
+        .collect()
+}
+
 /// The key event a shortcut-like string names.
 fn key(keys: &str) -> Event {
     let shortcut = Shortcut::parse(keys).unwrap_or(Shortcut {
@@ -193,6 +220,39 @@ pub fn check(session: &Session, played: &Played) -> Vec<String> {
                 if !run.props.get(key).is_some_and(|v| *v != Value::Bool(false)) {
                     problems.push(format!("{stretch:?} isn't all {key}"));
                 }
+            }
+        }
+    }
+    for (stretch, want) in &session.languages {
+        let Some((id, start)) = document.paragraphs().iter().find_map(|&id| {
+            let text = &document.paragraph(id)?.text;
+            text.find(stretch.as_str())
+                .map(|b| (id, text[..b].chars().count() as u32))
+        }) else {
+            problems.push(format!("{stretch:?} isn't in the document"));
+            continue;
+        };
+        let p = document.paragraph(id).expect("a paragraph");
+        let tag = |props: &doc::Props| match props.get(story::keys::LANGUAGE) {
+            Some(Value::Text(tag)) => text::Language::parse(tag).ok(),
+            _ => None,
+        };
+        let want = text::Language::parse(want).ok();
+        let end = start + stretch.chars().count() as u32;
+        let mut pos = 0;
+        for run in &p.runs {
+            let (s, e) = (pos, pos + run.len);
+            pos = e;
+            if e <= start || s >= end {
+                continue;
+            }
+            let got = tag(&run.props).or_else(|| tag(&p.props));
+            if got != want {
+                problems.push(format!(
+                    "{stretch:?} is in {}, expected {want:?}",
+                    got.map_or("no language".to_string(), |l| l.to_string())
+                ));
+                break;
             }
         }
     }
