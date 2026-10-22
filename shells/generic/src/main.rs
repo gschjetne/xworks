@@ -15,6 +15,9 @@
 //! - `XWORKS_DOCUMENTS`: where new documents go and Open looks; otherwise
 //!   the Documents folder in the home folder.
 //! - `XWORKS_WAYLAND`: under WSL, use Wayland rather than X11.
+//! - `XWORKS_MEASURE_STARTUP`: for `tools/budgets`: once the first frame
+//!   is presented, print "ready" and the time since starting, then quit
+//!   when standard input closes.
 //! - `WGPU_BACKEND`: vulkan, dx12, metal or gl, to pick a GPU backend;
 //!   otherwise Vulkan, Metal or DirectX 12, whichever the system has.
 
@@ -40,6 +43,8 @@ const DESK: scene::Color = scene::Color::rgb(200, 201, 204);
 enum UserEvent {
     /// A screen reader wants the tree, or wants something done.
     Access(accesskit_winit::Event),
+    /// Measuring is done: standard input closed.
+    Measured,
 }
 
 impl From<accesskit_winit::Event> for UserEvent {
@@ -73,9 +78,12 @@ struct Shell {
     modifiers: ModifiersState,
     start: Option<Option<PathBuf>>,
     proxy: EventLoopProxy<UserEvent>,
+    /// When the program started, if it's measuring its start.
+    measuring: Option<std::time::Instant>,
 }
 
 fn main() -> anyhow::Result<()> {
+    let started = std::time::Instant::now();
     let root = root().context("can't find xWorks' spec/ and fonts/; set XWORKS_ROOT")?;
     let documents = documents();
     let mac = cfg!(target_os = "macos");
@@ -110,6 +118,7 @@ fn main() -> anyhow::Result<()> {
         modifiers: ModifiersState::empty(),
         start: Some(start),
         proxy: event_loop.create_proxy(),
+        measuring: std::env::var_os("XWORKS_MEASURE_STARTUP").map(|_| started),
     };
     event_loop.run_app(&mut shell)?;
     Ok(())
@@ -359,6 +368,17 @@ impl Shell {
         }
         win.window.pre_present_notify();
         gpu.queue.present(frame);
+        if let Some(started) = self.measuring.take() {
+            // The first frame is on screen once the GPU has done it.
+            let _ = gpu.device.poll(wgpu::PollType::wait_indefinitely());
+            println!("ready {}", started.elapsed().as_micros());
+            let proxy = self.proxy.clone();
+            std::thread::spawn(move || {
+                let mut rest = String::new();
+                let _ = std::io::Read::read_to_string(&mut std::io::stdin(), &mut rest);
+                let _ = proxy.send_event(UserEvent::Measured);
+            });
+        }
     }
 
     /// Feeds `event` to window `id`'s editor and carries out what it asks.
@@ -412,8 +432,11 @@ impl ApplicationHandler<UserEvent> for Shell {
         }
     }
 
-    fn user_event(&mut self, _: &ActiveEventLoop, event: UserEvent) {
-        let UserEvent::Access(event) = event;
+    fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
+        let event = match event {
+            UserEvent::Access(event) => event,
+            UserEvent::Measured => return event_loop.exit(),
+        };
         let Some(win) = self.windows.get_mut(&event.window_id) else {
             return;
         };
