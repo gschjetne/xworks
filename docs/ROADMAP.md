@@ -332,6 +332,132 @@ gqbnbar4).
 - The project owner uses it live on Linux and Windows: types a document,
   quits, reopens and prints it. macOS passes CI headless.
 
+## M2: Foundations for documents
+
+*Proposed (2026-10-22), awaiting the project owner's review.*
+
+M1 made one thin path through every layer. M2 hardens the interfaces that
+documents build on into the contracts the substrate and product tracks
+need ([TRACKS.md](TRACKS.md), phase 2). Two things people use prove them:
+Markdown files opened, edited and saved as themselves, the first stage of
+S1 Story; and word-processing text set well, in chrome designed rather than
+improvised.
+
+**In M2:** F1 Document core, F2 Storage, F3 Text, F4 Rendering, F5 Shell
+and toolkit, and F7 Test infrastructure, each as far as documents need;
+then S1 Story's Markdown. **Not in M2:** F6 Calculation, which nothing in
+M2 needs, and chunked tables. They come in M3, with the grid that proves
+them. Also out: the canvas beyond automatic pages, slides, sheets, and the
+later tracks.
+
+### Stages
+
+Each stage starts with its tests, as in M1, and each gets a plan of its
+own when it starts.
+
+```mermaid
+flowchart LR
+  s1["1 UX design"]
+  s2["2 Objects and the block tree"]
+  s3["3 Text set well"]
+  s4["4 Images and drawing"]
+  s5["5 The designed chrome"]
+  s6["6 Markdown as itself"]
+  s7["7 Storage and test infrastructure"]
+  s8["8 Exit"]
+
+  s1 --> s5
+  s2 --> s6
+  s3 & s4 & s5 --> s6
+  s6 & s7 --> s8
+```
+
+1. **UX design** (F5; project owner, 2026-10-22, review v0qk8k5d). A
+   design document and mockups drawn with `shot`, before the toolkit grows
+   more widgets. It settles:
+   - windows and tabs, and moving between embedded parts;
+   - menus, an inspector, a toolbar or a command palette;
+   - selection and modes across text, objects and cells;
+   - the keyboard;
+   - the visual language: type, spacing, colour, density, dark mode and
+     HiDPI.
+
+   It must map onto AppKit's and Fauré's widgets through the chrome model.
+   *Exit:* the design in ARCHITECTURE.md section 8, its look in
+   `spec/themes/`, and its mockups approved as goldens.
+
+2. **Objects and the block tree** (F1, with S1's model). Objects are
+   created, deleted and moved by operations, not only edited. A story
+   becomes a tree of blocks: paragraphs, headings, lists and their items,
+   quotes, code blocks and tables. Text gains the marks Markdown needs:
+   emphasis, strong, code and links. Snapshots move to schema 2, and
+   schema 1 files open and are upgraded. *Tests:* every new operation
+   inverts and rebases, by property tests as in M1; a file M1 wrote, kept
+   as a fixture, opens with the same text and history.
+
+3. **Text set well** (F3):
+   - optimal (Knuth–Plass) line breaking, and justified text;
+   - hyphenation from TeX's patterns, fetched by hash where their licenses
+     are unclear;
+   - moving and selecting by word and sentence, and double- and
+     triple-click;
+   - a language set on text by a command, so Japanese takes its own forms;
+   - the default document fonts, chosen.
+
+   *Tests:* layout cases as data, as in M1, for justified and hyphenated
+   paragraphs in several languages, and sessions for the new movement.
+
+4. **Images and drawing** (F4). Images in the display list, decoded in the
+   app and stored in the file, drawn by all three renderers. Clips,
+   transforms, and underline and strikethrough. Frames redrawn only where
+   they changed. PDF text read back by a second reader as well, where
+   pdf-extract misreads Arabic. *Tests:* goldens, and render-gpu within its
+   tolerance of render-cpu.
+
+5. **The designed chrome** (F5): what stage 1 settled, built. That includes
+   managing documents (naming, renaming and moving them, and recent ones),
+   the Open dialog it calls for, the `part` crate and the canvas contract,
+   and AccessKit with the text's real ranges. *Tests:* sessions and frame
+   goldens for each new piece of chrome.
+
+6. **Markdown as itself** (S1's first stage; ARCHITECTURE.md section 6).
+   A `.md` file opens as a structure-only story, is edited, and is saved
+   back as CommonMark with tables, whole and atomically. Undo and versions
+   last as long as it's open. Adding what Markdown can't hold asks before
+   the document becomes an `.xw` file. *Tests:*
+   - CommonMark's own examples, fetched rather than committed, read and
+     written back;
+   - a round trip, by property tests: what's written reads back as the
+     same story;
+   - a fuzz target for the reader;
+   - a session that opens, edits and saves a Markdown file.
+
+7. **Storage and test infrastructure** (F2, F7). Named versions opened and
+   copied out as documents, and a document open twice refused. The budgets
+   checked in CI on a self-hosted runner, once the owner's workstation runs
+   Linux, with budgets for opening and saving Markdown. The fuzz targets
+   run on a schedule in CI. A recorder writes what a person does in the
+   shell as a session, for bug reports.
+
+8. **Exit.** Each foundation crate's contract is written down in its
+   `lib.rs` and the architecture, and the budgets are measured again.
+
+### Exit criteria
+
+- A Markdown file, opened in xWorks, edited and saved, is still the same
+  Markdown where it wasn't edited, and CommonMark's examples read and write
+  back.
+- Justified, hyphenated paragraphs, lists, quotes, code, images and links
+  lay out, draw and print the same on every platform, against approved
+  goldens.
+- The chrome follows the approved design, and a session drives each piece
+  of it.
+- Every operation inverts and rebases, and M1's files open in M2.
+- The budgets hold on the owner's workstation, Markdown's included, and CI
+  checks them on every push once the runner is in place.
+- The owner uses it live on Linux and Windows: writes a Markdown file and a
+  document with images, quits, reopens and prints.
+
 ## Later
 
 Noted for after M1, not yet planned:
