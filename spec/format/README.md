@@ -20,7 +20,7 @@ An xWorks document is one file with the extension `.xw`: an SQLite database
 | Table | Holds |
 |---|---|
 | `meta` | what the document is: its `kind`, `story` in M1 |
-| `log` | every transaction, in commit order: edits, undos and redos |
+| `log` | every transaction, in commit order: edits, continuing edits, undos and redos |
 | `snapshot` | the whole document after a log entry, from time to time |
 | `version` | named versions, as log positions |
 | `font` | font files the document carries, by hash |
@@ -44,8 +44,9 @@ new schema. A test in `store` pins the bytes of known values.
 2. Read the latest snapshot.
 3. Apply the operations of every log entry after it, in order.
 4. Rebuild undo and redo from the whole log: an edit pushes onto Undo
-   and clears Redo; an undo moves the last edit to Redo; a redo moves it
-   back.
+   and clears Redo; a continuing edit joins the last edit on Undo, so they
+   undo together, and clears Redo; an undo moves the last edit to Redo; a
+   redo moves it back.
 
 A snapshot or an operation that doesn't hold together is an error; the
 reader never opens a document it can't vouch for.

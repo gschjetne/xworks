@@ -157,6 +157,45 @@ fn reopening_gives_the_same_dump_and_the_same_renders() {
 }
 
 #[test]
+fn typing_continues_and_undoes_as_one_after_reopening() {
+    let dir = scratch("continue");
+    let path = dir.join("typing.xw");
+    let mut document = Document::new();
+    let mut store = Store::create(&path, &document, "story").expect("created");
+    let t = typing(&mut document, 0, "First. ");
+    store
+        .append(Entry::Commit(&t), &document)
+        .expect("appended");
+    let t = typing(&mut document, 0, "a");
+    store
+        .append(Entry::Commit(&t), &document)
+        .expect("appended");
+    for text in ["b", "c"] {
+        let t = typing(&mut document, 0, text);
+        store
+            .append(Entry::Continue(&t), &document)
+            .expect("appended");
+    }
+    drop(store);
+    let mut opened = Store::open(&path).expect("it opens");
+    let paragraph = opened.document.paragraphs()[0];
+    assert_eq!(
+        opened.document.paragraph(paragraph).unwrap().text,
+        "First. abc"
+    );
+    opened.history.undo(&mut opened.document).expect("applies");
+    assert_eq!(
+        opened.document.paragraph(paragraph).unwrap().text,
+        "First. "
+    );
+    assert!(
+        store::dump(&path)
+            .unwrap()
+            .contains("    3 continue \"Typing\"\n")
+    );
+}
+
+#[test]
 fn snapshots_bound_the_replay_and_versions_go_back() {
     let dir = scratch("snapshots");
     let path = dir.join("long.xw");
@@ -332,9 +371,13 @@ fn damage_is_an_error_not_a_document() {
         damage("DELETE FROM meta", none()),
         Err(Error::Damaged(_))
     ));
-    // An undo with nothing to undo.
+    // An undo with nothing to undo, a continuation of nothing.
     assert!(matches!(
         damage("UPDATE log SET kind = 'undo' WHERE seq = 1", none()),
+        Err(Error::Damaged(_))
+    ));
+    assert!(matches!(
+        damage("UPDATE log SET kind = 'continue' WHERE seq = 1", none()),
         Err(Error::Damaged(_))
     ));
     // Untouched, it opens.

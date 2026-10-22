@@ -9,12 +9,13 @@ CREATE TABLE meta (
 ) STRICT;
 
 -- Every transaction, as it was committed, in order: an edit ("commit"),
--- or undoing or redoing one. `ops` are the operations that were applied
+-- an edit that undoes together with the one before it ("continue", as
+-- each keystroke of a run of typing is), or undoing or redoing one. `ops` are the operations that were applied
 -- and `inverse` those that undo them, each a list of doc::Op in postcard
 -- (README.md, "Encoding").
 CREATE TABLE log (
     seq     INTEGER PRIMARY KEY NOT NULL CHECK (seq > 0),
-    kind    TEXT NOT NULL CHECK (kind IN ('commit', 'undo', 'redo')),
+    kind    TEXT NOT NULL CHECK (kind IN ('commit', 'continue', 'undo', 'redo')),
     name    TEXT NOT NULL,
     ops     BLOB NOT NULL,
     inverse BLOB NOT NULL

@@ -620,6 +620,40 @@ mod snapshots {
     }
 
     #[test]
+    fn a_continued_transaction_undoes_with_the_one_before() {
+        let mut doc = Document::new();
+        let p = doc.paragraphs()[0];
+        let mut history = doc::History::new();
+        let typed = |doc: &mut Document, offset: u32, text: &str| {
+            doc.transact(
+                "Typing",
+                vec![Op::InsertText {
+                    paragraph: p,
+                    offset,
+                    text: text.to_string(),
+                    runs: vec![Run::new(text.chars().count() as u32, Props::new())],
+                }],
+            )
+            .unwrap()
+        };
+        let empty = doc.clone();
+        assert!(!history.continue_last(typed(&mut doc.clone(), 0, "x")));
+        let t = typed(&mut doc, 0, "a");
+        history.push(t);
+        let t = typed(&mut doc, 1, "b");
+        assert!(history.continue_last(t));
+        let t = typed(&mut doc, 2, "c");
+        assert!(history.continue_last(t));
+        assert_eq!(doc.paragraph(p).unwrap().text, "abc");
+        let undone = history.undo(&mut doc).unwrap().unwrap().name.clone();
+        assert_eq!(undone, "Typing");
+        assert_eq!(doc, empty);
+        assert!(history.undo(&mut doc).unwrap().is_none());
+        history.redo(&mut doc).unwrap();
+        assert_eq!(doc.paragraph(p).unwrap().text, "abc");
+    }
+
+    #[test]
     fn history_rebuilds_from_a_record_without_applying() {
         let mut history = doc::History::new();
         let t = |name: &str| doc::Transaction {

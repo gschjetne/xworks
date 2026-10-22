@@ -55,6 +55,22 @@ impl History {
         self.redo.last().map(|t| t.name.as_str())
     }
 
+    /// Adds `transaction`, just applied, to the last one on Undo, so one
+    /// undo takes back both: for typing, which records each keystroke but
+    /// undoes the run of them. Clears Redo. Returns whether there was a
+    /// transaction to add to; if not, nothing changes.
+    pub fn continue_last(&mut self, transaction: Transaction) -> bool {
+        let Some(last) = self.undo.last_mut() else {
+            return false;
+        };
+        last.ops.extend(transaction.ops);
+        let mut inverse = transaction.inverse;
+        inverse.append(&mut last.inverse);
+        last.inverse = inverse;
+        self.redo.clear();
+        true
+    }
+
     /// Moves the last transaction from Undo to Redo without applying it:
     /// for rebuilding history from a record of what was done. Returns
     /// whether there was one.

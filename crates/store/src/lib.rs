@@ -71,6 +71,9 @@ pub enum Error {
 pub enum Entry<'a> {
     /// An edit.
     Commit(&'a Transaction),
+    /// An edit that undoes together with the one before it, as each
+    /// keystroke of a run of typing does.
+    Continue(&'a Transaction),
     /// Undoing an edit: `transaction` is the edit undone.
     Undo(&'a Transaction),
     /// Redoing an edit undone.
@@ -224,6 +227,11 @@ impl Store {
                     });
                     true
                 }
+                "continue" => history.continue_last(Transaction {
+                    name: row.get(2)?,
+                    ops: decode(&row.get::<_, Vec<u8>>(3)?)?,
+                    inverse: decode(&row.get::<_, Vec<u8>>(4)?)?,
+                }),
                 "undo" => history.replay_undo(),
                 "redo" => history.replay_redo(),
                 _ => false,
@@ -279,6 +287,7 @@ impl Store {
         self.writable()?;
         let (kind, name, ops, inverse) = match entry {
             Entry::Commit(t) => ("commit", &t.name, &t.ops, &t.inverse),
+            Entry::Continue(t) => ("continue", &t.name, &t.ops, &t.inverse),
             Entry::Undo(t) => ("undo", &t.name, &t.inverse, &t.ops),
             Entry::Redo(t) => ("redo", &t.name, &t.ops, &t.inverse),
         };
