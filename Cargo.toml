@@ -35,6 +35,7 @@ shot = { path = "tools/shot" }
 accesskit = "0.25.1"    # the shell's accessibility tree, for screen readers
 accesskit_winit = "0.34.1"  # carries the accessibility tree to the platform through winit
 anyhow = "1.0.104"      # error handling in tools only
+arboard = { version = "3.7.0", default-features = false }  # the system clipboard in the generic shell, as plain text (review yzmxnt0g); its default image support would bring the image crate
 fearless_simd = { version = "0.7.0", default-features = false, features = ["force_support_fallback"] }  # vello_cpu's SIMD levels; this feature gives the portable scalar one, whose pixels are the same everywhere
 glifo = { version = "=0.4.0", default-features = false }  # the glyph type vello_gpu draws, which it doesn't re-export; already in the build through it
 harfrust = "0.14.0"     # shaping text (docs/ARCHITECTURE.md, section 9); it shares read-fonts with skrifa

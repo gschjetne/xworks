@@ -278,8 +278,9 @@ it with vello_gpu; and the generic shell (`xworks`) runs it on winit and
 wgpu, with the input method, AccessKit, and render-cpu where the only GPU
 is software. Ten scripted sessions in `spec/sessions/` play input headless
 and check the document. Typing undoes as one run, kept across reopening
-by a new kind of log entry. Cut, copy and paste stay within xWorks until
-the owner decides on the Windows clipboard crate's license.
+by a new kind of log entry. Cut, copy and paste go through the system
+clipboard, with arboard, once the owner allowed the Boost license its
+Windows crates use (review yzmxnt0g, 2026-10-22).
 
 **Stage 10 is built (2026-10-22); its plans await the owner.**
 `tools/budgets` measures the six budgets that apply to M1, against

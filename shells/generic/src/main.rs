@@ -8,7 +8,8 @@
 //! Each window holds one [`app::Editor`]: the shell turns winit's events into
 //! the editor's, carries out the effects it returns, and draws its view with
 //! render-gpu. It also feeds the input method and screen readers, through
-//! AccessKit. Cut and copied text stays within xWorks for now.
+//! AccessKit. Cut, Copy and Paste go through the system clipboard, as plain
+//! text.
 //!
 //! - `XWORKS_ROOT`: where `spec/` and `fonts/` are; otherwise the nearest
 //!   folder holding them, up from the program or the current folder.
@@ -74,14 +75,68 @@ struct Shell {
     software: bool,
     renderers: HashMap<wgpu::TextureFormat, render_gpu::Renderer>,
     windows: HashMap<WindowId, Win>,
-    /// Cut and copied text, within xWorks: the system clipboard waits on
-    /// the project owner's decision on its Windows crate's license.
-    clipboard: String,
+    clipboard: Clipboard,
     modifiers: ModifiersState,
     start: Option<Option<PathBuf>>,
     proxy: EventLoopProxy<UserEvent>,
     /// The start's phases, if it's measuring them.
     measuring: Option<Measuring>,
+}
+
+/// The clipboard, as plain text: the system's, opened at the first cut,
+/// copy or paste so the start doesn't wait on it. Where it can't be
+/// reached, cut and copied text stays within xWorks.
+#[derive(Default)]
+struct Clipboard {
+    system: Option<arboard::Clipboard>,
+    opened: bool,
+    /// What xWorks last cut or copied.
+    own: String,
+}
+
+impl Clipboard {
+    fn system(&mut self) -> Option<&mut arboard::Clipboard> {
+        if !self.opened {
+            self.opened = true;
+            match arboard::Clipboard::new() {
+                Ok(system) => self.system = Some(system),
+                Err(e) => eprintln!("xworks: the system clipboard: {e}"),
+            }
+        }
+        self.system.as_mut()
+    }
+
+    fn copy(&mut self, text: String) {
+        // Windows' programs expect lines to end in a carriage return and a
+        // line feed.
+        let lines = if cfg!(windows) {
+            text.replace('\n', "\r\n")
+        } else {
+            text.clone()
+        };
+        if let Some(system) = self.system()
+            && let Err(e) = system.set_text(lines)
+        {
+            eprintln!("xworks: copying to the system clipboard: {e}");
+        }
+        self.own = text;
+    }
+
+    /// The text to paste, if there is any: none when the clipboard holds
+    /// something else, such as a picture.
+    fn paste(&mut self) -> Option<String> {
+        let Some(system) = self.system() else {
+            return Some(self.own.clone());
+        };
+        match system.get_text() {
+            Ok(text) => Some(text),
+            Err(arboard::Error::ContentNotAvailable) => None,
+            Err(e) => {
+                eprintln!("xworks: pasting from the system clipboard: {e}");
+                Some(self.own.clone())
+            }
+        }
+    }
 }
 
 /// The phases of the start, timed for `tools/budgets`.
@@ -157,7 +212,7 @@ fn main() -> anyhow::Result<()> {
         software: false,
         renderers: HashMap::new(),
         windows: HashMap::new(),
-        clipboard: String::new(),
+        clipboard: Clipboard::default(),
         modifiers: ModifiersState::empty(),
         start: Some(start),
         proxy: event_loop.create_proxy(),
@@ -443,10 +498,11 @@ impl Shell {
         let mut opening = Vec::new();
         while let Some(effect) = effects.pop() {
             match effect {
-                Effect::Copy(text) => self.clipboard = text,
+                Effect::Copy(text) => self.clipboard.copy(text),
                 Effect::Paste => {
-                    let text = self.clipboard.clone();
-                    effects.extend(win.editor.update(Event::Pasted(text)));
+                    if let Some(text) = self.clipboard.paste() {
+                        effects.extend(win.editor.update(Event::Pasted(text)));
+                    }
                 }
                 Effect::Open(path) => opening.push(path),
                 Effect::OpenExternally(path) => {
