@@ -7,6 +7,8 @@
 //! - [`Editor`]: one document in one window. Shells feed it [`Event`]s and
 //!   carry out the [`Effect`]s it returns; [`Editor::view`] draws the window
 //!   as a display list, which the shell renders.
+//! - [`picture`]: PNG, JPEG, GIF and WebP files decoded, in sRGB, to
+//!   place in documents and draw.
 //!
 //! Every edit is a transaction, written to the document's file as it's
 //! committed; there's no saving and no "Save changes?". A run of typing
@@ -22,6 +24,7 @@
 //!   sessions can be played headless and compared.
 
 mod editor;
+pub mod picture;
 mod resources;
 pub mod session;
 mod view;

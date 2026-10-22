@@ -54,6 +54,8 @@ pub struct Resources {
     pub documents: PathBuf,
     /// Whether shortcuts read as on a Mac.
     pub mac: bool,
+    /// How large a picture may be.
+    pub pictures: crate::picture::Limits,
 }
 
 #[derive(Deserialize)]
@@ -126,6 +128,7 @@ impl Resources {
             message: e.to_string(),
         })?;
         let theme: ThemeSpec = spec(&root.join("spec/themes/m1.ron"))?;
+        let pictures = spec(&root.join("spec/pictures.ron"))?;
         Ok(Resources {
             fonts: Arc::new(fonts),
             on_demand: Arc::new(on_demand),
@@ -135,6 +138,7 @@ impl Resources {
             theme: Theme::from_spec(&theme),
             documents,
             mac,
+            pictures,
         })
     }
 

@@ -1,0 +1,10 @@
+// Pictures xWorks reads (docs/ARCHITECTURE.md, sections 10 and 11): PNG,
+// JPEG, GIF and WebP, converted to sRGB when they're placed. Read by the
+// app (crates/app/src/picture.rs), its tests and the fuzz targets.
+(
+    // The most pixels a picture may have, its width times its height,
+    // checked from its header before anything is decoded: 2^27, about 134
+    // megapixels, more than a 100-megapixel camera's, which take 512 MB
+    // decoded. Larger ones are refused, not scaled.
+    most_pixels: 134217728,
+)

@@ -244,9 +244,13 @@ dependencies = [
  "canvas",
  "chrome",
  "doc",
+ "gif",
+ "image-webp",
  "locale",
  "lopdf",
+ "moxcms",
  "pdf-extract",
+ "png",
  "rayon",
  "render-cpu",
  "render-pdf",
@@ -259,6 +263,7 @@ dependencies = [
  "text",
  "thiserror 2.0.21",
  "toolkit",
+ "zune-jpeg",
 ]
 
 [[package]]
@@ -2280,6 +2285,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "moxcms"
+version = "0.8.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "bb85c154ba489f01b25c0d36ae69a87e4a1c73a72631fc6c0eb6dde34a73e44b"
+dependencies = [
+ "num-traits",
+ "pxfm",
+]
+
+[[package]]
 name = "multiversion_no_op"
 version = "1.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3087,6 +3102,12 @@ dependencies = [
  "tempfile",
  "unarray",
 ]
+
+[[package]]
+name = "pxfm"
+version = "0.1.30"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d55d956fa96f5ec02be2e13af0e20391a5aa83d6a074e3ad368959d0fab299ea"
 
 [[package]]
 name = "quick-error"

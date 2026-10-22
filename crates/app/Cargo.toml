@@ -11,7 +11,11 @@ publish.workspace = true
 canvas.workspace = true
 chrome.workspace = true
 doc.workspace = true
+gif.workspace = true
+image-webp.workspace = true
 locale.workspace = true
+moxcms.workspace = true
+png.workspace = true
 render-pdf.workspace = true
 rayon.workspace = true
 ron.workspace = true
@@ -22,6 +26,7 @@ story.workspace = true
 text.workspace = true
 thiserror.workspace = true
 toolkit.workspace = true
+zune-jpeg.workspace = true
 
 [dev-dependencies]
 lopdf.workspace = true
