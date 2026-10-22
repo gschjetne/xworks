@@ -44,9 +44,9 @@ icu_properties = { version = "2.3.0", features = ["unicode_bidi"] }  # Unicode c
 icu_segmenter = "2.3.0"     # line, word and grapheme boundaries (docs/ARCHITECTURE.md, section 9)
 lopdf = { version = "0.42.0", default-features = false }  # reading PDFs back in tests: fonts, pages
 pdf-extract = "=0.12.1" # reading PDFs' text back in tests
-png = "0.18.1"
+png = "0.18.1"          # writing test renders as PNG
 pollster = "=0.4.0"     # waits for wgpu's device to open; wgpu's setup is async, and we have no runtime (CLAUDE.md, rule 3)
-postcard = { version = "1.1.3", default-features = false, features = ["use-std"] }  # the .xw file's compact binary encoding of operations and snapshots (review dfx97ttt); its wire format is specified and stable          # writing test renders as PNG
+postcard = { version = "1.1.3", default-features = false, features = ["use-std"] }  # the .xw file's compact binary encoding of operations and snapshots (review dfx97ttt); its wire format is specified and stable
 proptest = "1.11.0"     # property tests (docs/ARCHITECTURE.md, section 13)
 ron = "0.12.2"          # specs and golden records are RON data
 serde = { version = "1.0.229", features = ["derive"] }
