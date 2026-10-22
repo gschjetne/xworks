@@ -1,14 +1,23 @@
 //! Properties of the document core, from random documents and random edits
-//! (docs/ROADMAP.md, M1 stage 4):
+//! (docs/ROADMAP.md, M1 stage 4 and M2 stage 2):
 //!
-//! - every operation's inverse undoes it;
+//! - every operation's inverse undoes it, blocks with everything in them
+//!   included;
 //! - rebasing converges: `a` then `b` rebased over it gives the same
 //!   document as `b` then `a` rebased over it, for every pair of kinds;
+//! - M1's operations never need the fallback for pairs that can't both
+//!   have their way: the rules alone converge;
 //! - a snapshot is unchanged by later edits;
 //! - a transaction applies all or nothing, and undo and redo are exact;
-//! - operations survive serialization.
+//! - documents and operations survive serialization.
+//!
+//! Random documents are trees: paragraphs in lists, quotes and tables,
+//! nested, made by applying random operations to a new document.
 
-use doc::{Document, History, ObjectId, Op, Props, Run, Snapshot, Value, rebase};
+use doc::{
+    Block, Document, History, Kind, Object, ObjectId, Op, Paragraph, Props, Run, Snapshot, Value,
+    conflict, rebase,
+};
 use proptest::prelude::*;
 
 /// Characters of one to four bytes, so character offsets and byte offsets
@@ -64,11 +73,23 @@ impl Choices<'_> {
     fn value(&mut self, key: &str) -> Option<Value> {
         match (self.below(4), key) {
             (0, _) => None,
-            (_, "bold" | "italic") => Some(Value::Bool(self.below(2) == 0)),
-            (_, "size") => Some(Value::Int(self.below(4) as i64 + 9)),
+            (_, "bold" | "italic" | "ordered") => Some(Value::Bool(self.below(2) == 0)),
+            (_, "size" | "start") => Some(Value::Int(self.below(4) as i64 + 9)),
             (v, _) => Some(Value::Text(
                 ["Body", "Heading 1", "Quote"][v as usize % 3].into(),
             )),
+        }
+    }
+
+    /// One of `items`, often the first, so that concurrent operations
+    /// meet.
+    fn pick<T: Copy>(&mut self, items: &[T]) -> Option<T> {
+        if items.is_empty() {
+            None
+        } else if self.below(3) == 0 {
+            Some(items[0])
+        } else {
+            Some(items[self.below(items.len() as u32) as usize])
         }
     }
 }
@@ -79,12 +100,7 @@ fn len(doc: &Document, p: ObjectId) -> u32 {
 
 /// A paragraph, often the first, so that concurrent operations meet.
 fn pick(doc: &Document, c: &mut Choices<'_>) -> ObjectId {
-    let ps = doc.paragraphs();
-    if c.below(2) == 0 {
-        ps[0]
-    } else {
-        ps[c.below(ps.len() as u32) as usize]
-    }
+    c.pick(&doc.paragraphs()).expect("a paragraph")
 }
 
 fn insert(doc: &Document, c: &mut Choices<'_>) -> Op {
@@ -103,8 +119,9 @@ fn insert(doc: &Document, c: &mut Choices<'_>) -> Op {
     }
 }
 
-/// A random operation that's valid on `doc`. New IDs come from `ids`.
-fn op(doc: &Document, ids: &mut u64, c: &mut Choices<'_>) -> Op {
+/// A random operation of M1's kinds that's valid on `doc`. New IDs come
+/// from `ids`.
+fn text_op(doc: &Document, ids: &mut u64, c: &mut Choices<'_>) -> Op {
     let paragraph = pick(doc, c);
     let n = len(doc, paragraph);
     match c.below(6) {
@@ -126,13 +143,24 @@ fn op(doc: &Document, ids: &mut u64, c: &mut Choices<'_>) -> Op {
                 new_props: c.props(),
             }
         }
-        3 if doc.paragraphs().len() > 1 => {
-            let ps = doc.paragraphs();
-            let i = c.below(ps.len() as u32 - 1) as usize;
-            Op::JoinParagraphs {
-                paragraph: ps[i],
-                offset: len(doc, ps[i]),
-                next: ps[i + 1],
+        3 => {
+            // Paragraphs followed by a paragraph in the same container.
+            let joinable: Vec<(ObjectId, ObjectId)> = doc
+                .paragraphs()
+                .into_iter()
+                .filter_map(|p| {
+                    doc.next(p)
+                        .filter(|n| doc.paragraph(*n).is_some())
+                        .map(|n| (p, n))
+                })
+                .collect();
+            match c.pick(&joinable) {
+                Some((p, next)) => Op::JoinParagraphs {
+                    paragraph: p,
+                    offset: len(doc, p),
+                    next,
+                },
+                None => insert(doc, c),
             }
         }
         4 => {
@@ -158,13 +186,187 @@ fn op(doc: &Document, ids: &mut u64, c: &mut Choices<'_>) -> Op {
     }
 }
 
-/// A random document: up to five paragraphs of formatted text in many
-/// scripts, made by applying random operations to a new one.
+fn fresh(ids: &mut u64) -> ObjectId {
+    *ids += 1;
+    ObjectId(*ids)
+}
+
+fn paragraph(c: &mut Choices<'_>, parent: ObjectId) -> Object {
+    let text = c.text(3);
+    let n = text.chars().count() as u32;
+    Object::Paragraph(Paragraph {
+        parent,
+        text,
+        runs: if n == 0 {
+            Vec::new()
+        } else {
+            vec![Run::new(n, c.props())]
+        },
+        props: Props::new(),
+    })
+}
+
+/// A random block for `parent`, a container that holds `holds`: its ID
+/// and its objects, it first. `depth` bounds the nesting.
+fn block(
+    c: &mut Choices<'_>,
+    ids: &mut u64,
+    parent: ObjectId,
+    holds: Holds,
+    depth: u32,
+) -> (ObjectId, Vec<(ObjectId, Object)>) {
+    let id = fresh(ids);
+    let kind = match holds {
+        Holds::Paragraphs => None,
+        Holds::Items => Some(Kind::Item),
+        Holds::Rows => Some(Kind::Row),
+        Holds::Flow if depth == 0 => None,
+        Holds::Flow => {
+            [None, Some(Kind::List), Some(Kind::Quote), Some(Kind::Table)][c.below(4) as usize]
+        }
+    };
+    let Some(kind) = kind else {
+        return (id, vec![(id, paragraph(c, parent))]);
+    };
+    let inner = match kind {
+        Kind::List => Holds::Items,
+        Kind::Table => Holds::Rows,
+        Kind::Row => Holds::Paragraphs,
+        Kind::Item | Kind::Quote => Holds::Flow,
+    };
+    // Now and then an empty container, as Markdown's "-" is an empty item.
+    let count = if c.below(8) == 0 { 0 } else { 1 + c.below(2) };
+    let mut children = Vec::new();
+    let mut rest = Vec::new();
+    for _ in 0..count {
+        let (child, objects) = block(c, ids, id, inner, depth.saturating_sub(1));
+        children.push(child);
+        rest.extend(objects);
+    }
+    let mut props = Props::new();
+    if kind == Kind::List && c.below(2) == 0 {
+        props.insert("ordered".into(), Value::Bool(true));
+    }
+    let mut out = vec![(
+        id,
+        Object::Block(Block {
+            kind,
+            parent,
+            children,
+            props,
+        }),
+    )];
+    out.extend(rest);
+    (id, out)
+}
+
+#[derive(Clone, Copy)]
+enum Holds {
+    Flow,
+    Items,
+    Rows,
+    Paragraphs,
+}
+
+fn holds(object: &Object) -> Holds {
+    match object {
+        Object::Block(b) => match b.kind {
+            Kind::List => Holds::Items,
+            Kind::Table => Holds::Rows,
+            Kind::Row => Holds::Paragraphs,
+            Kind::Item | Kind::Quote => Holds::Flow,
+        },
+        _ => Holds::Flow,
+    }
+}
+
+/// Every container, the story first.
+fn containers(doc: &Document) -> Vec<ObjectId> {
+    doc.subtree(doc.root())
+        .into_iter()
+        .filter(|&id| doc.object(id).is_some_and(Object::is_container))
+        .collect()
+}
+
+/// A place in `parent`: after one of its children, or first.
+fn place(doc: &Document, parent: ObjectId, c: &mut Choices<'_>) -> Option<ObjectId> {
+    let children = doc.children(parent);
+    match c.below(children.len() as u32 + 1) {
+        0 => None,
+        i => Some(children[i as usize - 1]),
+    }
+}
+
+/// A random operation on blocks, valid or not on `doc`.
+fn block_op_candidate(doc: &Document, ids: &mut u64, c: &mut Choices<'_>) -> Op {
+    let all = doc.subtree(doc.root());
+    match c.below(4) {
+        0 => {
+            let parent = c.pick(&containers(doc)).expect("the story");
+            let (_, objects) = block(c, ids, parent, holds(doc.object(parent).unwrap()), 2);
+            Op::InsertBlock {
+                parent,
+                after: place(doc, parent, c),
+                objects,
+            }
+        }
+        1 => Op::DeleteBlock {
+            block: c.pick(&all[1..]).unwrap_or(all[0]),
+        },
+        2 => {
+            let block = c.pick(&all[1..]).unwrap_or(all[0]);
+            let parent = c.pick(&containers(doc)).expect("the story");
+            Op::MoveBlock {
+                block,
+                parent,
+                after: place(doc, parent, c),
+            }
+        }
+        _ => {
+            let blocks: Vec<ObjectId> = all
+                .iter()
+                .copied()
+                .filter(|&id| doc.block(id).is_some())
+                .collect();
+            let key = ["ordered", "start"][c.below(2) as usize];
+            Op::SetBlockProp {
+                block: c.pick(&blocks).unwrap_or(all[0]),
+                key: key.into(),
+                value: c.value(key),
+            }
+        }
+    }
+}
+
+/// A random operation on blocks that's valid on `doc`, or text typed if
+/// none comes up.
+fn block_op(doc: &Document, ids: &mut u64, c: &mut Choices<'_>) -> Op {
+    for _ in 0..8 {
+        let op = block_op_candidate(doc, ids, c);
+        if doc.clone().apply(&op).is_ok() {
+            return op;
+        }
+    }
+    insert(doc, c)
+}
+
+/// A random operation of any kind that's valid on `doc`.
+fn op(doc: &Document, ids: &mut u64, c: &mut Choices<'_>) -> Op {
+    if c.below(5) < 2 {
+        block_op(doc, ids, c)
+    } else {
+        text_op(doc, ids, c)
+    }
+}
+
+/// A random document: paragraphs of formatted text in many scripts, in
+/// lists, quotes and tables, made by applying random operations to a new
+/// one.
 fn document(c: &mut Choices<'_>, ids: &mut u64) -> Document {
     let mut doc = Document::new();
     let steps = 4 + c.below(16);
     for _ in 0..steps {
-        let op = if doc.paragraphs().len() >= 5 && c.below(2) == 0 {
+        let op = if doc.paragraphs().len() >= 8 && c.below(2) == 0 {
             insert(&doc, c)
         } else {
             op(&doc, ids, c)
@@ -213,19 +415,57 @@ proptest! {
 
         let mut left = doc.clone();
         left.apply(&a).expect("a applies");
-        let b_over_a = rebase(&b, &a, false);
+        let b_over_a = rebase(&doc, &b, &a, false);
         for x in &b_over_a {
             left.apply(x).map_err(|e| TestCaseError::fail(format!("b over a: {x:?}: {e}\na {a:?}\nb {b:?}\n{doc:?}")))?;
         }
 
         let mut right = doc.clone();
         right.apply(&b).expect("b applies");
-        let a_over_b = rebase(&a, &b, true);
+        let a_over_b = rebase(&doc, &a, &b, true);
         for x in &a_over_b {
             right.apply(x).map_err(|e| TestCaseError::fail(format!("a over b: {x:?}: {e}\na {a:?}\nb {b:?}\n{doc:?}")))?;
         }
 
         prop_assert_eq!(&left, &right, "a {:?}\nb {:?}\nb over a {:?}\na over b {:?}\nfrom\n{:?}", a, b, b_over_a, a_over_b, doc);
+    }
+
+    /// M1's operations, on any document, meet by the rules alone: neither
+    /// is ever dropped for the other.
+    #[test]
+    fn m1s_operations_never_conflict(values in choices()) {
+        let c = &mut Choices { values: &values, at: 0 };
+        let mut ids = 1000;
+        let doc = document(c, &mut ids);
+        let a = text_op(&doc, &mut ids, c);
+        let b = text_op(&doc, &mut ids, c);
+        prop_assert!(!conflict(&doc, &a, &b), "a {:?}\nb {:?}\nfrom\n{:?}", a, b, doc);
+    }
+
+    /// Only deletions and moves of blocks ever conflict: two deletions
+    /// that together would leave the story no paragraph, and moves that
+    /// together would put a block inside itself, or swap two blocks.
+    /// Everything else meets by the rules.
+    #[test]
+    fn only_deletions_and_moves_conflict(values in choices()) {
+        let c = &mut Choices { values: &values, at: 0 };
+        let mut ids = 1000;
+        let doc = document(c, &mut ids);
+        let a = op(&doc, &mut ids, c);
+        let b = op(&doc, &mut ids, c);
+        if !conflict(&doc, &a, &b) {
+            return Ok(());
+        }
+        let why = format!("a {a:?}\nb {b:?}\nfrom\n{doc:?}");
+        match (&a, &b) {
+            (Op::DeleteBlock { block: x }, Op::DeleteBlock { block: y }) => {
+                let gone: std::collections::BTreeSet<ObjectId> =
+                    doc.subtree(*x).into_iter().chain(doc.subtree(*y)).collect();
+                prop_assert!(doc.paragraphs().iter().all(|p| gone.contains(p)), "{}", why);
+            }
+            (Op::MoveBlock { .. }, Op::MoveBlock { .. }) => {}
+            _ => prop_assert!(false, "{}", why),
+        }
     }
 
     #[test]
@@ -256,6 +496,7 @@ proptest! {
         let restored = Document::from_snapshot(back).expect("a snapshot of a document is valid");
         prop_assert_eq!(restored.dump(), doc.dump());
         prop_assert_eq!(&restored, &doc);
+        prop_assert_eq!(restored.paragraphs(), doc.paragraphs());
         // IDs given out after it don't collide with the stored ones.
         let mut again = restored.clone();
         let mut original = doc.clone();
@@ -394,7 +635,7 @@ mod ties {
     fn both(doc: &Document, first: &Op, second: &Op) -> Document {
         let mut d = doc.clone();
         d.apply(first).unwrap();
-        d.apply_all(&rebase(second, first, false)).unwrap();
+        d.apply_all(&rebase(doc, second, first, false)).unwrap();
         d
     }
 
@@ -528,7 +769,7 @@ mod snapshots {
     fn paragraph_mut(s: &mut Snapshot, id: ObjectId) -> &mut doc::Paragraph {
         match &mut s.objects.iter_mut().find(|(i, _)| *i == id).unwrap().1 {
             Object::Paragraph(p) => p,
-            Object::Story(_) => panic!("a paragraph"),
+            _ => panic!("a paragraph"),
         }
     }
 
@@ -560,7 +801,7 @@ mod snapshots {
         );
 
         let mut s = good.clone();
-        s.objects[0].1 = Object::Story(doc::Story { paragraphs: vec![] });
+        s.objects[0].1 = Object::Story(doc::Story { blocks: vec![] });
         assert_eq!(
             Document::from_snapshot(s),
             Err(SnapshotError::EmptyStory(root))
@@ -568,7 +809,7 @@ mod snapshots {
 
         let mut s = good.clone();
         s.objects[0].1 = Object::Story(doc::Story {
-            paragraphs: vec![p1, ObjectId(99)],
+            blocks: vec![p1, ObjectId(99)],
         });
         assert_eq!(
             Document::from_snapshot(s),
@@ -580,14 +821,12 @@ mod snapshots {
 
         let mut s = good.clone();
         s.objects[0].1 = Object::Story(doc::Story {
-            paragraphs: vec![p1, p1],
+            blocks: vec![p1, p1],
         });
         assert_eq!(Document::from_snapshot(s), Err(SnapshotError::Stray(p1)));
 
         let mut s = good.clone();
-        s.objects[0].1 = Object::Story(doc::Story {
-            paragraphs: vec![p1],
-        });
+        s.objects[0].1 = Object::Story(doc::Story { blocks: vec![p1] });
         assert_eq!(Document::from_snapshot(s), Err(SnapshotError::Stray(p2)));
 
         let mut s = good.clone();

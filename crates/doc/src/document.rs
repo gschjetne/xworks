@@ -1,4 +1,4 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 use std::fmt::Write as _;
 use std::sync::Arc;
 
@@ -8,23 +8,25 @@ use crate::idmap::IdMap;
 use crate::props::{self, Props, Run};
 use crate::{Error, ObjectId, Op};
 
-/// A story: an ordered list of paragraphs, as M1 has it. Later tracks add
-/// lists, tables and embedded parts as blocks of their own.
+/// A story: a tree of blocks. Its own children are paragraphs and
+/// containers ([`Block`]), and containers hold more of them.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Story {
-    /// Its paragraphs, in order. There is always at least one.
-    pub paragraphs: Vec<ObjectId>,
+    /// Its blocks, in order. Somewhere among them there is always at least
+    /// one paragraph.
+    pub blocks: Vec<ObjectId>,
 }
 
 /// A paragraph: its text, the character properties along it, and its own
-/// properties.
+/// properties. Headings and code blocks are paragraphs too, set apart by
+/// their style.
 ///
 /// Its runs cover its text exactly, and are normalized: no empty runs, and
 /// no two neighbours with equal properties.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Paragraph {
-    /// The story it belongs to.
-    pub story: ObjectId,
+    /// The container it's in: the story, or a block.
+    pub parent: ObjectId,
     /// Its text.
     pub text: String,
     /// Its character properties, along the text.
@@ -45,6 +47,51 @@ impl Paragraph {
     }
 }
 
+/// What a container is, and so what it can hold. Files store kinds by
+/// their variants' positions (spec/format/README.md): new kinds go at the
+/// end.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Kind {
+    /// A list: items only. Its properties say whether it's numbered, and
+    /// from what.
+    List,
+    /// An item of a list: blocks, as a story holds them.
+    Item,
+    /// A quotation: blocks, as a story holds them.
+    Quote,
+    /// A table: rows only. The first row is its header.
+    Table,
+    /// A row of a table: its cells, each one paragraph.
+    Row,
+}
+
+impl Kind {
+    /// Its name in dumps: "list", "item" and so on.
+    pub fn name(self) -> &'static str {
+        match self {
+            Kind::List => "list",
+            Kind::Item => "item",
+            Kind::Quote => "quote",
+            Kind::Table => "table",
+            Kind::Row => "row",
+        }
+    }
+}
+
+/// A container of blocks: a list, an item, a quote, a table or a row. It
+/// may be empty.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Block {
+    /// What it is.
+    pub kind: Kind,
+    /// The container it's in.
+    pub parent: ObjectId,
+    /// What it holds, in order.
+    pub children: Vec<ObjectId>,
+    /// Its properties, such as a list's numbering.
+    pub props: Props,
+}
+
 /// An object in a document. Files store objects by their variants'
 /// positions (spec/format/README.md): new variants go at the end.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -53,6 +100,85 @@ pub enum Object {
     Story(Story),
     /// A paragraph.
     Paragraph(Paragraph),
+    /// A container.
+    Block(Block),
+}
+
+impl Object {
+    /// The container it's in; `None` for a story.
+    pub fn parent(&self) -> Option<ObjectId> {
+        match self {
+            Object::Story(_) => None,
+            Object::Paragraph(p) => Some(p.parent),
+            Object::Block(b) => Some(b.parent),
+        }
+    }
+
+    /// What it holds, in order; nothing for a paragraph.
+    pub fn children(&self) -> &[ObjectId] {
+        match self {
+            Object::Story(s) => &s.blocks,
+            Object::Paragraph(_) => &[],
+            Object::Block(b) => &b.children,
+        }
+    }
+
+    /// Whether it holds blocks: a story or a container.
+    pub fn is_container(&self) -> bool {
+        !matches!(self, Object::Paragraph(_))
+    }
+
+    /// Whether it can hold `child`: a story, an item or a quote holds
+    /// paragraphs, lists, quotes and tables; a list holds items; a table
+    /// holds rows; and a row holds paragraphs.
+    pub fn holds(&self, child: &Object) -> bool {
+        let flow = matches!(
+            child,
+            Object::Paragraph(_)
+                | Object::Block(Block {
+                    kind: Kind::List | Kind::Quote | Kind::Table,
+                    ..
+                })
+        );
+        match self {
+            Object::Story(_) => flow,
+            Object::Paragraph(_) => false,
+            Object::Block(b) => match b.kind {
+                Kind::Item | Kind::Quote => flow,
+                Kind::List => matches!(
+                    child,
+                    Object::Block(Block {
+                        kind: Kind::Item,
+                        ..
+                    })
+                ),
+                Kind::Table => matches!(
+                    child,
+                    Object::Block(Block {
+                        kind: Kind::Row,
+                        ..
+                    })
+                ),
+                Kind::Row => matches!(child, Object::Paragraph(_)),
+            },
+        }
+    }
+
+    fn set_parent(&mut self, parent: ObjectId) {
+        match self {
+            Object::Story(_) => {}
+            Object::Paragraph(p) => p.parent = parent,
+            Object::Block(b) => b.parent = parent,
+        }
+    }
+
+    fn children_mut(&mut self) -> Option<&mut Vec<ObjectId>> {
+        match self {
+            Object::Story(s) => Some(&mut s.blocks),
+            Object::Paragraph(_) => None,
+            Object::Block(b) => Some(&mut b.children),
+        }
+    }
 }
 
 /// A document: objects by ID, and the story at its root.
@@ -65,6 +191,8 @@ pub struct Document {
     objects: IdMap<Arc<Object>>,
     root: ObjectId,
     next_id: u64,
+    /// How many paragraphs it has.
+    paragraphs: usize,
 }
 
 impl PartialEq for Document {
@@ -112,20 +240,31 @@ pub enum SnapshotError {
     /// A story with no paragraphs.
     #[error("{0} has no paragraphs")]
     EmptyStory(ObjectId),
-    /// A story lists something that isn't one of its paragraphs.
-    #[error("{story} lists {paragraph}, which isn't a paragraph of it")]
+    /// A story or container lists something that isn't a child of it: no
+    /// object, or one whose parent is another.
+    #[error("{story} lists {paragraph}, which isn't a child of it")]
     NotItsParagraph {
-        /// The story.
+        /// The story or container.
         story: ObjectId,
         /// What it lists.
         paragraph: ObjectId,
     },
-    /// A paragraph that no story lists, or that one lists twice.
-    #[error("{0} isn't in its story exactly once")]
+    /// An object that nothing lists, that's listed twice, or that isn't in
+    /// the root's tree.
+    #[error("{0} isn't in the story exactly once")]
     Stray(ObjectId),
     /// A paragraph whose runs don't cover its text.
     #[error("{0}'s runs don't cover its text")]
     RunsMismatch(ObjectId),
+    /// A container holding what it can't hold, such as a list holding a
+    /// paragraph.
+    #[error("{parent} can't hold {child}")]
+    WrongKind {
+        /// The container.
+        parent: ObjectId,
+        /// What it holds.
+        child: ObjectId,
+    },
 }
 
 impl Document {
@@ -144,12 +283,14 @@ impl Document {
     }
 
     /// The document `snapshot` describes, if it holds together: the root
-    /// is a story, every story lists its own paragraphs, each once, every
-    /// paragraph is in its story, and runs cover their text. Runs are
+    /// is a story; every container lists its own children, each once,
+    /// each of a kind it can hold; every other object is in the root's
+    /// tree; there's a paragraph; and runs cover their text. Runs are
     /// normalized.
     pub fn from_snapshot(snapshot: Snapshot) -> Result<Document, SnapshotError> {
         let mut objects = IdMap::new();
         let mut ids = BTreeSet::new();
+        let mut paragraphs = 0;
         for (id, object) in snapshot.objects {
             if !ids.insert(id) {
                 return Err(SnapshotError::Duplicate(id));
@@ -163,9 +304,10 @@ impl Document {
                         return Err(SnapshotError::RunsMismatch(id));
                     }
                     props::normalize(&mut p.runs);
+                    paragraphs += 1;
                     Object::Paragraph(p)
                 }
-                story => story,
+                other => other,
             };
             objects.insert(id, Arc::new(object));
         }
@@ -173,35 +315,48 @@ impl Document {
             objects,
             root: snapshot.root,
             next_id: snapshot.next_id,
+            paragraphs,
         };
-        if document.story(document.root).is_none() {
+        let Some(story) = document.story(document.root) else {
             return Err(SnapshotError::RootNotAStory(document.root));
+        };
+        if story.blocks.is_empty() {
+            return Err(SnapshotError::EmptyStory(document.root));
         }
-        // Every paragraph is listed once, by its own story.
+        // Every object is listed once, by its own parent, which can hold it.
         let mut listed = BTreeSet::new();
         for (id, object) in document.objects.entries() {
-            let Object::Story(story) = &**object else {
-                continue;
-            };
-            if story.paragraphs.is_empty() {
-                return Err(SnapshotError::EmptyStory(id));
-            }
-            for &p in &story.paragraphs {
-                if document.paragraph(p).is_none_or(|q| q.story != id) {
+            for &c in object.children() {
+                let Some(child) = document.object(c).filter(|o| o.parent() == Some(id)) else {
                     return Err(SnapshotError::NotItsParagraph {
                         story: id,
-                        paragraph: p,
+                        paragraph: c,
+                    });
+                };
+                if !object.holds(child) {
+                    return Err(SnapshotError::WrongKind {
+                        parent: id,
+                        child: c,
                     });
                 }
-                if !listed.insert(p) {
-                    return Err(SnapshotError::Stray(p));
+                if !listed.insert(c) {
+                    return Err(SnapshotError::Stray(c));
                 }
             }
         }
-        for (id, object) in document.objects.entries() {
-            if matches!(&**object, Object::Paragraph(_)) && !listed.contains(&id) {
+        for &id in &ids {
+            if id != document.root && !listed.contains(&id) {
                 return Err(SnapshotError::Stray(id));
             }
+        }
+        // And every object is in the root's tree: none is in a ring of
+        // containers holding each other.
+        let reached: BTreeSet<ObjectId> = document.subtree(document.root).into_iter().collect();
+        if let Some(&stray) = ids.iter().find(|id| !reached.contains(id)) {
+            return Err(SnapshotError::Stray(stray));
+        }
+        if document.paragraphs == 0 {
+            return Err(SnapshotError::EmptyStory(document.root));
         }
         Ok(document)
     }
@@ -214,13 +369,13 @@ impl Document {
         objects.insert(
             root,
             Arc::new(Object::Story(Story {
-                paragraphs: vec![first],
+                blocks: vec![first],
             })),
         );
         objects.insert(
             first,
             Arc::new(Object::Paragraph(Paragraph {
-                story: root,
+                parent: root,
                 text: String::new(),
                 runs: Vec::new(),
                 props: Props::new(),
@@ -230,6 +385,7 @@ impl Document {
             objects,
             root,
             next_id: 2,
+            paragraphs: 1,
         }
     }
 
@@ -267,12 +423,78 @@ impl Document {
         }
     }
 
-    /// The root story's paragraphs, in order.
-    pub fn paragraphs(&self) -> &[ObjectId] {
-        &self
-            .story(self.root)
-            .expect("the root is a story")
-            .paragraphs
+    /// The container `id`, if there is one.
+    pub fn block(&self, id: ObjectId) -> Option<&Block> {
+        match self.object(id)? {
+            Object::Block(b) => Some(b),
+            _ => None,
+        }
+    }
+
+    /// The container `id` is in, if it's in one.
+    pub fn parent(&self, id: ObjectId) -> Option<ObjectId> {
+        self.object(id)?.parent()
+    }
+
+    /// What `id` holds, in order: nothing if it's a paragraph or there's
+    /// no such object.
+    pub fn children(&self, id: ObjectId) -> &[ObjectId] {
+        self.object(id).map_or(&[], Object::children)
+    }
+
+    /// The block before `id` in its container, if there's one.
+    pub fn previous(&self, id: ObjectId) -> Option<ObjectId> {
+        let siblings = self.children(self.parent(id)?);
+        let at = siblings.iter().position(|&c| c == id)?;
+        at.checked_sub(1).map(|i| siblings[i])
+    }
+
+    /// The block after `id` in its container, if there's one.
+    pub fn next(&self, id: ObjectId) -> Option<ObjectId> {
+        let siblings = self.children(self.parent(id)?);
+        let at = siblings.iter().position(|&c| c == id)?;
+        siblings.get(at + 1).copied()
+    }
+
+    /// Whether `id` is `ancestor` or inside it.
+    pub fn contains(&self, ancestor: ObjectId, id: ObjectId) -> bool {
+        let mut at = Some(id);
+        while let Some(x) = at {
+            if x == ancestor {
+                return true;
+            }
+            at = self.parent(x);
+        }
+        false
+    }
+
+    /// `id` and everything inside it, in reading order.
+    pub fn subtree(&self, id: ObjectId) -> Vec<ObjectId> {
+        let mut out = Vec::new();
+        let mut stack = vec![id];
+        while let Some(x) = stack.pop() {
+            if self.object(x).is_none() {
+                continue;
+            }
+            out.push(x);
+            stack.extend(self.children(x).iter().rev());
+        }
+        out
+    }
+
+    /// Every paragraph of the story, in reading order: headings, list
+    /// items' paragraphs and tables' cells, row by row, included.
+    pub fn paragraphs(&self) -> Vec<ObjectId> {
+        let mut out = Vec::with_capacity(self.paragraphs);
+        let mut stack = vec![self.root];
+        while let Some(x) = stack.pop() {
+            match self.object(x) {
+                Some(Object::Paragraph(_)) => out.push(x),
+                Some(object) => stack.extend(object.children().iter().rev()),
+                None => {}
+            }
+        }
+        out
     }
 
     /// The document as text, for tests and diffs: each object by ID, a
@@ -284,17 +506,27 @@ impl Document {
         for (id, object) in self.objects.entries() {
             match &**object {
                 Object::Story(s) => {
-                    let _ = writeln!(out, "{id} story {:?}", s.paragraphs);
+                    let _ = writeln!(out, "{id} story {:?}", s.blocks);
                 }
                 Object::Paragraph(p) => {
                     let _ = writeln!(
                         out,
                         "{id} paragraph in {} {:?} {:?}",
-                        p.story, p.text, p.props
+                        p.parent, p.text, p.props
                     );
                     for run in &p.runs {
                         let _ = writeln!(out, "    {} {:?}", run.len, run.props);
                     }
+                }
+                Object::Block(b) => {
+                    let _ = writeln!(
+                        out,
+                        "{id} {} in {} {:?} {:?}",
+                        b.kind.name(),
+                        b.parent,
+                        b.children,
+                        b.props
+                    );
                 }
             }
         }
@@ -308,11 +540,13 @@ impl Document {
         }
     }
 
-    fn story_mut(&mut self, id: ObjectId) -> &mut Story {
-        match self.objects.get_mut(id).map(Arc::make_mut) {
-            Some(Object::Story(s)) => s,
-            _ => unreachable!("a paragraph's story exists"),
-        }
+    /// The children of container `id`, which exists.
+    fn children_mut(&mut self, id: ObjectId) -> &mut Vec<ObjectId> {
+        self.objects
+            .get_mut(id)
+            .map(Arc::make_mut)
+            .and_then(Object::children_mut)
+            .expect("a container")
     }
 
     fn check_range(&self, paragraph: ObjectId, offset: u32, len: u32) -> Result<&Paragraph, Error> {
@@ -329,6 +563,24 @@ impl Document {
             });
         }
         Ok(p)
+    }
+
+    /// Where a block placed after `after` in container `parent` goes, as
+    /// an index into its children.
+    fn place(&self, parent: ObjectId, after: Option<ObjectId>) -> Result<usize, Error> {
+        let container = self
+            .object(parent)
+            .filter(|o| o.is_container())
+            .ok_or(Error::NoSuchBlock(parent))?;
+        match after {
+            None => Ok(0),
+            Some(a) => container
+                .children()
+                .iter()
+                .position(|&c| c == a)
+                .map(|i| i + 1)
+                .ok_or(Error::NotAChild { parent, child: a }),
+        }
     }
 
     /// Applies `op`. Returns the operations that undo it, to be applied in
@@ -392,7 +644,7 @@ impl Document {
                 new,
                 new_props,
             } => {
-                let story = self.check_range(*paragraph, *offset, 0)?.story;
+                let parent = self.check_range(*paragraph, *offset, 0)?.parent;
                 if self.objects.get(*new).is_some() {
                     return Err(Error::IdInUse(*new));
                 }
@@ -404,20 +656,20 @@ impl Document {
                 self.objects.insert(
                     *new,
                     Arc::new(Object::Paragraph(Paragraph {
-                        story,
+                        parent,
                         text: tail,
                         runs: tail_runs,
                         props: new_props.clone(),
                     })),
                 );
-                let s = self.story_mut(story);
-                let at = s
-                    .paragraphs
+                let siblings = self.children_mut(parent);
+                let at = siblings
                     .iter()
                     .position(|id| id == paragraph)
-                    .expect("in its story");
-                s.paragraphs.insert(at + 1, *new);
+                    .expect("in its container");
+                siblings.insert(at + 1, *new);
                 self.next_id = self.next_id.max(new.0 + 1);
+                self.paragraphs += 1;
                 Ok(vec![Op::JoinParagraphs {
                     paragraph: *paragraph,
                     offset: *offset,
@@ -440,14 +692,13 @@ impl Document {
                         length: p.len(),
                     });
                 }
-                let story = p.story;
-                let s = self.story(story).expect("a paragraph's story exists");
-                let at = s
-                    .paragraphs
+                let parent = p.parent;
+                let siblings = self.children(parent);
+                let at = siblings
                     .iter()
                     .position(|id| id == paragraph)
-                    .expect("in its story");
-                if q.story != story || s.paragraphs.get(at + 1) != Some(next) {
+                    .expect("in its container");
+                if q.parent != parent || siblings.get(at + 1) != Some(next) {
                     return Err(Error::NotAdjacent {
                         paragraph: *paragraph,
                         next: *next,
@@ -459,7 +710,8 @@ impl Document {
                 p.runs.extend(q.runs.iter().cloned());
                 props::normalize(&mut p.runs);
                 self.objects.remove(*next);
-                self.story_mut(story).paragraphs.remove(at + 1);
+                self.children_mut(parent).remove(at + 1);
+                self.paragraphs -= 1;
                 Ok(vec![Op::SplitParagraph {
                     paragraph: *paragraph,
                     offset: *offset,
@@ -508,7 +760,187 @@ impl Document {
                     value: previous,
                 }])
             }
+            Op::InsertBlock {
+                parent,
+                after,
+                objects,
+            } => self.insert_block(*parent, *after, objects),
+            Op::DeleteBlock { block } => self.delete_block(*block),
+            Op::MoveBlock {
+                block,
+                parent,
+                after,
+            } => self.move_block(*block, *parent, *after),
+            Op::SetBlockProp { block, key, value } => {
+                let b = match self.objects.get_mut(*block).map(Arc::make_mut) {
+                    Some(Object::Block(b)) => b,
+                    _ => return Err(Error::NoSuchBlock(*block)),
+                };
+                let previous = match value {
+                    Some(v) => b.props.insert(key.clone(), v.clone()),
+                    None => b.props.remove(key),
+                };
+                Ok(vec![Op::SetBlockProp {
+                    block: *block,
+                    key: key.clone(),
+                    value: previous,
+                }])
+            }
         }
+    }
+
+    fn insert_block(
+        &mut self,
+        parent: ObjectId,
+        after: Option<ObjectId>,
+        objects: &[(ObjectId, Object)],
+    ) -> Result<Vec<Op>, Error> {
+        let at = self.place(parent, after)?;
+        let Some((root, top)) = objects.first() else {
+            return Err(Error::Malformed(parent));
+        };
+        let container = self.object(parent).expect("placed in it");
+        if !container.holds(top) {
+            return Err(Error::WrongKind {
+                parent,
+                child: *root,
+            });
+        }
+        if top.parent() != Some(parent) {
+            return Err(Error::Malformed(*root));
+        }
+        // Fresh IDs, each once, and runs that cover their text.
+        let mut set: BTreeMap<ObjectId, &Object> = BTreeMap::new();
+        for (id, object) in objects {
+            if self.objects.get(*id).is_some() {
+                return Err(Error::IdInUse(*id));
+            }
+            if set.insert(*id, object).is_some() || matches!(object, Object::Story(_)) {
+                return Err(Error::Malformed(*root));
+            }
+            if let Object::Paragraph(p) = object {
+                let chars = p.text.chars().count() as u32;
+                if props::total(&p.runs) != chars {
+                    return Err(Error::RunsMismatch {
+                        text: chars,
+                        runs: props::total(&p.runs),
+                    });
+                }
+            }
+        }
+        // Each held once, by the container it names, which can hold it;
+        // and all of them in the one block.
+        let mut held = BTreeSet::new();
+        for (id, object) in objects {
+            for c in object.children() {
+                let child = set.get(c).ok_or(Error::Malformed(*root))?;
+                if child.parent() != Some(*id) || !held.insert(*c) {
+                    return Err(Error::Malformed(*root));
+                }
+                if !object.holds(child) {
+                    return Err(Error::WrongKind {
+                        parent: *id,
+                        child: *c,
+                    });
+                }
+            }
+        }
+        // Nothing holds the block itself, so the walk from it ends: any
+        // ring of containers would hold something twice.
+        if held.contains(root) {
+            return Err(Error::Malformed(*root));
+        }
+        let mut reached = 0;
+        let mut stack = vec![*root];
+        while let Some(x) = stack.pop() {
+            reached += 1;
+            stack.extend(set[&x].children());
+        }
+        if reached != objects.len() {
+            return Err(Error::Malformed(*root));
+        }
+        for (id, object) in objects {
+            let mut object = object.clone();
+            if let Object::Paragraph(p) = &mut object {
+                props::normalize(&mut p.runs);
+                self.paragraphs += 1;
+            }
+            self.objects.insert(*id, Arc::new(object));
+            self.next_id = self.next_id.max(id.0 + 1);
+        }
+        self.children_mut(parent).insert(at, *root);
+        Ok(vec![Op::DeleteBlock { block: *root }])
+    }
+
+    fn delete_block(&mut self, block: ObjectId) -> Result<Vec<Op>, Error> {
+        let object = self.object(block).ok_or(Error::NoSuchBlock(block))?;
+        let parent = object.parent().ok_or(Error::Root(block))?;
+        let ids = self.subtree(block);
+        let paragraphs = ids
+            .iter()
+            .filter(|&&id| self.paragraph(id).is_some())
+            .count();
+        if paragraphs == self.paragraphs {
+            return Err(Error::LastParagraph(block));
+        }
+        let after = self.previous(block);
+        let objects: Vec<(ObjectId, Object)> = ids
+            .iter()
+            .map(|&id| (id, Object::clone(self.object(id).expect("in the tree"))))
+            .collect();
+        let siblings = self.children_mut(parent);
+        siblings.retain(|&c| c != block);
+        for id in ids {
+            self.objects.remove(id);
+        }
+        self.paragraphs -= paragraphs;
+        Ok(vec![Op::InsertBlock {
+            parent,
+            after,
+            objects,
+        }])
+    }
+
+    fn move_block(
+        &mut self,
+        block: ObjectId,
+        parent: ObjectId,
+        after: Option<ObjectId>,
+    ) -> Result<Vec<Op>, Error> {
+        let object = self.object(block).ok_or(Error::NoSuchBlock(block))?;
+        let old_parent = object.parent().ok_or(Error::Root(block))?;
+        let target = self
+            .object(parent)
+            .filter(|o| o.is_container())
+            .ok_or(Error::NoSuchBlock(parent))?;
+        if !target.holds(object) {
+            return Err(Error::WrongKind {
+                parent,
+                child: block,
+            });
+        }
+        if self.contains(block, parent) {
+            return Err(Error::Cycle { block, parent });
+        }
+        if after == Some(block) {
+            return Err(Error::NotAChild {
+                parent,
+                child: block,
+            });
+        }
+        self.place(parent, after)?;
+        let old_after = self.previous(block);
+        self.children_mut(old_parent).retain(|&c| c != block);
+        let at = self.place(parent, after).expect("still there");
+        self.children_mut(parent).insert(at, block);
+        if old_parent != parent {
+            Arc::make_mut(self.objects.get_mut(block).expect("moved")).set_parent(parent);
+        }
+        Ok(vec![Op::MoveBlock {
+            block,
+            parent: old_parent,
+            after: old_after,
+        }])
     }
 
     /// Applies `ops` in order, all or none. Returns the operations that undo

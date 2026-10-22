@@ -1,14 +1,16 @@
 use serde::{Deserialize, Serialize};
 
-use crate::ObjectId;
 use crate::props::{Props, Run, Value};
+use crate::{Object, ObjectId};
 
 /// A change to a document. Offsets and lengths count Unicode scalar values
 /// in a paragraph's text.
 ///
 /// Operations name objects by ID, never by index, so they can be rebased
 /// over concurrent changes ([`crate::rebase`]). Each is small; edits people
-/// make are transactions of several ([`crate::Transaction`]).
+/// make are transactions of several ([`crate::Transaction`]). A place among
+/// a container's children is the child it comes after, or `None` for the
+/// first place.
 ///
 /// Files store operations by their variants' positions
 /// (spec/format/README.md): new variants go at the end.
@@ -77,6 +79,41 @@ pub enum Op {
         /// Its value, or `None` to unset it.
         value: Option<Value>,
     },
+    /// Creates a block with everything in it, at a place in a container.
+    InsertBlock {
+        /// The container.
+        parent: ObjectId,
+        /// The child it comes after, or `None` to come first.
+        after: Option<ObjectId>,
+        /// The block and everything in it, each by an ID unused until now:
+        /// the block first, then the rest in reading order. Their parents
+        /// and children say how they nest; the block's parent is `parent`.
+        objects: Vec<(ObjectId, Object)>,
+    },
+    /// Deletes a block with everything in it.
+    DeleteBlock {
+        /// The block: a paragraph or a container.
+        block: ObjectId,
+    },
+    /// Moves a block with everything in it to another place, in the same
+    /// container or another.
+    MoveBlock {
+        /// The block: a paragraph or a container.
+        block: ObjectId,
+        /// The container it moves to.
+        parent: ObjectId,
+        /// The child it comes after there, or `None` to come first.
+        after: Option<ObjectId>,
+    },
+    /// Sets a container's property, such as whether a list is numbered.
+    SetBlockProp {
+        /// The container.
+        block: ObjectId,
+        /// The property.
+        key: String,
+        /// Its value, or `None` to unset it.
+        value: Option<Value>,
+    },
 }
 
 /// Why an operation couldn't be applied. A failed operation changes nothing.
@@ -126,4 +163,45 @@ pub enum Error {
         /// The paragraph's length.
         length: u32,
     },
+    /// The operation names a block the document doesn't have, or a
+    /// container that isn't one.
+    #[error("there is no such block as {0}")]
+    NoSuchBlock(ObjectId),
+    /// A place after something that isn't a child of the container.
+    #[error("{child} isn't a child of {parent}")]
+    NotAChild {
+        /// The container.
+        parent: ObjectId,
+        /// What the place is after.
+        child: ObjectId,
+    },
+    /// A container that can't hold that kind of block, such as a list
+    /// holding a paragraph rather than items.
+    #[error("{parent} can't hold {child}")]
+    WrongKind {
+        /// The container.
+        parent: ObjectId,
+        /// The block.
+        child: ObjectId,
+    },
+    /// Inserted objects that don't make one block: an object nothing in
+    /// them holds, one held twice, or one whose parent isn't the one
+    /// holding it.
+    #[error("the objects inserted with {0} don't make one block")]
+    Malformed(ObjectId),
+    /// A block moved into itself or into something in it.
+    #[error("{block} can't move into {parent}, which is in it")]
+    Cycle {
+        /// The block.
+        block: ObjectId,
+        /// Where it would go.
+        parent: ObjectId,
+    },
+    /// The root story can't be deleted or moved.
+    #[error("{0} is the root")]
+    Root(ObjectId),
+    /// Deleting the story's last paragraph, which would leave nowhere to
+    /// type.
+    #[error("{0} holds the story's last paragraph")]
+    LastParagraph(ObjectId),
 }

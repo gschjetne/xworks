@@ -329,7 +329,7 @@ impl Editor {
     pub fn text(&self) -> (String, usize, usize) {
         let mut out = String::new();
         let (mut anchor, mut focus) = (0, 0);
-        for &id in self.document.paragraphs() {
+        for id in self.document.paragraphs() {
             let text = &self.paragraph(id).text;
             let base = out.chars().count();
             if self.anchor.paragraph == id {
@@ -1299,6 +1299,10 @@ impl Editor {
                 ..
             } => at(*paragraph, offset + len),
             Op::SetParaProp { paragraph, .. } => at(*paragraph, 0),
+            Op::InsertBlock { .. }
+            | Op::DeleteBlock { .. }
+            | Op::MoveBlock { .. }
+            | Op::SetBlockProp { .. } => None,
         }
     }
 
