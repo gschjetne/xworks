@@ -13,6 +13,7 @@ chrome.workspace = true
 doc.workspace = true
 locale.workspace = true
 render-pdf.workspace = true
+rayon.workspace = true
 ron.workspace = true
 scene.workspace = true
 serde.workspace = true

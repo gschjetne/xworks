@@ -48,6 +48,7 @@ png = "0.18.1"          # writing test renders as PNG
 pollster = "=0.4.0"     # waits for wgpu's device to open; wgpu's setup is async, and we have no runtime (CLAUDE.md, rule 3)
 postcard = { version = "1.1.3", default-features = false, features = ["use-std"] }  # the .xw file's compact binary encoding of operations and snapshots (review dfx97ttt); its wire format is specified and stable
 proptest = "1.11.0"     # property tests (docs/ARCHITECTURE.md, section 13)
+rayon = "1.12.0"        # the app's worker pool (docs/ARCHITECTURE.md, section 8): paragraphs laid out on every core
 ron = "0.12.2"          # specs and golden records are RON data
 serde = { version = "1.0.229", features = ["derive"] }
 rusqlite = { version = "0.40.2", features = ["bundled"] }  # the .xw file is an SQLite database (docs/ARCHITECTURE.md, section 6); bundled, so every platform has the same SQLite

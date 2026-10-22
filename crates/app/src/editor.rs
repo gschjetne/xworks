@@ -9,6 +9,7 @@ use std::sync::Arc;
 use canvas::Piece;
 use chrome::{CommandState, Key, Modifiers};
 use doc::{Document, History, Object, ObjectId, Op, Paragraph, Props, Run, Transaction, Value};
+use rayon::prelude::*;
 use store::{Entry, Store};
 use story::{ParagraphLayout, keys};
 use text::units::{PIXEL, POINT};
@@ -347,34 +348,61 @@ impl Editor {
                 .collect();
         let composing = !self.composition.is_empty();
         let composed = composing.then(|| self.composed());
-        let mut paragraphs = Vec::with_capacity(self.document.paragraphs().len());
-        let mut words = Vec::with_capacity(paragraphs.capacity());
-        for &id in self.document.paragraphs() {
-            let same = !all
-                && match (self.laid.document.object(id), self.document.object(id)) {
-                    (Some(a), Some(b)) => std::ptr::eq(a as *const Object, b as *const Object),
-                    _ => false,
-                };
-            let reuse = same && !(composing && id == self.focus.paragraph);
-            let old = old.remove(&id);
-            // The words are the document's, not the composition's.
-            let count = match &old {
-                Some((_, count)) if same => *count,
-                _ => self.paragraph(id).text.split_whitespace().count(),
-            };
-            let layout = match (reuse, old) {
-                (true, Some((layout, _))) => layout,
-                _ => {
-                    let source = match &composed {
-                        Some(c) if id == self.focus.paragraph => c,
-                        _ => &self.document,
+        // What each paragraph keeps: its layout, if it's unchanged, and its
+        // word count, which is the document's, not the composition's.
+        let ids = self.document.paragraphs();
+        let kept: Vec<(Option<ParagraphLayout>, Option<usize>)> = ids
+            .iter()
+            .map(|&id| {
+                let same = !all
+                    && match (self.laid.document.object(id), self.document.object(id)) {
+                        (Some(a), Some(b)) => std::ptr::eq(a as *const Object, b as *const Object),
+                        _ => false,
                     };
-                    story::lay_out_paragraph(source, id, &self.res.sheet, &self.res.fonts, width)
+                let reuse = same && !(composing && id == self.focus.paragraph);
+                match old.remove(&id) {
+                    Some((layout, count)) if same => (reuse.then_some(layout), Some(count)),
+                    _ => (None, None),
                 }
+            })
+            .collect();
+        // The rest laid out and counted afresh: on the worker pool when
+        // there are several, as when a document opens, and here when
+        // there's one, as when typing, which waking the pool would slow.
+        let todo: Vec<(ObjectId, Option<usize>)> = ids
+            .iter()
+            .zip(&kept)
+            .filter(|(_, (layout, _))| layout.is_none())
+            .map(|(&id, &(_, count))| (id, count))
+            .collect();
+        let (document, res, focus) = (&self.document, &self.res, self.focus.paragraph);
+        let lay_out = |&(id, count): &(ObjectId, Option<usize>)| {
+            let source = match &composed {
+                Some(c) if id == focus => c,
+                _ => document,
             };
-            paragraphs.push(layout);
-            words.push(count);
-        }
+            let layout = story::lay_out_paragraph(source, id, &res.sheet, &res.fonts, width);
+            let count = count.unwrap_or_else(|| {
+                let p = document.paragraph(id).expect("a paragraph of the document");
+                p.text.split_whitespace().count()
+            });
+            (layout, count)
+        };
+        let fresh: Vec<(ParagraphLayout, usize)> = if todo.len() > 1 {
+            todo.par_iter().map(lay_out).collect()
+        } else {
+            todo.iter().map(lay_out).collect()
+        };
+        let mut fresh = fresh.into_iter();
+        let (paragraphs, words): (Vec<ParagraphLayout>, Vec<usize>) = kept
+            .into_iter()
+            .map(|kept| match kept {
+                (Some(layout), Some(count)) => (layout, count),
+                _ => fresh
+                    .next()
+                    .expect("a fresh layout for each paragraph not kept"),
+            })
+            .unzip();
         let pages = canvas::paginate(self.res.page.body_height(), &canvas::blocks(&paragraphs));
         let mut places: Vec<Vec<(usize, i64)>> = paragraphs
             .iter()
