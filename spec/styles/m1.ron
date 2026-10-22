@@ -1,6 +1,13 @@
 // M1's styles (docs/ROADMAP.md, M1 stage 7): one page style, which the
-// canvas's automatic pages take, and the paragraph styles a story's
-// paragraphs name. Lengths are Pt(...), Mm(...) or In(...).
+// canvas's automatic pages take, the paragraph styles a story's
+// paragraphs name, and the document's tab stops. Lengths are Pt(...),
+// Mm(...) or In(...).
+//
+// Text is Source Serif 4 and headings Inter (project owner, 2026-10-22,
+// review pysc65hp): a book face to read at length, and a plain sans for
+// headings, as the chrome's mockups set them; Noto stands in for the
+// scripts they lack. Paragraphs are ragged unless they're justified, and
+// justified ones hyphenate.
 (
     // A4, with 25 mm margins all round.
     page: (
@@ -15,11 +22,11 @@
     // that isn't here. Headings, with their level for tagged PDF and
     // accessibility, keep with the paragraph after them.
     paragraph: [
-        (name: "Body", family: "Noto Serif", size: Pt(11), space_after: Pt(6)),
+        (name: "Body", family: "Source Serif 4", size: Pt(11), space_after: Pt(6)),
         (
             name: "Heading 1",
             heading: Some(1),
-            family: "Noto Sans",
+            family: "Inter",
             size: Pt(20),
             bold: true,
             space_before: Pt(18),
@@ -29,7 +36,7 @@
         (
             name: "Heading 2",
             heading: Some(2),
-            family: "Noto Sans",
+            family: "Inter",
             size: Pt(15),
             bold: true,
             space_before: Pt(14),
@@ -39,7 +46,7 @@
         (
             name: "Heading 3",
             heading: Some(3),
-            family: "Noto Sans",
+            family: "Inter",
             size: Pt(12.5),
             bold: true,
             space_before: Pt(10),
@@ -47,4 +54,7 @@
             keep_with_next: true,
         ),
     ],
+    // Every paragraph's tab stops besides its style's: none set, and
+    // default ones every 12.5 mm.
+    tabs: (stops: [], interval: Mm(12.5)),
 )

@@ -3800,6 +3800,7 @@ name = "story"
 version = "0.0.0"
 dependencies = [
  "doc",
+ "locale",
  "ron",
  "serde",
  "testkit",

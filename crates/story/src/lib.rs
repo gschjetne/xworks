@@ -3,11 +3,14 @@
 //! story of paragraphs with paragraph styles and character properties, laid
 //! out with `text`.
 //!
-//! - [`StyleSheet`]: the paragraph styles, from `spec/styles/`.
+//! - [`StyleSheet`]: the paragraph styles, from `spec/styles/`, and the
+//!   document's default tab stops.
 //! - [`spans`]: a paragraph's text as styled spans, its character
 //!   properties over its style.
-//! - [`lay_out`]: every paragraph of a document's story, laid out to a
-//!   width.
+//! - [`lay_out`] and [`lay_out_paragraph_with`]: a document's story's
+//!   paragraphs laid out to a width, aligned and hyphenated as their
+//!   styles and properties say, with their tab stops.
+//! - [`word_count`]: a paragraph's words, by its languages' rules.
 //! - [`keys`]: the properties a story reads.
 //! - [`document`]: a document made from styled text, through `doc`'s
 //!   operations, as importers and tests make them.
@@ -23,7 +26,7 @@
 use doc::{Document, ObjectId, Op, Paragraph, Props, Run, Value};
 use serde::Deserialize;
 use text::units::Length;
-use text::{Align, Fonts, Language, Span, Style};
+use text::{Align, Fonts, Hyphenation, Language, Setting, Span, Style, TabAlign, TabStop, Tabs};
 
 /// The names of the properties a story reads, from paragraphs and from runs
 /// of text.
@@ -39,7 +42,12 @@ pub mod keys {
     /// The font size, in layout units (a number).
     pub const SIZE: &str = "size";
     /// The language, a BCP 47 tag (text), on a run or a whole paragraph.
+    /// A document's language is its paragraphs': new ones take it from
+    /// the paragraph they're split from.
     pub const LANGUAGE: &str = "language";
+    /// A paragraph's alignment over its style's: "start", "center", "end"
+    /// or "justify" (text).
+    pub const ALIGN: &str = "align";
 }
 
 /// A paragraph style, as `spec/styles/` gives it.
@@ -72,6 +80,43 @@ pub struct ParagraphStyle {
     /// Its level as a heading, 1 to 6, if it's a heading's style.
     #[serde(default)]
     pub heading: Option<u8>,
+    /// Whether its words are hyphenated at lines' ends, by their
+    /// language's patterns; if it doesn't say, they are where its lines
+    /// are justified.
+    #[serde(default)]
+    pub hyphenate: Option<bool>,
+    /// Its tab stops, besides the document's.
+    #[serde(default)]
+    pub tabs: Vec<TabStopSpec>,
+}
+
+/// A tab stop, as `spec/styles/` gives it.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct TabStopSpec {
+    /// Its distance from the paragraph's start edge.
+    pub at: Length,
+    /// How the text after a tab sits at it.
+    pub align: TabAlign,
+}
+
+/// The tab stops every paragraph of a document has: stops set, and the
+/// interval of the default stops after them.
+#[derive(Clone, Debug, PartialEq, Deserialize)]
+pub struct TabSpec {
+    /// The stops set.
+    #[serde(default)]
+    pub stops: Vec<TabStopSpec>,
+    /// The distance between default stops.
+    pub interval: Length,
+}
+
+impl Default for TabSpec {
+    fn default() -> TabSpec {
+        TabSpec {
+            stops: Vec::new(),
+            interval: zero(),
+        }
+    }
 }
 
 fn zero() -> Length {
@@ -84,6 +129,10 @@ fn zero() -> Length {
 pub struct StyleSheet {
     /// The paragraph styles. The first is the default.
     pub paragraph: Vec<ParagraphStyle>,
+    /// The document's tab stops, which every paragraph has besides its
+    /// style's.
+    #[serde(default)]
+    pub tabs: TabSpec,
 }
 
 impl StyleSheet {
@@ -96,6 +145,27 @@ impl StyleSheet {
         name.and_then(|n| self.paragraph.iter().find(|s| s.name == n))
             .or(self.paragraph.first())
             .expect("a style sheet has a paragraph style")
+    }
+
+    /// The tab stops of a paragraph in `style`: the style's and the
+    /// document's, by position, the style's where both have one at the
+    /// same place, then the document's default ones.
+    pub fn tabs(&self, style: &ParagraphStyle) -> Tabs {
+        let stop = |s: &TabStopSpec| TabStop {
+            position: s.at.units(),
+            align: s.align,
+        };
+        let mut stops: Vec<TabStop> = style.tabs.iter().map(stop).collect();
+        for s in self.tabs.stops.iter().map(stop) {
+            if !stops.iter().any(|t| t.position == s.position) {
+                stops.push(s);
+            }
+        }
+        stops.sort_by_key(|s| s.position);
+        Tabs {
+            stops,
+            interval: self.tabs.interval.units(),
+        }
     }
 }
 
@@ -183,7 +253,34 @@ fn language(value: Option<&Value>) -> Option<Language> {
     }
 }
 
-/// Paragraph `id` of `document`, laid out to `width`.
+/// How `paragraph`'s lines are aligned: as it says, or as its style does.
+pub fn align(paragraph: &Paragraph, sheet: &StyleSheet) -> Align {
+    match paragraph.props.get(keys::ALIGN) {
+        Some(Value::Text(align)) => match align.as_str() {
+            "start" => Align::Start,
+            "center" => Align::Center,
+            "end" => Align::End,
+            "justify" => Align::Justify,
+            _ => paragraph_style(paragraph, sheet).align,
+        },
+        _ => paragraph_style(paragraph, sheet).align,
+    }
+}
+
+/// How many words `paragraph` has, by its languages' rules: stretches of
+/// letters, numbers or ideographs between word boundaries.
+pub fn word_count(paragraph: &Paragraph, sheet: &StyleSheet) -> usize {
+    let mut languages = Vec::new();
+    let mut at = 0;
+    for span in spans(paragraph, sheet) {
+        languages.push((at..at + span.len, span.style.language));
+        at += span.len;
+    }
+    locale::word_count(&paragraph.text, &languages)
+}
+
+/// Paragraph `id` of `document`, laid out to `width`, with no
+/// hyphenation patterns: [`lay_out_paragraph_with`] and none.
 ///
 /// # Panics
 ///
@@ -195,17 +292,43 @@ pub fn lay_out_paragraph(
     fonts: &Fonts,
     width: i64,
 ) -> ParagraphLayout {
+    lay_out_paragraph_with(document, id, sheet, fonts, &Hyphenation::new(), width)
+}
+
+/// Paragraph `id` of `document`, laid out to `width`, its words
+/// hyphenated, where its style says, by the patterns in `hyphenation`.
+/// Languages it has words to hyphenate in but `hyphenation` lacks are in
+/// its layout's `unhyphenated`.
+///
+/// # Panics
+///
+/// If `id` isn't a paragraph of the document.
+pub fn lay_out_paragraph_with(
+    document: &Document,
+    id: ObjectId,
+    sheet: &StyleSheet,
+    fonts: &Fonts,
+    hyphenation: &Hyphenation,
+    width: i64,
+) -> ParagraphLayout {
     let paragraph = document.paragraph(id).expect("a paragraph of the document");
     let style = paragraph_style(paragraph, sheet);
     let spans = spans(paragraph, sheet);
-    let layout = text::layout(
+    let align = align(paragraph, sheet);
+    let tabs = sheet.tabs(style);
+    let layout = text::layout_with(
         fonts,
         &text::Paragraph {
             text: &paragraph.text,
             spans: &spans,
             direction: None,
-            align: style.align,
+            align,
             width,
+        },
+        &Setting {
+            hyphenate: style.hyphenate.unwrap_or(align == Align::Justify),
+            hyphenation: Some(hyphenation),
+            tabs: Some(&tabs),
         },
     );
     ParagraphLayout {

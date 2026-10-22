@@ -38,6 +38,15 @@ fn sample() -> Document {
     story::document(&paragraphs)
 }
 
+/// The sample twice over: several pages in any of the bundled fonts. The
+/// sample alone fills two in Source Serif 4.
+fn long_sample() -> Document {
+    let mut paragraphs: Vec<(String, Vec<(String, Props)>)> =
+        ron::from_str(&spec("documents", "m1-sample")).expect("a document");
+    paragraphs.extend(paragraphs.clone());
+    story::document(&paragraphs)
+}
+
 fn fonts() -> &'static Fonts {
     static FONTS: OnceLock<Fonts> = OnceLock::new();
     FONTS.get_or_init(|| {
@@ -62,7 +71,7 @@ fn breaks(document: &Document) -> Vec<Vec<Piece>> {
 #[test]
 fn the_sample_fills_pages_within_their_margins() {
     let (sheet, style) = styles();
-    let pages = canvas::automatic(&sample(), &sheet, &style, fonts()).pages;
+    let pages = canvas::automatic(&long_sample(), &sheet, &style, fonts()).pages;
     assert!(pages.len() >= 3, "{} pages", pages.len());
     for (n, page) in pages.iter().enumerate() {
         assert_eq!((page.width, page.height), (style.width, style.height));

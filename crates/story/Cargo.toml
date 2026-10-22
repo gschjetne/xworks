@@ -9,6 +9,7 @@ publish.workspace = true
 
 [dependencies]
 doc.workspace = true
+locale.workspace = true
 serde.workspace = true
 text.workspace = true
 
