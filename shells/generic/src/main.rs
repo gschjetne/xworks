@@ -510,7 +510,15 @@ impl Shell {
             format,
             width: size.width.max(1),
             height: size.height.max(1),
-            present_mode: wgpu::PresentMode::AutoVsync,
+            // Mailbox where the surface has it: frames still wait for the
+            // display's refresh, so nothing tears, but a newer one replaces
+            // one waiting. On Windows' Vulkan its swapchain is also made in
+            // 40 ms, where FIFO's takes 170.
+            present_mode: if caps.present_modes.contains(&wgpu::PresentMode::Mailbox) {
+                wgpu::PresentMode::Mailbox
+            } else {
+                wgpu::PresentMode::AutoVsync
+            },
             color_space: wgpu::SurfaceColorSpace::Auto,
             desired_maximum_frame_latency: 2,
             alpha_mode: caps
