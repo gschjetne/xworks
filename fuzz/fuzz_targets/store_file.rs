@@ -1,6 +1,11 @@
 //! Document files, as anyone might hand one over: any bytes open as a
 //! document or give an error, never a panic, and a document that opens
-//! dumps.
+//! dumps. Seed it with the files older xWorks wrote, so it reaches the
+//! upgrade from older schemas:
+//!
+//! ```text
+//! cargo +nightly fuzz run store_file corpus/store_file ../spec/format/fixtures
+//! ```
 
 #![no_main]
 

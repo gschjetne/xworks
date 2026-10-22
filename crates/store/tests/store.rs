@@ -418,3 +418,43 @@ fn the_encoding_is_pinned() {
     );
     assert_eq!(store::decode::<Vec<Op>>(&bytes).unwrap(), ops);
 }
+
+/// Snapshots are part of the format too: these bytes change only with a
+/// new schema.
+#[test]
+fn the_encoding_of_snapshots_is_pinned() {
+    let mut document = Document::new();
+    let p = document.paragraphs()[0];
+    document
+        .apply(&Op::InsertText {
+            paragraph: p,
+            offset: 0,
+            text: "hé".to_string(),
+            runs: vec![Run::new(
+                2,
+                Props::from([("bold".to_string(), Value::Bool(true))]),
+            )],
+        })
+        .unwrap();
+    document
+        .apply(&Op::SetParaProp {
+            paragraph: p,
+            key: "style".to_string(),
+            value: Some(Value::Text("Body".to_string())),
+        })
+        .unwrap();
+    let snapshot = document.to_snapshot();
+    let bytes = store::encode(&snapshot).unwrap();
+    assert_eq!(
+        bytes,
+        [
+            0, 2, 2, // root #0, next ID 2, two objects
+            0, 0, 1, 1, // #0: a story of one paragraph, #1
+            1, 1, 0, 3, b'h', 0xc3, 0xa9, // #1: a paragraph in #0, "hé"
+            1, 2, 1, 4, b'b', b'o', b'l', b'd', 0, 1, // a run of 2: bold = Bool(true)
+            1, 5, b's', b't', b'y', b'l', b'e', // the paragraph's style
+            2, 4, b'B', b'o', b'd', b'y', // Text("Body")
+        ]
+    );
+    assert_eq!(store::decode::<doc::Snapshot>(&bytes).unwrap(), snapshot);
+}
