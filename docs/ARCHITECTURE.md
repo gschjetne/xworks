@@ -603,11 +603,14 @@ the document's structure. Fills and strokes are artifacts, outside it.
 
 ## 12. Performance budgets
 
-These numbers are proposals, to be fixed once the walking skeleton (milestone
-M1 in [ROADMAP.md](ROADMAP.md)) measures what's achievable. For now they
-are measured by hand on the project owner's workstation at each milestone's
-exit, with a benchmark harness that any machine can run (project owner,
-2026-10-18). Later, a self-hosted CI runner on a fixed machine with a GPU
+M1, the walking skeleton ([ROADMAP.md](ROADMAP.md)), measured what's
+achievable. The owner settled four budgets as proposed (keystroke,
+opening a report, scrolling and saving) and revised memory's to 120 MB
+(project owner, 2026-10-22, review 094846qg). Cold start's 300 ms stands
+as proposed, and the plan the owner chose for it in that review meets it.
+The sheet's two stay proposals until a sheet exists. All are measured by
+hand on the project owner's workstation at each milestone's exit, with a
+benchmark harness that any machine can run (project owner, 2026-10-18). Later, a self-hosted CI runner on a fixed machine with a GPU
 will check them on every push, and a regression will fail the build; that
 runner is a noted to-do, not yet planned.
 
@@ -624,26 +627,38 @@ judges each by its 95th percentile.
 | Recalculate after one edit, typical dependent chain | under one frame |
 | Scroll any document | every frame at the display's rate |
 | Save after a small edit, any document size | 50 ms |
-| Memory for an empty document window | 60 MB |
+| Memory for an empty document window | 120 MB |
 
 **Measured at M1's exit** (2026-10-22), on the owner's workstation: 16
 threads, a GeForce GTX 1070. Windows draws with render-gpu on Vulkan;
 Linux runs under WSL, whose only GPU is software, so it draws with
-render-cpu. The 95th percentile of each:
+render-cpu. The 95th percentile of each, with the first measurement in
+brackets where the plans below changed it:
 
 | Interaction | Linux (WSL) | Windows |
 |---|---|---|
-| Cold start to an editable blank document | 198 ms | **894 ms** |
-| Keystroke to the glyph on screen | 14.3 ms | 12.5 ms |
-| Open a 500-page report, first page shown | 100 ms | 153 ms |
-| Scroll any document | 10.7 ms | 7.4 ms |
-| Save after a small edit, any document size | 0.1 ms (worst 9 ms) | 0.1 ms (worst 16 ms) |
-| Memory for an empty document window | **193 MB** | **191 MB** |
+| Cold start to an editable blank document | 146 ms (198) | 289 ms (894) |
+| Keystroke to the glyph on screen | 16.1 ms | 12.7 ms |
+| Open a 500-page report, first page shown | 105 ms | 162 ms |
+| Scroll any document | 11.9 ms | 8.6 ms |
+| Save after a small edit, any document size | 0.1 ms (worst 9 ms) | 0.1 ms (worst 18 ms) |
+| Memory for an empty document window | 113 MB (193) | 64 MB (191) |
 
-Two budgets are missed. Most of Windows' start is the GPU: opening it
-takes 270 ms and compiling vello_gpu's shaders 250 ms. Of the memory, the
-fonts take 84 MB, of which the CJK faces take all but 4 MB, and opening the
-GPU takes 60 to 70 MB.
+The first measurement missed two budgets, and the owner chose a plan for
+each (review 094846qg):
+
+- **Memory:** the CJK faces, 83 MB of the 87 MB of bundled fonts, load
+  only once text needs them (`on_demand` in `spec/text/fonts.ron`). Under
+  WSL, most of what's left is the software GPU's 72 MB.
+- **Cold start:** the GPU opens on a thread from the program's start; on
+  Windows Vulkan comes first, which opens in a fifth of DirectX 12's
+  time; and render-cpu draws the first frames while vello_gpu compiles its
+  shaders on a thread. Measuring that showed the surface's FIFO swapchain
+  took 170 ms to make, so the shell presents with Mailbox where it can,
+  which took 40 ms, and frees 50 MB.
+
+The first start of a newly built program is slower, up to 0.8 s on
+Windows, while the GPU driver compiles and caches its shaders.
 
 ## 13. Engineering approach
 

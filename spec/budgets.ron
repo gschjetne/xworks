@@ -36,7 +36,8 @@
         (
             id: "memory",
             interaction: "Memory for an empty document window",
-            budget: Megabytes(60.0),
+            // Revised from 60 MB (project owner, 2026-10-22, review 094846qg).
+            budget: Megabytes(120.0),
         ),
     ],
 )
