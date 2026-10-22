@@ -1,29 +1,49 @@
 # The `.xw` format
 
 An xWorks document is one file with the extension `.xw`: an SQLite database
-(docs/ARCHITECTURE.md, section 6). This is schema 1, M1's.
+(docs/ARCHITECTURE.md, section 6). This is schema 2, M2's; schema 1 was
+M1's, and a schema 1 file is upgraded when it's opened ("Upgrading").
 
 ## Recognizing a file
 
 - **Application ID:** the database header's application ID is `0x78576B73`,
   "xWks" in ASCII. A file without it isn't an xWorks document.
-- **Schema:** the header's user version is the schema version, here `1`.
+- **Schema:** the header's user version is the schema version, here `2`.
   A reader that finds a version newer than it knows opens the file
   read-only and says so; it never writes to it, and never guesses at what
   it doesn't understand. Version 0 means a file that was never finished.
 
 ## Tables
 
-[schema-1.sql](schema-1.sql) creates them; it is the definition, and
+[schema-2.sql](schema-2.sql) creates them; it is the definition, and
 `store` runs it as it is.
 
 | Table | Holds |
 |---|---|
-| `meta` | what the document is: its `kind`, `story` in M1 |
+| `meta` | what the document is: its `kind`, `story` |
 | `log` | every transaction, in commit order: edits, continuing edits, undos and redos |
 | `snapshot` | the whole document after a log entry, from time to time |
 | `version` | named versions, as log positions |
 | `font` | font files the document carries, by hash |
+| `image` | images the document shows, by hash, with their format and the bytes they were placed from (new in schema 2) |
+
+## The document
+
+A snapshot holds every object of the document by ID (`doc::Object`). The
+root is a story, a tree of blocks:
+
+- a **paragraph** holds text, runs of character properties along it, and
+  properties of its own, such as its style. Headings and code blocks are
+  paragraphs, set apart by their style.
+- a **container** (`doc::Block`) holds blocks, by kind: a **list** holds
+  items, and its properties say whether it's numbered and from what; an
+  **item** and a **quote** hold blocks as the story does; a **table**
+  holds rows, the first its header; a **row** holds its cells, each a
+  paragraph. Containers may be empty.
+
+Every object but the root names the container it's in, and is listed by
+it exactly once; there is always a paragraph. M1's stories were flat:
+schema 1's story listed paragraphs only.
 
 ## Encoding
 
@@ -34,13 +54,17 @@ format 1. Integers are variable-length, strings and lists carry their
 length, text is UTF-8, and text offsets count Unicode scalar values.
 
 postcard writes an enum's variant as its position, so the order of
-variants in `doc::Op`, `doc::Object` and `doc::Value` is part of the
-format: new variants go at the end, and reordering or removing one is a
-new schema. A test in `store` pins the bytes of known values.
+variants in `doc::Op`, `doc::Object`, `doc::Kind` and `doc::Value` is
+part of the format: new variants go at the end, and reordering or
+removing one is a new schema. Schema 2 added operations on blocks after
+M1's six, and containers after stories and paragraphs, so every schema 1
+value means the same in schema 2. Tests in `store` pin the bytes of known
+values.
 
 ## Opening
 
-1. Check the application ID and the schema version.
+1. Check the application ID and the schema version; upgrade an older
+   schema.
 2. Read the latest snapshot.
 3. Apply the operations of every log entry after it, in order.
 4. Rebuild undo and redo from the whole log: an edit pushes onto Undo
@@ -50,6 +74,21 @@ new schema. A test in `store` pins the bytes of known values.
 
 A snapshot or an operation that doesn't hold together is an error; the
 reader never opens a document it can't vouch for.
+
+## Upgrading
+
+Opening a file of an older schema upgrades it in one SQLite transaction,
+so it's upgraded whole or not at all:
+
+- **From schema 1:** [upgrade-1.sql](upgrade-1.sql) adds the `image`
+  table; every snapshot and every log entry is read with schema 1's types,
+  kept frozen in `store`, and written again in schema 2's encoding; and
+  the user version becomes 2. Named versions replay from the snapshots
+  before them as they did. What doesn't decode leaves the file as it was,
+  and opening it is an error.
+
+[fixtures/](fixtures/) holds files older xWorks wrote, which every later
+one must open with the same text and history.
 
 ## Writing
 

@@ -78,3 +78,56 @@ fn m1s_file_opens_with_its_text_and_history() {
     assert_eq!(paragraphs.len(), last);
     assert_eq!(document.paragraph(paragraphs[last - 1]).unwrap().text, "");
 }
+
+/// The tables of the file at `path`, as SQLite records their definitions.
+fn tables(path: &std::path::Path) -> Vec<(String, String)> {
+    let connection = rusqlite::Connection::open(path).expect("SQLite opens it");
+    let mut statement = connection
+        .prepare("SELECT name, sql FROM sqlite_schema WHERE type = 'table' ORDER BY name")
+        .expect("a query");
+    statement
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))
+        .expect("the tables")
+        .collect::<Result<_, _>>()
+        .expect("the tables")
+}
+
+fn schema(path: &std::path::Path) -> i64 {
+    rusqlite::Connection::open(path)
+        .expect("SQLite opens it")
+        .pragma_query_value(None, "user_version", |row| row.get(0))
+        .expect("a version")
+}
+
+/// Opening M1's file upgrades it, once: it has a new file's tables, and
+/// is today's schema, and opening it again finds it so.
+#[test]
+fn m1s_file_upgrades_to_a_new_files_tables() {
+    let path = copy("m1.xw", "m1-upgrade");
+    assert_eq!(schema(&path), 1);
+    let dump = store::dump(&path).expect("it opens");
+    assert_eq!(schema(&path), store::SCHEMA);
+    let fresh = path.with_file_name("fresh.xw");
+    drop(Store::create(&fresh, &doc::Document::new(), "story").expect("created"));
+    assert_eq!(tables(&path), tables(&fresh));
+    assert!(tables(&path).iter().any(|(name, _)| name == "image"));
+    assert_eq!(store::dump(&path).expect("it opens again"), dump);
+}
+
+/// A schema 1 file that doesn't decode isn't upgraded: it's left as it
+/// was, and opening it is an error.
+#[test]
+fn a_damaged_m1_file_is_left_as_it_was() {
+    let path = copy("m1.xw", "m1-damaged");
+    let connection = rusqlite::Connection::open(&path).expect("SQLite opens it");
+    connection
+        .execute(
+            "UPDATE snapshot SET document = ?1 WHERE seq = 100",
+            rusqlite::params![vec![0xffu8; 8]],
+        )
+        .expect("damaged");
+    drop(connection);
+    assert!(matches!(Store::open(&path), Err(store::Error::Damaged(_))));
+    assert_eq!(schema(&path), 1);
+    assert!(!tables(&path).iter().any(|(name, _)| name == "image"));
+}

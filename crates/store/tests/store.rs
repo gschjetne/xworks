@@ -256,26 +256,26 @@ fn a_newer_schema_opens_read_only() {
     drop(store);
     let connection = Connection::open(&path).expect("SQLite opens it");
     connection
-        .pragma_update(None, "user_version", 2)
+        .pragma_update(None, "user_version", 3)
         .expect("set");
     drop(connection);
 
     let mut opened = Store::open(&path).expect("it opens");
-    assert_eq!(opened.store.read_only(), Some(2));
+    assert_eq!(opened.store.read_only(), Some(3));
     assert_eq!(opened.document, document);
     let t = typing(&mut document, 0, " More.");
     assert!(matches!(
         opened.store.append(Entry::Commit(&t), &document),
-        Err(Error::ReadOnly { schema: 2 })
+        Err(Error::ReadOnly { schema: 3 })
     ));
     assert!(matches!(
         opened.store.name_version("No"),
-        Err(Error::ReadOnly { schema: 2 })
+        Err(Error::ReadOnly { schema: 3 })
     ));
     assert!(
         store::dump(&path)
             .expect("it dumps")
-            .starts_with("xworks schema 2\n")
+            .starts_with("xworks schema 3\n")
     );
 }
 
@@ -414,6 +414,66 @@ fn the_encoding_is_pinned() {
             1, 2, 1, 4, b'b', b'o', b'l', b'd', 0, 1, // a run of 2: bold = Bool(true)
             5, 0xac, 0x02, 5, b's', b't', b'y', b'l', b'e', // SetParaProp: #300, "style"
             1, 2, 4, b'B', b'o', b'd', b'y', // Some(Text("Body"))
+        ]
+    );
+    assert_eq!(store::decode::<Vec<Op>>(&bytes).unwrap(), ops);
+}
+
+/// Schema 2's operations on blocks, and its containers, pinned the same
+/// way.
+#[test]
+fn the_encoding_of_blocks_is_pinned() {
+    use doc::{Block, Kind, Object, ObjectId};
+    let ops = vec![
+        Op::InsertBlock {
+            parent: ObjectId(0),
+            after: Some(ObjectId(1)),
+            objects: vec![
+                (
+                    ObjectId(5),
+                    Object::Block(Block {
+                        kind: Kind::List,
+                        parent: ObjectId(0),
+                        children: vec![ObjectId(6)],
+                        props: Props::from([("ordered".to_string(), Value::Bool(true))]),
+                    }),
+                ),
+                (
+                    ObjectId(6),
+                    Object::Block(Block {
+                        kind: Kind::Item,
+                        parent: ObjectId(5),
+                        children: vec![],
+                        props: Props::new(),
+                    }),
+                ),
+            ],
+        },
+        Op::DeleteBlock { block: ObjectId(5) },
+        Op::MoveBlock {
+            block: ObjectId(6),
+            parent: ObjectId(0),
+            after: None,
+        },
+        Op::SetBlockProp {
+            block: ObjectId(5),
+            key: "start".to_string(),
+            value: Some(Value::Int(3)),
+        },
+    ];
+    let bytes = store::encode(&ops).unwrap();
+    assert_eq!(
+        bytes,
+        [
+            4, // four operations
+            6, 0, 1, 1, 2, // InsertBlock in #0 after Some(#1), two objects
+            5, 2, 0, 0, 1, 6, // #5: a Block, a List in #0 holding #6
+            1, 7, b'o', b'r', b'd', b'e', b'r', b'e', b'd', 0, 1, // ordered = Bool(true)
+            6, 2, 1, 5, 0, 0, // #6: a Block, an Item in #5, empty
+            7, 5, // DeleteBlock #5
+            8, 6, 0, 0, // MoveBlock #6 into #0, first
+            9, 5, 5, b's', b't', b'a', b'r', b't', 1, 1,
+            6, // SetBlockProp #5 start = Some(Int(3))
         ]
     );
     assert_eq!(store::decode::<Vec<Op>>(&bytes).unwrap(), ops);
