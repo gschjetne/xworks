@@ -808,3 +808,114 @@ pub(crate) fn insert_table(doc: &Document, at: Position) -> Option<Outcome> {
     })?;
     Some(b.edit("Table", start(first?)))
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use story::BlockSpec;
+
+    fn sheet() -> StyleSheet {
+        let source = testkit::specs("styles")
+            .expect("spec/styles")
+            .into_iter()
+            .find(|(name, _)| name == "m1")
+            .expect("m1.ron")
+            .1;
+        ron::from_str(&source).expect("a style sheet")
+    }
+
+    fn p(text: &str) -> BlockSpec {
+        BlockSpec::Paragraph("Body".into(), vec![(text.into(), Props::new())])
+    }
+
+    fn at(doc: &Document, text: &str, offset: u32) -> Position {
+        let paragraph = doc
+            .paragraphs()
+            .into_iter()
+            .find(|&id| doc.paragraph(id).is_some_and(|q| q.text == text))
+            .expect("the paragraph");
+        Position {
+            paragraph,
+            offset,
+            upstream: false,
+        }
+    }
+
+    /// The outline of `doc` after deleting from `from` to `to`.
+    fn delete(doc: &Document, from: Position, to: Position) -> Vec<String> {
+        let ids = doc.paragraphs();
+        let ops = deletion(doc, &ids, from, to).expect("the deletion works out");
+        let mut after = doc.clone();
+        after.apply_all(&ops).expect("it applies");
+        story::outline(&after, &sheet())
+    }
+
+    fn nested() -> Document {
+        story::build(&[
+            p("alpha"),
+            BlockSpec::List(
+                false,
+                vec![
+                    vec![p("one"), BlockSpec::List(false, vec![vec![p("deep")]])],
+                    vec![p("two")],
+                ],
+            ),
+            BlockSpec::Quote(vec![p("q1"), p("q2")]),
+            p("omega"),
+        ])
+    }
+
+    #[test]
+    fn a_deletion_from_deep_in_a_list_into_a_quote() {
+        let doc = nested();
+        assert_eq!(
+            delete(&doc, at(&doc, "one", 1), at(&doc, "q2", 1)),
+            [
+                "Body: alpha",
+                "list",
+                "  item",
+                "    Body: o2",
+                "Body: omega"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_deletion_from_a_paragraph_into_a_nested_item() {
+        let doc = nested();
+        assert_eq!(
+            delete(&doc, at(&doc, "alpha", 2), at(&doc, "deep", 2)),
+            [
+                "Body: alep",
+                "list",
+                "  item",
+                "    Body: two",
+                "quote",
+                "  Body: q1",
+                "  Body: q2",
+                "Body: omega"
+            ]
+        );
+    }
+
+    #[test]
+    fn a_deletion_from_a_quote_to_the_end() {
+        let doc = nested();
+        assert_eq!(
+            delete(&doc, at(&doc, "q1", 0), at(&doc, "omega", 5)),
+            [
+                "Body: alpha",
+                "list",
+                "  item",
+                "    Body: one",
+                "    list",
+                "      item",
+                "        Body: deep",
+                "  item",
+                "    Body: two",
+                "quote",
+                "  Body: ",
+            ]
+        );
+    }
+}
