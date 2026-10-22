@@ -1405,7 +1405,7 @@ impl Editor {
     }
 
     /// The document's pages and structure, as drawn and printed.
-    fn pages(&self) -> canvas::Pages {
+    pub fn pages(&self) -> canvas::Pages {
         canvas::Pages {
             pages: canvas::draw(
                 &self.res.page,

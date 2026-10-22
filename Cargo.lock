@@ -245,6 +245,8 @@ dependencies = [
  "chrome",
  "doc",
  "locale",
+ "lopdf",
+ "pdf-extract",
  "rayon",
  "render-cpu",
  "render-pdf",

@@ -16,7 +16,8 @@ mod pages;
 use testkit::Image;
 
 pub use pages::{
-    document_pages, document_sheet, editor_menu_page, editor_page, fonts, shapes_page, text_page,
+    document_pages, document_sheet, editor_menu_page, editor_page, exit_pages, exit_sheet, fonts,
+    shapes_page, text_page,
 };
 
 /// A named page, and the resolution it's drawn at.
@@ -78,6 +79,13 @@ pub fn scenes() -> &'static [Scene] {
             ppi: 96.0,
             page: editor_menu_page,
             pages: None,
+        },
+        Scene {
+            name: "exit-pages",
+            description: "the pages M1's exit session types, undoes, redoes and reopens, side by side, at 48 pixels per inch",
+            ppi: 48.0,
+            page: exit_sheet,
+            pages: Some(exit_pages),
         },
         Scene {
             name: "text",

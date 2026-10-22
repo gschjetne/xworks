@@ -81,3 +81,64 @@ fn cjk_faces_load_when_text_needs_them() {
     assert!(drawn, "the Chinese is drawn in the CJK face");
     assert!(cjk(&copy).is_some(), "every copy shares them");
 }
+
+/// M1's exit (docs/ROADMAP.md): the document the exit session types
+/// reopens with the same dump and draws the same pages, and Export as PDF
+/// gives those pages, with every paragraph's text extractable.
+#[test]
+fn the_exit_document_reopens_and_exports_the_same() {
+    let source = testkit::specs("sessions")
+        .expect("spec/sessions")
+        .into_iter()
+        .find(|(name, _)| name == "exit")
+        .expect("spec/sessions/exit.ron")
+        .1;
+    let mut exit = session::read(&source).expect("a session");
+    // The session ends by reopening the document; here that's done by hand.
+    // Until then the caret is at the end, not where the status expects it.
+    assert!(matches!(exit.events.pop(), Some(session::Step::Reopen)));
+    exit.status = None;
+    let mut res = resources().clone();
+    res.documents = testkit::scratch_dir("app-exit").expect("a folder");
+    let res = Arc::new(res);
+    let played = session::play(res.clone(), &exit).expect("the session plays");
+    let problems = session::check(&exit, &played);
+    assert!(problems.is_empty(), "{problems:?}");
+    let path = played.editor.path().to_path_buf();
+    let dump = played.editor.document().dump();
+    let drawn = renders(&played.editor.pages());
+    assert!(drawn.len() >= 3, "several pages, not {}", drawn.len());
+    drop(played);
+
+    let mut reopened = app::Editor::open(res, &path).expect("it reopens");
+    assert_eq!(reopened.document().dump(), dump, "the same dump");
+    let pages = reopened.pages();
+    assert!(renders(&pages) == drawn, "the same pages");
+
+    reopened.update(app::Event::Command("export-pdf".to_string()));
+    let pdf = std::fs::read(path.with_extension("pdf")).expect("the PDF");
+    let read = lopdf::Document::load_mem(&pdf).expect("the PDF reads");
+    assert_eq!(read.get_pages().len(), pages.pages.len());
+    let squeeze = |text: &str| -> String { text.chars().filter(|c| !c.is_whitespace()).collect() };
+    let text = squeeze(&pdf_extract::extract_text_from_mem(&pdf).expect("text extracts"));
+    // pdf-extract 0.12 misreads some of this PDF's Arabic letters (ب as ن,
+    // ع as غ, ت as ي), which pdftotext reads right, so each paragraph is
+    // checked but for its Arabic.
+    let arabic = |c: char| matches!(c, '\u{0600}'..='\u{06FF}' | '\u{0750}'..='\u{077F}');
+    let missing: Vec<&str> = exit
+        .expect
+        .iter()
+        .flat_map(|(_, paragraph)| paragraph.split(arabic))
+        .filter(|stretch| !text.contains(&squeeze(stretch)))
+        .collect();
+    assert!(missing.is_empty(), "not extracted: {missing:?}");
+}
+
+/// Each page's pixels, drawn portably at 48 to the inch.
+fn renders(pages: &canvas::Pages) -> Vec<Vec<u8>> {
+    pages
+        .pages
+        .iter()
+        .map(|page| render_cpu::render(page, 48.0, render_cpu::Level::Portable).pixels)
+        .collect()
+}

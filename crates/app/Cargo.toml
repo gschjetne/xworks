@@ -24,6 +24,8 @@ thiserror.workspace = true
 toolkit.workspace = true
 
 [dev-dependencies]
+lopdf.workspace = true
+pdf-extract.workspace = true
 render-cpu.workspace = true
 testkit.workspace = true
 
