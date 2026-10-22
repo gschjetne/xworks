@@ -555,6 +555,45 @@ broken between graphemes. Spaces at a line's end hang past it. Each line is
 then ordered for display on its own (UAX #9, rules L1 and L2), aligned, and
 made as tall as its fonts' ascent and descent.
 
+**Justified, hyphenated and tabbed text** (M2, stage 3). Ragged lines stay
+first fit, so typing never moves a line above the caret. Justified ones
+break by Knuth and Plass's algorithm, measured by the same function, and
+scored with TeX's integer badness, penalties and demerits (line penalty,
+hyphens, consecutive hyphens, a hyphen ending the last line but one, and
+neighbours of different tightness), so they break the same everywhere. A
+first pass allows TeX's tolerance of 200; where no paragraph fits that, as
+in narrow columns, a second scores lines with emergency stretch, a
+sixteenth of the width, and badness past TeX's cap, so a looser line is
+always worse. Lines stretch, never shrink: at their spaces, half a space
+each, and between Chinese and Japanese characters, a quarter of one;
+Arabic and Hebrew at their spaces only. The last line and lines ending at
+a hard break sit at the start.
+
+- **Hyphenation** is Liang's, on TeX's pattern files as they ship, with
+  each language's exceptions and minimums (`spec/text/hyphenation.ron`).
+  Styles hyphenate where their lines are justified, unless they say
+  otherwise; ragged lines that do hyphenate only where a line would
+  otherwise leave a tenth of it empty. Soft hyphens always break.
+- **The hyphen a break adds** is U+2010 where the face of the letter
+  before it has it, and the hyphen-minus otherwise, shaped in that face.
+  It's no character of the text: it's part of the letter's cell, so the
+  caret at the line's end stands after it, and in PDF it reads as a soft
+  hyphen, U+00AD, as tagged PDF asks of hyphens layout adds. A soft hyphen
+  where a line breaks shows the same glyph in its own place.
+- **Tabs** go to stops set on the paragraph's style and the document,
+  then to default stops at the document's interval (12.5 mm), measured
+  from the paragraph's start edge: start, end, centred, and decimal on a
+  character the stop names. A justified line stretches after its last tab.
+- **Language** decides more than letterforms. Japanese and Chinese break
+  lines by CSS's `normal` rules for their language, which let a line start
+  with a small kana; other text by UAX #14's default, `strict`. Words and
+  sentences, for moving the caret, double and triple clicks, and counting,
+  come from ICU4X's segmenters with the text's language; Chinese and
+  Japanese words from its dictionary, which adds 2 MB to the program.
+  Hyphenated compounds count as one word. A document's language is its
+  paragraphs', set on the first when it's made and passed on as
+  paragraphs split.
+
 **The caret** stands between graphemes, and a cursor is an offset with an
 affinity: whether it belongs with the character before it or the one after.
 Where directions meet, one offset is two places on screen, and where a line
