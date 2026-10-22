@@ -12,6 +12,7 @@ anyhow.workspace = true
 app.workspace = true
 canvas.workspace = true
 doc.workspace = true
+kurbo.workspace = true
 render-cpu.workspace = true
 render-pdf.workspace = true
 ron.workspace = true
@@ -20,6 +21,7 @@ serde.workspace = true
 story.workspace = true
 testkit.workspace = true
 text.workspace = true
+toolkit.workspace = true
 
 [lints]
 workspace = true

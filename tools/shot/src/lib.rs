@@ -11,6 +11,7 @@
 //!   digits and `-`.
 //! - A scene renders the same pixels every time, on every platform.
 
+mod mockups;
 mod pages;
 
 use testkit::Image;
@@ -86,6 +87,41 @@ pub fn scenes() -> &'static [Scene] {
             ppi: 48.0,
             page: exit_sheet,
             pages: Some(exit_pages),
+        },
+        Scene {
+            name: "mockup-pages",
+            description: "M2's chrome, mocked up: a document on pages, in xWorks' own title bar, with the ruler and the inspector",
+            ppi: 96.0,
+            page: mockups::pages_own_title,
+            pages: None,
+        },
+        Scene {
+            name: "mockup-pages-dark",
+            description: "M2's chrome, mocked up: the same, dark, its page still white",
+            ppi: 96.0,
+            page: mockups::pages_dark,
+            pages: None,
+        },
+        Scene {
+            name: "mockup-system-title",
+            description: "M2's chrome, mocked up: the same, under the system's title bar",
+            ppi: 96.0,
+            page: mockups::pages_system_title,
+            pages: None,
+        },
+        Scene {
+            name: "mockup-draft-dark",
+            description: "M2's chrome, mocked up: a Markdown file in the draft view, dark",
+            ppi: 96.0,
+            page: mockups::draft_dark,
+            pages: None,
+        },
+        Scene {
+            name: "mockup-palette",
+            description: "M2's chrome, mocked up: the command palette, open",
+            ppi: 96.0,
+            page: mockups::palette,
+            pages: None,
         },
         Scene {
             name: "text",

@@ -281,22 +281,28 @@ pub fn document_pages() -> canvas::Pages {
     struct Sheet {
         page: canvas::PageStyleSpec,
     }
-    let spec = |dir: &str, name: &str| {
-        testkit::specs(dir)
-            .expect("spec/")
-            .into_iter()
-            .find(|(n, _)| n == name)
-            .unwrap_or_else(|| panic!("spec/{dir}/{name}.ron"))
-            .1
-    };
-    let styles = spec("styles", "m1");
-    let sheet: story::StyleSheet = ron::from_str(&styles).expect("a style sheet");
-    let page: Sheet = ron::from_str(&styles).expect("a page style");
-    let style = canvas::PageStyle::from_spec(&page.page);
+    let page: Sheet = ron::from_str(&spec("styles", "m1")).expect("a page style");
+    document_in(&canvas::PageStyle::from_spec(&page.page))
+}
+
+/// The sample document in M1's paragraph styles, in automatic pages of
+/// `style`.
+pub(crate) fn document_in(style: &canvas::PageStyle) -> canvas::Pages {
+    let sheet: story::StyleSheet = ron::from_str(&spec("styles", "m1")).expect("a style sheet");
     let paragraphs: Vec<(String, Vec<(String, doc::Props)>)> =
         ron::from_str(&spec("documents", "m1-sample")).expect("a document");
     let document = story::document(&paragraphs);
-    canvas::automatic(&document, &sheet, &style, fonts())
+    canvas::automatic(&document, &sheet, style, fonts())
+}
+
+/// The spec `spec/{dir}/{name}.ron`.
+fn spec(dir: &str, name: &str) -> String {
+    testkit::specs(dir)
+        .expect("spec/")
+        .into_iter()
+        .find(|(n, _)| n == name)
+        .unwrap_or_else(|| panic!("spec/{dir}/{name}.ron"))
+        .1
 }
 
 /// The editor's window after the tour session (`spec/sessions/tour.ron`),

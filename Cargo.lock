@@ -3532,6 +3532,7 @@ dependencies = [
  "app",
  "canvas",
  "doc",
+ "kurbo",
  "render-cpu",
  "render-pdf",
  "ron",
@@ -3540,6 +3541,7 @@ dependencies = [
  "story",
  "testkit",
  "text",
+ "toolkit",
 ]
 
 [[package]]
