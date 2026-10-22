@@ -296,14 +296,16 @@ fn gif(bytes: &[u8], limits: &Limits) -> Result<Raw, Failure> {
     let size = check(u64::from(width), u64::from(height), limits)?;
     let mut rgba = vec![0; size];
     let (fw, fh) = (usize::from(frame.width), usize::from(frame.height));
-    if frame.buffer.len() >= fw * fh * 4 {
+    // As much of each of the frame's rows as falls on the screen, which is
+    // none if the frame starts right of it.
+    let left = usize::from(frame.left);
+    let across = fw.min((width as usize).saturating_sub(left));
+    if across > 0 && frame.buffer.len() >= fw * fh * 4 {
         for y in 0..fh {
             let to_y = usize::from(frame.top) + y;
             if to_y >= height as usize {
                 break;
             }
-            let left = usize::from(frame.left);
-            let across = fw.min((width as usize).saturating_sub(left));
             let from = y * fw * 4;
             let to = (to_y * width as usize + left) * 4;
             rgba[to..to + across * 4].copy_from_slice(&frame.buffer[from..from + across * 4]);

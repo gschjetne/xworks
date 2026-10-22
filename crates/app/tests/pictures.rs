@@ -155,6 +155,17 @@ fn a_gif_shows_its_first_frame_on_its_screen() {
     assert_eq!(pixel(&decoded, 0, 0)[3], 0, "outside the frame, nothing");
     assert_eq!(pixel(&decoded, 2, 0), [255, 0, 0, 255]);
     assert_eq!(pixel(&decoded, 3, 1), [0, 0, 255, 255]);
+    // A first frame that starts right of the screen shows nothing.
+    let mut out = Vec::new();
+    {
+        let mut encoder = gif::Encoder::new(&mut out, 4, 2, &[]).expect("an encoder");
+        let mut pixels = [255, 0, 0, 255].repeat(4);
+        let mut frame = gif::Frame::from_rgba(2, 2, &mut pixels);
+        frame.left = 9;
+        encoder.write_frame(&frame).expect("a frame");
+    }
+    let decoded = picture::decode(&out, &limits()).expect("a GIF");
+    assert!(rgba(&decoded).iter().all(|&b| b == 0), "a clear screen");
 }
 
 #[test]
