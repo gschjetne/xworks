@@ -53,8 +53,39 @@
             space_after: Pt(3),
             keep_with_next: true,
         ),
+        // A code block (M2): its lines break at line separators, not at
+        // paragraphs, and it's drawn on a tint.
+        (
+            name: "Code",
+            code: true,
+            family: "JetBrains Mono",
+            size: Pt(9.5),
+            space_before: Pt(10),
+            space_after: Pt(12),
+        ),
     ],
     // Every paragraph's tab stops besides its style's: none set, and
     // default ones every 12.5 mm.
     tabs: (stops: [], interval: Mm(12.5)),
+    // How the blocks M2 adds look: lists, quotes, code and tables. Colours
+    // are sRGB.
+    blocks: (
+        list_indent: Pt(18),
+        // Bullets by depth, over again deeper: characters every document
+        // face has.
+        bullets: ["•", "–"],
+        quote_indent: Pt(16),
+        quote_bar: Pt(2.5),
+        quote_color: (196, 196, 196),
+        code_family: "JetBrains Mono",
+        code_tint: (243, 243, 240),
+        code_padding: Pt(5),
+        table_space: Pt(8),
+        cell_padding: Pt(4),
+        rule: Pt(1),
+        hairline: Pt(0.5),
+        rule_color: (0, 0, 0),
+        hairline_color: (200, 200, 200),
+        link_color: (25, 80, 170),
+    ),
 )
