@@ -472,6 +472,7 @@ impl Editor {
         // there are several, as when a document opens, and here when
         // there's one, as when typing, which waking the pool would slow.
         let (document, res) = (&self.document, &self.res);
+        let counted = &words;
         let lay_out = |&k: &usize| {
             let entry = &entries[k];
             let source = match &composed {
@@ -479,27 +480,32 @@ impl Editor {
                 _ => document,
             };
             let hyphenation = res.hyphenation();
-            story::lay_out_at(
+            let layout = story::lay_out_at(
                 source,
                 entry.id,
                 &entry.place,
                 &res.sheet,
                 res.fonts(),
                 &hyphenation,
-            )
+            );
+            let count = counted[k].unwrap_or_else(|| {
+                let p = document.paragraph(entry.id).expect("a paragraph");
+                story::word_count(p, &res.sheet)
+            });
+            (layout, count)
         };
-        let mut fresh: Vec<ParagraphLayout> = if todo.len() > 1 {
+        let mut fresh: Vec<(ParagraphLayout, usize)> = if todo.len() > 1 {
             todo.par_iter().map(lay_out).collect()
         } else {
             todo.iter().map(lay_out).collect()
         };
         // A character the fonts lack brings in those kept until text needs
         // them, such as the CJK faces, and its paragraphs are laid out again.
-        if fresh.iter().any(|p| p.layout.missing) {
+        if fresh.iter().any(|(p, _)| p.layout.missing) {
             match res.load_on_demand() {
                 Ok(true) => {
                     for (k, fresh) in todo.iter().zip(&mut fresh) {
-                        if fresh.layout.missing {
+                        if fresh.0.layout.missing {
                             *fresh = lay_out(k);
                         }
                     }
@@ -512,13 +518,13 @@ impl Editor {
         // bring them in, and their paragraphs are laid out again.
         let wanted: Vec<text::Language> = fresh
             .iter()
-            .flat_map(|p| p.layout.unhyphenated.iter().cloned())
+            .flat_map(|(p, _)| p.layout.unhyphenated.iter().cloned())
             .collect();
         if !wanted.is_empty() {
             match res.load_hyphenation(&wanted) {
                 Ok(true) => {
                     for (k, fresh) in todo.iter().zip(&mut fresh) {
-                        if !fresh.layout.unhyphenated.is_empty() {
+                        if !fresh.0.layout.unhyphenated.is_empty() {
                             *fresh = lay_out(k);
                         }
                     }
@@ -527,16 +533,13 @@ impl Editor {
                 Err(e) => self.message = format!("Couldn't load hyphenation: {e}"),
             }
         }
-        for (&k, layout) in todo.iter().zip(fresh) {
+        for (&k, (layout, count)) in todo.iter().zip(fresh) {
             if same_flow {
                 paragraphs[k] = layout;
             } else {
                 slots[k] = Some(layout);
             }
-            if words[k].is_none() {
-                let p = document.paragraph(entries[k].id).expect("a paragraph");
-                words[k] = Some(story::word_count(p, &res.sheet));
-            }
+            words[k] = Some(count);
         }
         if !same_flow {
             paragraphs = slots
