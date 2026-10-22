@@ -6,6 +6,7 @@
 //!   and hit-tested.
 //! - [`status_bar`]: a line of text along the foot of a window.
 //! - [`List`]: a panel of choices, such as documents to open.
+//! - [`Icon`]: Lucide's icons, read from SVG and drawn as fills.
 //!
 //! Everything is in layout units, with the window's top left at the origin,
 //! and drawn with the bundled fonts in [`Theme`]'s sizes. The theme is data,
@@ -17,6 +18,8 @@
 //!   click lands is what the click hits.
 //! - Disabled commands and separators are never hit.
 
+mod icon;
+
 use std::ops::Range;
 
 use chrome::MenuItem;
@@ -24,6 +27,8 @@ use scene::{Color, Item, Path, Point};
 use serde::Deserialize;
 use text::units::{Length, PIXEL};
 use text::{Align, Fonts, Language, Paragraph, Span, Style};
+
+pub use icon::{Icon, IconError};
 
 /// A colour as specs write it: red, green and blue, and opacity, each 0 to
 /// 255.

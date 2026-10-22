@@ -39,6 +39,7 @@ arboard = { version = "3.7.0", default-features = false }  # the system clipboar
 fearless_simd = { version = "0.7.0", default-features = false, features = ["force_support_fallback"] }  # vello_cpu's SIMD levels; this feature gives the portable scalar one, whose pixels are the same everywhere
 glifo = { version = "=0.4.0", default-features = false }  # the glyph type vello_gpu draws, which it doesn't re-export; already in the build through it
 harfrust = "0.14.0"     # shaping text (docs/ARCHITECTURE.md, section 9); it shares read-fonts with skrifa
+kurbo = "0.13.1"        # the toolkit's icons: Lucide's SVG paths read, and their strokes turned into fills; already in the build through vello
 krilla = { version = "=0.8.2", default-features = false }  # PDF output (docs/ARCHITECTURE.md, section 10): fonts embedded and subset, text kept extractable; its default features would bring rustybuzz
 icu_locale_core = "2.3.0"   # language tags
 icu_properties = { version = "2.3.0", features = ["unicode_bidi"] }  # Unicode character properties: script, bidi class and its data for unicode-bidi

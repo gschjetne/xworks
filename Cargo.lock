@@ -3995,11 +3995,13 @@ name = "toolkit"
 version = "0.0.0"
 dependencies = [
  "chrome",
+ "kurbo",
  "ron",
  "scene",
  "serde",
  "testkit",
  "text",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

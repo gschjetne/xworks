@@ -44,7 +44,19 @@ pub fn workspace_root() -> PathBuf {
 /// The `.ron` files in `spec/DIR`, as names (without `.ron`) and text,
 /// sorted by name.
 pub fn specs(dir: &str) -> Result<Vec<(String, String)>, Error> {
-    let dir = workspace_root().join("spec").join(dir);
+    files(&workspace_root().join("spec").join(dir), "ron")
+}
+
+/// Lucide's icons in `icons/lucide/`, as names (without `.svg`) and SVG,
+/// sorted by name.
+pub fn icons() -> Result<Vec<(String, String)>, Error> {
+    files(&workspace_root().join("icons/lucide"), "svg")
+}
+
+/// The files in `dir` with the extension `extension`, as names (without
+/// it) and text, sorted by name.
+fn files(dir: &Path, extension: &str) -> Result<Vec<(String, String)>, Error> {
+    let dir = dir.to_path_buf();
     let entries = std::fs::read_dir(&dir).map_err(|source| Error::Io {
         path: dir.clone(),
         source,
@@ -57,7 +69,7 @@ pub fn specs(dir: &str) -> Result<Vec<(String, String)>, Error> {
                 source,
             })?
             .path();
-        if path.extension().is_some_and(|e| e == "ron") {
+        if path.extension().is_some_and(|e| e == extension) {
             let name = path
                 .file_stem()
                 .map(|s| s.to_string_lossy().into_owned())
