@@ -3609,6 +3609,7 @@ dependencies = [
  "canvas",
  "doc",
  "kurbo",
+ "png",
  "render-cpu",
  "render-pdf",
  "ron",

@@ -11,6 +11,7 @@
 //!   digits and `-`.
 //! - A scene renders the same pixels every time, on every platform.
 
+mod drawing;
 mod mockups;
 mod pages;
 
@@ -121,6 +122,27 @@ pub fn scenes() -> &'static [Scene] {
             description: "paragraphs in every M1 script, bold, italic and slanted, at 144 pixels per inch",
             ppi: 144.0,
             page: text_page,
+            pages: None,
+        },
+        Scene {
+            name: "images",
+            description: "a photograph large and from its smaller levels, an icon drawn large, a veil over text, at 96 pixels per inch",
+            ppi: 96.0,
+            page: drawing::images_page,
+            pages: None,
+        },
+        Scene {
+            name: "transforms",
+            description: "text turned, scaled and mirrored, a picture in a round clip, a star clipping stripes, at 144 pixels per inch",
+            ppi: 144.0,
+            page: drawing::transforms_page,
+            pages: None,
+        },
+        Scene {
+            name: "decorations",
+            description: "underlines and lines through text in several fonts, sizes and scripts, at 144 pixels per inch",
+            ppi: 144.0,
+            page: drawing::decorations_page,
             pages: None,
         },
     ]
