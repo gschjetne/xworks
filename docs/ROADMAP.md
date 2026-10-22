@@ -270,7 +270,7 @@ read-only. Reopening gives the same dump and the same renders; the crash
 test passes a thousand runs; a fuzz target reads any bytes as a file;
 `xworks-dump` prints a file in canonical text.
 
-**Stage 9 is built (2026-10-22); its goldens await approval.** `chrome`
+**Stage 9 is done (2026-10-22).** `chrome`
 holds the commands as data (`spec/commands/m1.ron`) and the menu model;
 `toolkit` draws the menu bar, menus, status bar and an Open panel; `app`
 is the editor, Elm-style, whose view is a display list; render-gpu draws
@@ -280,7 +280,11 @@ is software. Ten scripted sessions in `spec/sessions/` play input headless
 and check the document. Typing undoes as one run, kept across reopening
 by a new kind of log entry. Cut, copy and paste go through the system
 clipboard, with arboard, once the owner allowed the Boost license its
-Windows crates use (review yzmxnt0g, 2026-10-22).
+Windows crates use (review yzmxnt0g, 2026-10-22). The owner approved the
+editor's goldens and used it live on Windows (review v0qk8k5d). From that
+use, Export as PDF now shows the file it wrote. The owner chose to leave
+the look to a UX design stage after M1, and only to move it into data
+now, which `spec/themes/m1.ron` holds.
 
 **Stage 10 is built (2026-10-22); its plans await the owner.**
 `tools/budgets` measures the six budgets that apply to M1, against
@@ -319,3 +323,17 @@ Noted for after M1, not yet planned:
 - **A self-hosted CI runner** on a fixed machine with a GPU, so the budgets
   are checked on every push and a regression fails the build (project owner,
   2026-10-18, review yyhb2j3d).
+- **UX design opens F5** (project owner, 2026-10-22, review v0qk8k5d).
+  Before the toolkit grows more widgets, a design document and mockups
+  drawn with `shot`, reviewed by the owner, settle what the tracks would
+  otherwise each invent:
+  - windows and tabs, and moving between embedded parts;
+  - menus, an inspector, a toolbar or a command palette;
+  - selection and modes across text, objects and cells;
+  - the keyboard;
+  - the visual language: type, spacing, colour, density, dark mode and
+    HiDPI.
+
+  It must map onto AppKit's and Fauré's widgets too. M1's chrome is crude
+  on purpose; its look is data (`spec/themes/`), so the design replaces it
+  as data.
