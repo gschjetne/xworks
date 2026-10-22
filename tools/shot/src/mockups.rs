@@ -14,7 +14,7 @@ use text::units::PIXEL;
 use text::{Align, Language, Paragraph, Span, Style};
 use toolkit::Icon;
 
-use crate::pages::{document_in, document_pages, fonts};
+use crate::pages::{document_with, fonts, page_style};
 
 /// The window's size, in pixels.
 const WIDTH: f64 = 1280.0;
@@ -30,8 +30,11 @@ const STATUS_BAR: f64 = 26.0;
 const PAGE_WIDTH: f64 = 793.7;
 const MARGIN: f64 = 94.5;
 
-/// The interface's font.
+/// The interface's font, and documents' serif and sans (review pysc65hp),
+/// which the mockups' sample document is set in.
 const UI: &str = "Inter";
+const SERIF: &str = "Source Serif 4";
+const SANS: &str = "Inter";
 
 /// The colours of one look, by role.
 struct Look {
@@ -88,16 +91,6 @@ const DARK: Look = Look {
         a: 90,
     },
 };
-
-/// Where the title bar's contextual buttons are drawn.
-#[derive(Clone, Copy, PartialEq)]
-enum TitleBar {
-    /// In a title bar xWorks draws, with the menus and the window's
-    /// buttons, as Claude Desktop does.
-    Own,
-    /// In a bar under the system's title bar, beside the menus.
-    System,
-}
 
 /// The view a document is shown in.
 #[derive(Clone, Copy, PartialEq)]
@@ -259,53 +252,26 @@ impl Window {
         );
     }
 
-    /// The chrome above the document, as `bar` places it. Returns where the
-    /// document's area starts.
-    fn top(&mut self, bar: TitleBar, title: &str, view: View, inspector: bool) -> f64 {
+    /// The title bar xWorks draws (project owner, 2026-10-22, review
+    /// 3ce247c2): the menus, the document's name, the contextual buttons
+    /// and the window's own. Returns where the document's area starts.
+    fn top(&mut self, title: &str, view: View, inspector: bool) -> f64 {
         let look = self.look;
-        match bar {
-            TitleBar::Own => {
-                let h = 40.0;
-                self.rect(0.0, 0.0, WIDTH, h, look.chrome);
-                self.menus(14.0, 0.0, h);
-                let title_ty = ty(13.0, 500, look.secondary);
-                let tw = label_width(title, title_ty);
-                self.label(title, (WIDTH - tw) / 2.0, 0.0, h, title_ty);
-                // The window's own buttons: minimise, maximise, close.
-                for (i, name) in ["minus", "square", "x"].iter().enumerate() {
-                    let cx = WIDTH - 46.0 * (3 - i) as f64 + 23.0;
-                    let size = if *name == "square" { 13.0 } else { 16.0 };
-                    self.icon(name, cx, h / 2.0, size, look.ink);
-                }
-                self.contextual(WIDTH - 3.0 * 46.0 - 12.0, 0.0, h, view, inspector);
-                self.rect(0.0, h - 1.0, WIDTH, 1.0, look.line);
-                h
-            }
-            TitleBar::System => {
-                // The system's title bar, as Windows 11 draws it.
-                let sys = 32.0;
-                let (bg, fg) = if look.ink.r > 128 {
-                    (Color::rgb(32, 32, 32), Color::rgb(255, 255, 255))
-                } else {
-                    (Color::rgb(243, 243, 243), Color::rgb(28, 28, 28))
-                };
-                self.rect(0.0, 0.0, WIDTH, sys, bg);
-                let title = format!("{title} — xWorks");
-                self.label(&title, 14.0, 0.0, sys, ty(12.0, 400, fg));
-                for (i, name) in ["minus", "square", "x"].iter().enumerate() {
-                    let cx = WIDTH - 46.0 * (3 - i) as f64 + 23.0;
-                    let size = if *name == "square" { 11.0 } else { 14.0 };
-                    self.icon(name, cx, sys / 2.0, size, fg);
-                }
-                // xWorks' own bar: the menus, and the contextual buttons.
-                let h = 34.0;
-                self.rect(0.0, sys, WIDTH, h, look.chrome);
-                self.menus(14.0, sys, h);
-                self.contextual(WIDTH - 12.0, sys, h, view, inspector);
-                self.rect(0.0, sys + h - 1.0, WIDTH, 1.0, look.line);
-                sys + h
-            }
+        let h = 40.0;
+        self.rect(0.0, 0.0, WIDTH, h, look.chrome);
+        self.menus(14.0, 0.0, h);
+        let title_ty = ty(13.0, 500, look.secondary);
+        let tw = label_width(title, title_ty);
+        self.label(title, (WIDTH - tw) / 2.0, 0.0, h, title_ty);
+        // The window's own buttons: minimise, maximise, close.
+        for (i, name) in ["minus", "square", "x"].iter().enumerate() {
+            let cx = WIDTH - 46.0 * (3 - i) as f64 + 23.0;
+            let size = if *name == "square" { 13.0 } else { 16.0 };
+            self.icon(name, cx, h / 2.0, size, look.ink);
         }
+        self.contextual(WIDTH - 3.0 * 46.0 - 12.0, 0.0, h, view, inspector);
+        self.rect(0.0, h - 1.0, WIDTH, 1.0, look.line);
+        h
     }
 
     /// The ruler, from `top`, across `width`, for a text column from `left`
@@ -371,7 +337,7 @@ impl Window {
         let shadow = self.look.shadow;
         self.rounded(x - 1.0, y, PAGE_WIDTH + 2.0, 1200.0, 2.0, shadow);
         self.rounded(x, y + 1.0, PAGE_WIDTH, 1200.0, 2.0, shadow);
-        let pages = document_pages();
+        let pages = document_with(&page_style(), SERIF, SANS);
         self.page.place(&pages.pages[0], Point::new(px(x), px(y)));
     }
 
@@ -444,7 +410,7 @@ impl Window {
 
         self.label("CHARACTER", x0 + pad, y, 20.0, heading);
         y += 26.0;
-        field(self, y, "Font", "Noto Serif");
+        field(self, y, "Font", SERIF);
         y += row;
         self.label("Size", x0 + pad, y, 28.0, name);
         self.field_box(fx, y, half, 28.0, 5.0);
@@ -586,11 +552,10 @@ fn icons() -> &'static HashMap<String, Icon> {
 
 const STATUS: &str = "Page 1 of 3   ·   Body   ·   11 pt   ·   968 words";
 
-/// A document on pages, with the ruler and the inspector open, in a title
-/// bar of `bar`'s kind and `look`.
-fn pages_window(bar: TitleBar, look: &'static Look) -> Page {
+/// A document on pages, with the ruler and the inspector open, in `look`.
+fn pages_window(look: &'static Look) -> Page {
     let mut win = Window::new(look);
-    let top = win.top(bar, "A walking skeleton", View::Pages, true);
+    let top = win.top("A walking skeleton", View::Pages, true);
     let area = WIDTH - INSPECTOR;
     let page_x = ((area - PAGE_WIDTH) / 2.0).round();
     win.page_at(page_x, top + RULER + 22.0);
@@ -602,23 +567,18 @@ fn pages_window(bar: TitleBar, look: &'static Look) -> Page {
 
 /// Pages, in xWorks' own title bar.
 pub(crate) fn pages_own_title() -> Page {
-    pages_window(TitleBar::Own, &LIGHT)
+    pages_window(&LIGHT)
 }
 
 /// Pages, in xWorks' own title bar, dark: the page stays white.
 pub(crate) fn pages_dark() -> Page {
-    pages_window(TitleBar::Own, &DARK)
-}
-
-/// Pages, under the system's title bar.
-pub(crate) fn pages_system_title() -> Page {
-    pages_window(TitleBar::System, &LIGHT)
+    pages_window(&DARK)
 }
 
 /// A Markdown file in the draft view, dark, the inspector shut.
 pub(crate) fn draft_dark() -> Page {
     let mut win = Window::new(&DARK);
-    let top = win.top(TitleBar::Own, "README.md", View::Draft, false);
+    let top = win.top("README.md", View::Draft, false);
     let column = 640.0;
     let x = ((WIDTH - column) / 2.0).round();
     win.ruler(top, WIDTH, x, column);
@@ -631,7 +591,7 @@ pub(crate) fn draft_dark() -> Page {
         left: 0,
         right: 0,
     };
-    let mut drawn = document_in(&style).pages.swap_remove(0);
+    let mut drawn = document_with(&style, SERIF, SANS).pages.swap_remove(0);
     // Its white background goes, and its black text takes the ink.
     drawn.items.remove(0);
     for item in &mut drawn.items {
@@ -648,7 +608,7 @@ pub(crate) fn draft_dark() -> Page {
 /// The command palette, open over a document on pages.
 pub(crate) fn palette() -> Page {
     let mut win = Window::new(&LIGHT);
-    let top = win.top(TitleBar::Own, "A walking skeleton", View::Pages, false);
+    let top = win.top("A walking skeleton", View::Pages, false);
     let page_x = ((WIDTH - PAGE_WIDTH) / 2.0).round();
     win.page_at(page_x, top + RULER + 22.0);
     win.ruler(top, WIDTH, page_x + MARGIN, PAGE_WIDTH - 2.0 * MARGIN);

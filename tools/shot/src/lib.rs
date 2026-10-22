@@ -103,13 +103,6 @@ pub fn scenes() -> &'static [Scene] {
             pages: None,
         },
         Scene {
-            name: "mockup-system-title",
-            description: "M2's chrome, mocked up: the same, under the system's title bar",
-            ppi: 96.0,
-            page: mockups::pages_system_title,
-            pages: None,
-        },
-        Scene {
             name: "mockup-draft-dark",
             description: "M2's chrome, mocked up: a Markdown file in the draft view, dark",
             ppi: 96.0,

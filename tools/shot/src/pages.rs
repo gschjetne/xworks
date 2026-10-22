@@ -277,18 +277,36 @@ fn sheet(pages: &[Page]) -> Page {
 /// The sample document (`spec/documents/m1-sample.ron`) in M1's styles,
 /// in automatic pages.
 pub fn document_pages() -> canvas::Pages {
+    document_in(&page_style())
+}
+
+/// M1's page style.
+pub(crate) fn page_style() -> canvas::PageStyle {
     #[derive(serde::Deserialize)]
     struct Sheet {
         page: canvas::PageStyleSpec,
     }
     let page: Sheet = ron::from_str(&spec("styles", "m1")).expect("a page style");
-    document_in(&canvas::PageStyle::from_spec(&page.page))
+    canvas::PageStyle::from_spec(&page.page)
 }
 
 /// The sample document in M1's paragraph styles, in automatic pages of
 /// `style`.
 pub(crate) fn document_in(style: &canvas::PageStyle) -> canvas::Pages {
-    let sheet: story::StyleSheet = ron::from_str(&spec("styles", "m1")).expect("a style sheet");
+    document_with(style, "Noto Serif", "Noto Sans")
+}
+
+/// The sample document as [`document_in`] sets it, but with M1's serif
+/// in `serif` and its sans in `sans`.
+pub(crate) fn document_with(style: &canvas::PageStyle, serif: &str, sans: &str) -> canvas::Pages {
+    let mut sheet: story::StyleSheet = ron::from_str(&spec("styles", "m1")).expect("a style sheet");
+    for paragraph in &mut sheet.paragraph {
+        paragraph.family = match paragraph.family.as_str() {
+            "Noto Serif" => serif.to_string(),
+            "Noto Sans" => sans.to_string(),
+            other => other.to_string(),
+        };
+    }
     let paragraphs: Vec<(String, Vec<(String, doc::Props)>)> =
         ron::from_str(&spec("documents", "m1-sample")).expect("a document");
     let document = story::document(&paragraphs);
