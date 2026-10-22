@@ -50,6 +50,19 @@ pub struct Face {
     /// Below the baseline, in font units, positive.
     pub(crate) descent: i32,
     pub(crate) line_gap: i32,
+    /// Where an underline goes, in font units.
+    pub(crate) underline: Stroke,
+    /// Where a line through the text goes, in font units.
+    pub(crate) strikeout: Stroke,
+}
+
+/// A line drawn with text, as a font places it, in font units.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Stroke {
+    /// Its top edge's height above the baseline; below it if negative.
+    pub(crate) top: i32,
+    /// How thick it is.
+    pub(crate) thickness: i32,
 }
 
 impl Face {
@@ -244,6 +257,7 @@ fn load(data: &scene::FontData, blob: &Blob, index: u32) -> Result<Face, FontErr
     if units_per_em == 0 {
         return Err(bad("an em of 0 units".to_string()));
     }
+    let (underline, strikeout) = strokes(&font_ref, units_per_em);
     Ok(Face {
         data: data.clone(),
         blob: blob.clone(),
@@ -255,6 +269,38 @@ fn load(data: &scene::FontData, blob: &Blob, index: u32) -> Result<Face, FontErr
         ascent: line.ascender.to_i32(),
         descent: -line.descender.to_i32(),
         line_gap: line.line_gap.to_i32().max(0),
+        underline,
+        strikeout,
         font,
     })
+}
+
+/// Where a face's underline and strikeout go, from its `post` and `OS/2`
+/// tables. A face without them, or with a stroke of no thickness, gets
+/// what's usual: an underline a tenth of an em below the baseline, and a
+/// strikeout whose middle is three tenths of an em above it, each a
+/// twentieth of an em thick.
+fn strokes(font: &skrifa::FontRef<'_>, units_per_em: u16) -> (Stroke, Stroke) {
+    let metrics = font.metrics(
+        skrifa::instance::Size::unscaled(),
+        skrifa::instance::LocationRef::default(),
+    );
+    let em = i32::from(units_per_em);
+    let thin = (em / 20).max(1);
+    let stroke = |decoration: Option<skrifa::metrics::Decoration>, top: i32| match decoration
+        .filter(|d| d.thickness > 0.0)
+    {
+        Some(d) => Stroke {
+            top: d.offset.round() as i32,
+            thickness: d.thickness.round().max(1.0) as i32,
+        },
+        None => Stroke {
+            top,
+            thickness: thin,
+        },
+    };
+    (
+        stroke(metrics.underline, -em / 10),
+        stroke(metrics.strikeout, em * 3 / 10 + thin / 2),
+    )
 }

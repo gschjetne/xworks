@@ -305,7 +305,7 @@ fn break_lines(
 
 /// Where `range` of `text` ends, less the spaces and hard break at its end,
 /// which hang.
-fn trim(text: &str, range: Range<usize>) -> usize {
+pub(crate) fn trim(text: &str, range: Range<usize>) -> usize {
     let line = &text[range.clone()];
     range.start + line.trim_end_matches(hangs).len()
 }

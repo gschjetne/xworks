@@ -36,3 +36,4 @@ pub use caret::{Affinity, Caret, Cursor, Rect};
 pub use font::{Face, FaceId, FamilySpec, FontError, FontSpec, Fonts};
 pub use layout::{Align, Glyph, GlyphRun, Layout, Line, Paragraph, Span, Style, layout};
 pub use locale::{Direction, Language};
+pub use paint::Decoration;
