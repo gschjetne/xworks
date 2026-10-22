@@ -451,6 +451,50 @@ frames. A worker pool (rayon) does layout, recalculation, pagination,
 spelling, import and saving, against snapshots; results are tagged with the
 version they were computed for. There is no async runtime.
 
+### The interaction model
+
+Settled in M2's UX design (project owner, 2026-10-22, review frhewnk0).
+Each piece has a native counterpart, so the macOS and Fauré ports map it
+rather than invent it.
+
+- **A window per document.** Where the platform tabs windows (macOS),
+  windows tab; there's no tab strip of our own.
+- **Parts are edited in place.** Double-click or Enter goes into a part,
+  and Escape comes out; menus and the inspector follow what's selected.
+- **One selection, at one level.**
+  - A click selects at the current level, Enter or a double-click goes in a
+    level, and Escape goes out.
+  - A word-processing page starts inside its text, a slide at its objects,
+    and a sheet at its cells.
+- **The chrome:**
+  - a menu bar with every command;
+  - an inspector, a side panel of the selection's properties, opened and
+    closed by the person;
+  - a command palette that finds every command by name;
+  - the status bar.
+
+  There's no global toolbar. A document shows a ruler with its tab stops,
+  which can be hidden; tab settings apply to the document or to a
+  paragraph style. A few contextual buttons may sit in the window's title
+  bar and in inspector panels, such as switching between draft and pages,
+  with Claude Desktop as the model of how few.
+- **The keyboard:**
+  - each platform's own shortcuts, with menu access keys on Windows and
+    Linux;
+  - every command reachable from the palette;
+  - remapping later, as shortcuts are data;
+  - Vim motions as an option later, not a priority now.
+- **The look:**
+  - Inter, bundled, for the interface, with Noto for scripts it lacks;
+  - compact rows of 24 to 28 px, for mouse and keyboard;
+  - light and dark, following the system;
+  - Lucide's icons (ISC licence) where the chrome needs them;
+  - white pages on an off-white desk, which is easier on the eyes than a
+    grey one.
+- **Views:** a Markdown document opens as a draft, one continuous column
+  without pages, with pages a command away. A word-processing document
+  opens on pages.
+
 ## 9. Text (`text`)
 
 Text is the hardest shared piece; every track depends on it. We write our own
