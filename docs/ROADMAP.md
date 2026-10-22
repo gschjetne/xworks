@@ -270,6 +270,17 @@ read-only. Reopening gives the same dump and the same renders; the crash
 test passes a thousand runs; a fuzz target reads any bytes as a file;
 `xworks-dump` prints a file in canonical text.
 
+**Stage 9 is built (2026-10-22); its goldens await approval.** `chrome`
+holds the commands as data (`spec/commands/m1.ron`) and the menu model;
+`toolkit` draws the menu bar, menus, status bar and an Open panel; `app`
+is the editor, Elm-style, whose view is a display list; render-gpu draws
+it with vello_gpu; and the generic shell (`xworks`) runs it on winit and
+wgpu, with the input method, AccessKit, and render-cpu where the only GPU
+is software. Ten scripted sessions in `spec/sessions/` play input headless
+and check the document. Typing undoes as one run, kept across reopening
+by a new kind of log entry. Cut, copy and paste stay within xWorks until
+the owner decides on the Windows clipboard crate's license.
+
 ### Exit criteria
 
 - A scripted session types a document of several pages, with headings, bold
