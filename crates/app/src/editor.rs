@@ -16,7 +16,7 @@ use text::units::{PIXEL, POINT};
 use text::{Affinity, Cursor};
 use toolkit::{List, MenuBar, MenuHit};
 
-use crate::Resources;
+use crate::{Resources, blocks};
 
 mod units;
 
@@ -126,7 +126,13 @@ struct Laid {
     /// one's by identity, so unchanged paragraphs keep their layouts.
     document: Document,
     paragraphs: Vec<ParagraphLayout>,
+    /// The story's paragraphs in reading order, as laid out.
+    ids: Vec<ObjectId>,
     index: HashMap<ObjectId, usize>,
+    /// What each block poured holds: a paragraph, or a table's row.
+    units: Vec<std::ops::Range<usize>>,
+    /// The blocks poured.
+    blocks: Vec<canvas::Block>,
     pages: Vec<Vec<Piece>>,
     /// Where each paragraph's lines are: (page, top within the page's
     /// body), by paragraph and line.
@@ -273,7 +279,10 @@ impl Editor {
             laid: Laid {
                 document: Document::new(),
                 paragraphs: Vec::new(),
+                ids: Vec::new(),
                 index: HashMap::new(),
+                units: Vec::new(),
+                blocks: Vec::new(),
                 pages: Vec::new(),
                 places: Vec::new(),
                 words: Vec::new(),
@@ -329,7 +338,7 @@ impl Editor {
     pub fn text(&self) -> (String, usize, usize) {
         let mut out = String::new();
         let (mut anchor, mut focus) = (0, 0);
-        for id in self.document.paragraphs() {
+        for &id in &self.laid.ids {
             let text = &self.paragraph(id).text;
             let base = out.chars().count();
             if self.anchor.paragraph == id {
@@ -350,12 +359,14 @@ impl Editor {
             .expect("a paragraph of the document")
     }
 
+    /// Paragraph `id`'s place in the story's reading order.
     fn index_of(&self, id: ObjectId) -> usize {
-        self.document
-            .paragraphs()
-            .iter()
-            .position(|&p| p == id)
-            .unwrap_or(0)
+        self.laid.index.get(&id).copied().unwrap_or(0)
+    }
+
+    /// The story's paragraphs in reading order.
+    fn ids(&self) -> &[ObjectId] {
+        &self.laid.ids
     }
 
     // ---- layout
@@ -364,6 +375,17 @@ impl Editor {
     /// `all`, lays out every paragraph afresh.
     fn relayout(&mut self, all: bool) {
         let width = self.res.page.body_width();
+        // The story's paragraphs in reading order, each in its place; the
+        // order first, so the selection is ordered by it from here on.
+        let entries = story::flow(&self.document, &self.res.sheet, width);
+        self.laid.ids = entries.iter().map(|e| e.id).collect();
+        self.laid.index = self
+            .laid
+            .ids
+            .iter()
+            .enumerate()
+            .map(|(i, &id)| (id, i))
+            .collect();
         let mut old: HashMap<ObjectId, (ParagraphLayout, usize)> =
             std::mem::take(&mut self.laid.paragraphs)
                 .into_iter()
@@ -372,12 +394,13 @@ impl Editor {
                 .collect();
         let composing = !self.composition.is_empty();
         let composed = composing.then(|| self.composed());
-        // What each paragraph keeps: its layout, if it's unchanged, and its
-        // word count, which is the document's, not the composition's.
-        let ids = self.document.paragraphs();
-        let kept: Vec<(Option<ParagraphLayout>, Option<usize>)> = ids
+        // What each paragraph keeps: its layout, if it and its place are
+        // unchanged, and its word count, which is the document's, not the
+        // composition's.
+        let kept: Vec<(Option<ParagraphLayout>, Option<usize>)> = entries
             .iter()
-            .map(|&id| {
+            .map(|entry| {
+                let id = entry.id;
                 let same = !all
                     && match (self.laid.document.object(id), self.document.object(id)) {
                         (Some(a), Some(b)) => std::ptr::eq(a as *const Object, b as *const Object),
@@ -385,7 +408,10 @@ impl Editor {
                     };
                 let reuse = same && !(composing && id == self.focus.paragraph);
                 match old.remove(&id) {
-                    Some((layout, count)) if same => (reuse.then_some(layout), Some(count)),
+                    Some((layout, count)) if same => (
+                        (reuse && layout.place == entry.place).then_some(layout),
+                        Some(count),
+                    ),
                     _ => (None, None),
                 }
             })
@@ -393,26 +419,27 @@ impl Editor {
         // The rest laid out and counted afresh: on the worker pool when
         // there are several, as when a document opens, and here when
         // there's one, as when typing, which waking the pool would slow.
-        let todo: Vec<(ObjectId, Option<usize>)> = ids
+        let todo: Vec<(&story::Entry, Option<usize>)> = entries
             .iter()
             .zip(&kept)
             .filter(|(_, (layout, _))| layout.is_none())
-            .map(|(&id, &(_, count))| (id, count))
+            .map(|(entry, &(_, count))| (entry, count))
             .collect();
         let (document, res, focus) = (&self.document, &self.res, self.focus.paragraph);
-        let lay_out = |&(id, count): &(ObjectId, Option<usize>)| {
+        let lay_out = |&(entry, count): &(&story::Entry, Option<usize>)| {
+            let id = entry.id;
             let source = match &composed {
                 Some(c) if id == focus => c,
                 _ => document,
             };
             let hyphenation = res.hyphenation();
-            let layout = story::lay_out_paragraph_with(
+            let layout = story::lay_out_at(
                 source,
                 id,
+                &entry.place,
                 &res.sheet,
                 res.fonts(),
                 &hyphenation,
-                width,
             );
             let count = count.unwrap_or_else(|| {
                 let p = document.paragraph(id).expect("a paragraph of the document");
@@ -469,27 +496,40 @@ impl Editor {
                     .expect("a fresh layout for each paragraph not kept"),
             })
             .unzip();
-        let pages = canvas::paginate(self.res.page.body_height(), &canvas::blocks(&paragraphs));
+        let units = canvas::units(&paragraphs);
+        let blocks = canvas::blocks(&paragraphs, &self.res.sheet.blocks);
+        let pages = canvas::paginate(self.res.page.body_height(), &blocks);
         let mut places: Vec<Vec<(usize, i64)>> = paragraphs
             .iter()
             .map(|p| vec![(0, 0); p.layout.lines.len()])
             .collect();
+        let pad = self.res.sheet.blocks.cell_padding.units();
         for (n, pieces) in pages.iter().enumerate() {
             for piece in pieces {
-                let lines = &paragraphs[piece.block].layout.lines;
+                let unit = units[piece.block].clone();
+                if paragraphs[unit.start].place.cell.is_some() {
+                    // A table's row: every line of each of its cells.
+                    for k in unit {
+                        for (l, line) in paragraphs[k].layout.lines.iter().enumerate() {
+                            places[k][l] = (n, piece.y + pad + line.top);
+                        }
+                    }
+                    continue;
+                }
+                let k = unit.start;
+                let lines = &paragraphs[k].layout.lines;
                 let top = lines[piece.lines.start].top;
                 for l in piece.lines.clone() {
-                    places[piece.block][l] = (n, piece.y + lines[l].top - top);
+                    places[k][l] = (n, piece.y + lines[l].top - top);
                 }
             }
         }
         self.laid = Laid {
             document: self.document.clone(),
-            index: paragraphs
-                .iter()
-                .enumerate()
-                .map(|(i, p)| (p.id, i))
-                .collect(),
+            ids: std::mem::take(&mut self.laid.ids),
+            index: std::mem::take(&mut self.laid.index),
+            units,
+            blocks,
             paragraphs,
             pages,
             places,
@@ -545,9 +585,10 @@ impl Editor {
         let (n, y) = self.laid.places[k][line];
         let (px, py) = self.page_origin(n);
         let page = &self.res.page;
-        let top = self.laid.paragraphs[k].layout.lines[line].top;
+        let p = &self.laid.paragraphs[k];
+        let top = p.layout.lines[line].top;
         (
-            px + page.left,
+            px + page.left + p.x(),
             self.top() - self.scroll + py + page.top + y - top,
         )
     }
@@ -602,28 +643,47 @@ impl Editor {
         let (px, py) = self.page_origin(n);
         let body_y = doc_y - py - page.top;
         let body_x = x - px - page.left;
-        // The line nearest that height on that page.
+        // The line nearest that height on that page; in a table's row, in
+        // the cell across from it.
         let mut best: Option<(i64, usize, usize)> = None;
         for piece in &self.laid.pages[n] {
-            let lines = &self.laid.paragraphs[piece.block].layout.lines;
-            let top = lines[piece.lines.start].top;
-            for l in piece.lines.clone() {
-                let line_top = piece.y + lines[l].top - top;
-                let bottom = line_top + lines[l].height;
-                let distance = if body_y < line_top {
-                    line_top - body_y
-                } else if body_y >= bottom {
-                    body_y - bottom + 1
+            let unit = self.laid.units[piece.block].clone();
+            let cells = unit.len() > 1 || self.laid.paragraphs[unit.start].place.cell.is_some();
+            for k in unit {
+                let p = &self.laid.paragraphs[k];
+                if let Some(cell) = p.place.cell
+                    && cells
+                    && !(cell.x..cell.x + cell.width).contains(&body_x)
+                    && !(cell.column == 0 && body_x < cell.x)
+                    && !(cell.column + 1 == cell.columns && body_x >= cell.x)
+                {
+                    continue;
+                }
+                let lines = &p.layout.lines;
+                let range = if cells {
+                    0..lines.len()
                 } else {
-                    0
+                    piece.lines.clone()
                 };
-                if best.is_none_or(|(d, _, _)| distance < d) {
-                    best = Some((distance, piece.block, l));
+                for l in range {
+                    let line_top = self.laid.places[k][l].1;
+                    let bottom = line_top + lines[l].height;
+                    let distance = if body_y < line_top {
+                        line_top - body_y
+                    } else if body_y >= bottom {
+                        body_y - bottom + 1
+                    } else {
+                        0
+                    };
+                    if best.is_none_or(|(d, _, _)| distance < d) {
+                        best = Some((distance, k, l));
+                    }
                 }
             }
         }
         let (k, l) = best.map_or((0, 0), |(_, k, l)| (k, l));
-        let cursor = self.laid.paragraphs[k].layout.hit_line(l, body_x);
+        let x = body_x - self.laid.paragraphs[k].x();
+        let cursor = self.laid.paragraphs[k].layout.hit_line(l, x);
         self.position(k, cursor)
     }
 
@@ -676,7 +736,7 @@ impl Editor {
     /// The selected text, paragraphs ending in newlines but the last.
     fn selected_text(&self) -> String {
         let (start, end) = self.ordered();
-        let ids = self.document.paragraphs();
+        let ids = self.ids();
         let (a, b) = (self.index_of(start.paragraph), self.index_of(end.paragraph));
         let mut out = String::new();
         for (i, &id) in ids.iter().enumerate().take(b + 1).skip(a) {
@@ -711,7 +771,7 @@ impl Editor {
         // Past the paragraph's edge: on to the next paragraph in its
         // reading direction, or back to the one before.
         let forward = right == (layout.direction() == text::Direction::Ltr);
-        let ids = self.document.paragraphs();
+        let ids = self.ids();
         if forward {
             let next = *ids.get(k + 1)?;
             Some(Position {
@@ -729,26 +789,45 @@ impl Editor {
         }
     }
 
+    /// The line above or below `p`'s, at `goal` across from the page
+    /// body's left: in the same paragraph, or the block above or below; in
+    /// a table's row, the cell under `goal`.
     fn vertical(&self, p: Position, down: bool, goal: i64) -> Option<Position> {
         let (k, cursor) = self.cursor(p);
         let layout = &self.laid.paragraphs[k].layout;
         let line = layout.line_of(cursor);
+        let units = &self.laid.units;
+        let u = units.partition_point(|r| r.end <= k);
+        // The paragraph of a block that's under `goal`.
+        let under = |u: usize| {
+            let unit = units[u].clone();
+            unit.clone()
+                .find(|&c| {
+                    self.laid.paragraphs[c]
+                        .place
+                        .cell
+                        .is_some_and(|cell| goal < cell.x + cell.width)
+                })
+                .unwrap_or(unit.end - 1)
+        };
         let (k, line) = if down {
             if line + 1 < layout.lines.len() {
                 (k, line + 1)
-            } else if k + 1 < self.laid.paragraphs.len() {
-                (k + 1, 0)
+            } else if u + 1 < units.len() {
+                (under(u + 1), 0)
             } else {
                 return None;
             }
         } else if line > 0 {
             (k, line - 1)
-        } else if k > 0 {
-            (k - 1, self.laid.paragraphs[k - 1].layout.lines.len() - 1)
+        } else if u > 0 {
+            let k = under(u - 1);
+            (k, self.laid.paragraphs[k].layout.lines.len() - 1)
         } else {
             return None;
         };
-        let cursor = self.laid.paragraphs[k].layout.hit_line(line, goal);
+        let p = &self.laid.paragraphs[k];
+        let cursor = p.layout.hit_line(line, goal - p.x());
         Some(self.position(k, cursor))
     }
 
@@ -785,8 +864,9 @@ impl Editor {
                 let (x, _, _) = self.caret_rect();
                 let goal = goal.unwrap_or_else(|| {
                     let (k, cursor) = self.cursor(self.focus);
-                    let line = self.laid.paragraphs[k].layout.line_of(cursor);
-                    x - self.line_origin(k, line).0
+                    let p = &self.laid.paragraphs[k];
+                    let line = p.layout.line_of(cursor);
+                    x - self.line_origin(k, line).0 + p.x()
                 });
                 let target = self.vertical(self.focus, key == Key::Down, goal);
                 let target = target.unwrap_or_else(|| self.document_edge(key == Key::Down));
@@ -829,7 +909,15 @@ impl Editor {
                 let focus = self.focus;
                 self.go(focus, false);
             }
-            Key::Tab if !modifiers.primary && !modifiers.alt => self.insert_text("\t"),
+            // In a list item or a table's cell, Tab moves through the tree;
+            // elsewhere it types a tab.
+            Key::Tab if !modifiers.primary && !modifiers.alt => {
+                let ids = self.ids().to_vec();
+                let outcome = blocks::tab(&self.document, &ids, self.focus, modifiers.shift);
+                if !self.carry_out(outcome) {
+                    self.insert_text("\t");
+                }
+            }
             Key::Tab | Key::Char(_) => {}
         }
         self.reveal();
@@ -837,7 +925,7 @@ impl Editor {
     }
 
     fn document_edge(&self, end: bool) -> Position {
-        let ids = self.document.paragraphs();
+        let ids = self.ids();
         if end {
             let last = *ids.last().expect("a paragraph");
             Position {
@@ -899,7 +987,7 @@ impl Editor {
         if self.collapsed() {
             return (Vec::new(), start);
         }
-        let ids = self.document.paragraphs();
+        let ids = self.ids();
         let (a, b) = (self.index_of(start.paragraph), self.index_of(end.paragraph));
         let mut ops = Vec::new();
         if a == b {
@@ -908,6 +996,15 @@ impl Editor {
                 offset: start.offset,
                 len: end.offset - start.offset,
             });
+            return (ops, start);
+        }
+        // Across containers, blocks between go whole.
+        let parent = self.document.parent(start.paragraph);
+        if ids[a..=b]
+            .iter()
+            .any(|&id| self.document.parent(id) != parent)
+        {
+            let ops = blocks::deletion(&self.document, ids, start, end).unwrap_or_default();
             return (ops, start);
         }
         // The end of the first paragraph, all of those between, and the
@@ -1000,7 +1097,39 @@ impl Editor {
         }
     }
 
+    /// Carries out what a key does to the story's tree; false if it leaves
+    /// it to the key's plain meaning.
+    fn carry_out(&mut self, outcome: Option<blocks::Outcome>) -> bool {
+        match outcome {
+            Some(blocks::Outcome::Edit { name, ops, caret }) => {
+                if self.commit(name, ops, false) {
+                    self.go(caret, false);
+                }
+            }
+            Some(blocks::Outcome::Go(caret)) => self.go(caret, false),
+            Some(blocks::Outcome::Nothing) => {}
+            None => return false,
+        }
+        true
+    }
+
+    /// Whether paragraph `id` is a code block.
+    fn is_code(&self, id: ObjectId) -> bool {
+        self.res.sheet.style_of(self.paragraph(id)).code
+    }
+
     fn split(&mut self) {
+        if self.collapsed() {
+            let enter = blocks::enter(&self.document, &self.res.sheet, self.focus);
+            if enter.is_none() && self.is_code(self.focus.paragraph) {
+                // Code breaks its lines, not the paragraph.
+                self.insert_text("\u{2028}");
+                return;
+            }
+            if self.carry_out(enter) {
+                return;
+            }
+        }
         let (mut ops, at) = self.deletion();
         let mut scratch = self.document.clone();
         if scratch.apply_all(&ops).is_err() {
@@ -1048,8 +1177,17 @@ impl Editor {
         let text = self.paragraph(at.paragraph).text.clone();
         let boundaries = locale::graphemes(&text);
         let here = byte(&text, at.offset);
-        let ids = self.document.paragraphs().to_vec();
+        let ids = self.ids().to_vec();
         let k = self.index_of(at.paragraph);
+        // At a paragraph's edge, its place in the tree may say otherwise.
+        let edge = if forward {
+            here == text.len()
+        } else {
+            here == 0
+        };
+        if edge && self.carry_out(blocks::edge(&self.document, &ids, k, forward)) {
+            return;
+        }
         let (ops, caret) = if forward {
             match boundaries.iter().copied().find(|&g| g > here) {
                 Some(g) => (
@@ -1115,7 +1253,19 @@ impl Editor {
     }
 
     fn paste(&mut self, text: &str) {
-        let text = text.replace("\r\n", "\n").replace('\r', "\n");
+        let mut text = text.replace("\r\n", "\n").replace('\r', "\n");
+        // Code takes lines as lines, and a table's cell as one.
+        let at = self.ordered().0.paragraph;
+        if self.is_code(at) {
+            text = text.replace('\n', "\u{2028}");
+        } else if self
+            .document
+            .parent(at)
+            .and_then(|p| self.document.block(p))
+            .is_some_and(|b| b.kind == doc::Kind::Row)
+        {
+            text = text.replace('\n', " ");
+        }
         let (mut ops, at) = self.deletion();
         let mut scratch = self.document.clone();
         if scratch.apply_all(&ops).is_err() {
@@ -1175,7 +1325,7 @@ impl Editor {
     /// Sets character property `key` to `value` over the selection.
     fn set_char_prop(&mut self, name: &str, key: &str, value: Option<Value>) {
         let (start, end) = self.ordered();
-        let ids = self.document.paragraphs().to_vec();
+        let ids = self.ids().to_vec();
         let (a, b) = (self.index_of(start.paragraph), self.index_of(end.paragraph));
         let mut ops = Vec::new();
         for (i, &id) in ids.iter().enumerate().take(b + 1).skip(a) {
@@ -1202,7 +1352,7 @@ impl Editor {
             return self.typing_props(self.focus).get(key) == Some(&Value::Bool(true));
         }
         let (start, end) = self.ordered();
-        let ids = self.document.paragraphs();
+        let ids = self.ids();
         let (a, b) = (self.index_of(start.paragraph), self.index_of(end.paragraph));
         ids.iter().enumerate().take(b + 1).skip(a).all(|(i, &id)| {
             let p = self.paragraph(id);
@@ -1255,7 +1405,7 @@ impl Editor {
 
     fn set_style(&mut self, style: &str) {
         let (start, end) = self.ordered();
-        let ids = self.document.paragraphs().to_vec();
+        let ids = self.ids().to_vec();
         let (a, b) = (self.index_of(start.paragraph), self.index_of(end.paragraph));
         let ops = ids[a..=b]
             .iter()
@@ -1299,11 +1449,27 @@ impl Editor {
                 ..
             } => at(*paragraph, offset + len),
             Op::SetParaProp { paragraph, .. } => at(*paragraph, 0),
-            Op::InsertBlock { .. }
-            | Op::DeleteBlock { .. }
-            | Op::MoveBlock { .. }
-            | Op::SetBlockProp { .. } => None,
+            // The start of the first paragraph in a block put somewhere;
+            // where one was deleted, wherever the operations before say.
+            Op::InsertBlock { objects, .. } => objects
+                .first()
+                .and_then(|(id, _)| self.first_paragraph(*id))
+                .and_then(|p| at(p, 0))
+                .or_else(|| self.after(&ops[..ops.len() - 1])),
+            Op::MoveBlock { block: id, .. } | Op::SetBlockProp { block: id, .. } => self
+                .first_paragraph(*id)
+                .and_then(|p| at(p, 0))
+                .or_else(|| self.after(&ops[..ops.len() - 1])),
+            Op::DeleteBlock { .. } => self.after(&ops[..ops.len() - 1]),
         }
+    }
+
+    /// The first paragraph in `block`, in reading order.
+    fn first_paragraph(&self, block: ObjectId) -> Option<ObjectId> {
+        self.document
+            .subtree(block)
+            .into_iter()
+            .find(|&id| self.document.paragraph(id).is_some())
     }
 
     fn undo(&mut self, redo: bool) {
@@ -1438,6 +1604,19 @@ impl Editor {
             }
             "bold" => self.toggle("Bold", keys::BOLD),
             "italic" => self.toggle("Italic", keys::ITALIC),
+            "code" => self.toggle("Code", keys::CODE),
+            "list-bullets" | "list-numbers" | "quote" | "insert-table" => {
+                let (start, end) = self.ordered();
+                let ids = self.ids().to_vec();
+                let outcome = match id {
+                    "quote" => blocks::toggle_quote(&self.document, &ids, start, end),
+                    "insert-table" => blocks::insert_table(&self.document, start),
+                    _ => {
+                        blocks::toggle_list(&self.document, &ids, start, end, id == "list-numbers")
+                    }
+                };
+                self.carry_out(outcome);
+            }
             "size-bigger" | "size-smaller" => {
                 let pt = self.size() / POINT;
                 let next = if id == "size-bigger" {
@@ -1473,6 +1652,7 @@ impl Editor {
         canvas::Pages {
             pages: canvas::draw(
                 &self.res.page,
+                &self.res.sheet.blocks,
                 &self.laid.paragraphs,
                 &self.laid.pages,
                 self.res.fonts(),
@@ -1709,6 +1889,8 @@ impl Editor {
             view_height: self.view_height(),
             pages: self.laid.pages.len(),
             paragraphs: &self.laid.paragraphs,
+            units: &self.laid.units,
+            blocks: &self.laid.blocks,
             pieces: &self.laid.pages,
             selection: (!self.collapsed()).then(|| {
                 let a = self.cursor(start);
@@ -1773,6 +1955,8 @@ pub(crate) struct ViewParts<'a> {
     pub view_height: i64,
     pub pages: usize,
     pub paragraphs: &'a [ParagraphLayout],
+    pub units: &'a [std::ops::Range<usize>],
+    pub blocks: &'a [canvas::Block],
     pub pieces: &'a [Vec<Piece>],
     /// The selection, as (paragraph, byte) at its start and end.
     pub selection: Option<(usize, usize, usize, usize)>,

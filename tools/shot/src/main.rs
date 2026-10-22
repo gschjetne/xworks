@@ -82,8 +82,7 @@ fn main() -> anyhow::Result<()> {
             match scene.pages {
                 Some(make) => {
                     let made = make();
-                    let first = structure.blocks.len() as u32;
-                    structure.blocks.extend(made.structure.blocks);
+                    let first = structure.append(&made.structure);
                     for mut page in made.pages {
                         for item in &mut page.items {
                             if let scene::Item::Glyphs(run) = item

@@ -21,8 +21,8 @@ use testkit::Image;
 pub use typeset::typeset_page;
 
 pub use pages::{
-    document_pages, document_sheet, editor_menu_page, editor_page, exit_pages, exit_sheet, fonts,
-    shapes_page, text_page,
+    blocks_pages, blocks_sheet, document_pages, document_sheet, editor_menu_page, editor_page,
+    exit_pages, exit_sheet, fonts, shapes_page, text_page,
 };
 
 /// A named page, and the resolution it's drawn at.
@@ -119,6 +119,13 @@ pub fn scenes() -> &'static [Scene] {
             ppi: 96.0,
             page: mockups::palette,
             pages: None,
+        },
+        Scene {
+            name: "blocks",
+            description: "a document with every kind of block, lists, quotes, code and a table, and Markdown's marks, in automatic A4 pages, at 96 pixels per inch",
+            ppi: 96.0,
+            page: blocks_sheet,
+            pages: Some(blocks_pages),
         },
         Scene {
             name: "text",

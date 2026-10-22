@@ -162,6 +162,8 @@ pub struct Blocks {
     /// The bullets of lists that aren't numbered, by depth, from the
     /// outermost, over again when nesting goes deeper.
     pub bullets: Vec<String>,
+    /// The room between a list item's marker and its text.
+    pub marker_gap: Length,
     /// How far a quote indents its blocks, its bar included.
     pub quote_indent: Length,
     /// How wide a quote's bar is.
@@ -266,6 +268,9 @@ pub struct ParagraphLayout {
     pub heading: Option<u8>,
     /// Where it sits in the story's tree.
     pub place: Place,
+    /// How far its text sits in from its place on each side, as a code
+    /// block's does on its tint.
+    pub inset: i64,
     /// Its list item's marker, laid out in its first span's style, if it
     /// starts an item.
     pub marker: Option<text::Layout>,
@@ -275,6 +280,13 @@ pub struct ParagraphLayout {
     pub links: Vec<bool>,
     /// The byte ranges of its text that are code, in runs.
     pub inline_code: Vec<Range<usize>>,
+}
+
+impl ParagraphLayout {
+    /// Where its text's lines start, across from the body's start edge.
+    pub fn x(&self) -> i64 {
+        self.place.indent + self.inset
+    }
 }
 
 /// `paragraph`'s text as spans: each run of its characters in its style,
@@ -435,6 +447,11 @@ pub fn lay_out_at(
     let spans = spans_at(paragraph, sheet, Some(place));
     let align = align(paragraph, sheet);
     let tabs = sheet.tabs(style);
+    let inset = if style.code {
+        sheet.blocks.code_padding.units()
+    } else {
+        0
+    };
     let layout = text::layout_with(
         fonts,
         &text::Paragraph {
@@ -442,7 +459,7 @@ pub fn lay_out_at(
             spans: &spans,
             direction: None,
             align,
-            width: place.width.max(1),
+            width: (place.width - 2 * inset).max(1),
         },
         &Setting {
             hyphenate: style.hyphenate.unwrap_or(align == Align::Justify),
@@ -494,6 +511,7 @@ pub fn lay_out_at(
         keep_with_next: style.keep_with_next,
         heading: style.heading.filter(|level| (1..=6).contains(level)),
         place: place.clone(),
+        inset,
         marker,
         code: style.code,
         links,

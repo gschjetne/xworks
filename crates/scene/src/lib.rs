@@ -11,8 +11,9 @@
 //!   it small, made by a resampler whose pixels are the same everywhere.
 //! - [`Group`]: items drawn through a [`Transform`], within a clip.
 //! - [`Path`], [`Rect`], [`Color`], [`Font`].
-//! - [`Structure`]: a document's blocks in reading order, which glyph runs
-//!   and images point into ([`Source`]), for tagged PDF and accessibility.
+//! - [`Structure`]: a document's blocks in reading order, nested as lists,
+//!   quotes and tables nest them, which glyph runs and images point into
+//!   ([`Source`]), for tagged PDF and accessibility.
 //! - [`changed`] and [`redraw`]: where two display lists draw differently,
 //!   so a window draws only that again.
 //!
@@ -341,7 +342,8 @@ pub struct Source {
     pub offset: usize,
 }
 
-/// What a block of a document is, for accessibility and tagged PDF.
+/// What a block of a document is, for accessibility and tagged PDF. Some
+/// hold text, which glyph runs point into; the others hold blocks.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub enum Role {
     /// A paragraph.
@@ -351,16 +353,68 @@ pub enum Role {
     /// A figure: a picture on its own, which its image items' alternative
     /// text describes.
     Figure,
+    /// A list of items, numbered or not.
+    List {
+        /// Whether its items are numbered.
+        ordered: bool,
+    },
+    /// An item of a list: its label, then its body.
+    ListItem,
+    /// A list item's label, its bullet or number: text.
+    Label,
+    /// A list item's body: its blocks.
+    ListBody,
+    /// A quotation: its blocks.
+    Quote,
+    /// A block of code: text.
+    Code,
+    /// A table: its rows.
+    Table,
+    /// A row of a table: its cells.
+    Row,
+    /// A cell of a table, a header's or not: text.
+    Cell {
+        /// Whether it's in the table's header.
+        header: bool,
+    },
 }
 
 /// A document's logical structure: its blocks in reading order, whatever
-/// pages they fall on, and its language.
+/// pages they fall on, nested, and its language.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Structure {
     /// The document's language, a BCP 47 tag, if it's known.
     pub language: Option<String>,
-    /// Its blocks, in reading order.
+    /// Its blocks, in reading order, each before the blocks inside it.
     pub blocks: Vec<Role>,
+    /// The block each block is inside, by index, if it's inside one: an
+    /// earlier one. Blocks past its end are inside none, so a structure of
+    /// blocks one after another needs none.
+    pub parents: Vec<Option<u32>>,
+}
+
+impl Structure {
+    /// The block `block` is inside, if it's inside one.
+    pub fn parent(&self, block: usize) -> Option<usize> {
+        self.parents
+            .get(block)
+            .copied()
+            .flatten()
+            .map(|p| p as usize)
+            .filter(|&p| p < block)
+    }
+
+    /// Adds `other`'s blocks after this one's, as `other` nests them.
+    /// Returns the index its first block has now, for its glyph runs'
+    /// sources.
+    pub fn append(&mut self, other: &Structure) -> u32 {
+        let first = self.blocks.len() as u32;
+        self.parents.resize(self.blocks.len(), None);
+        self.blocks.extend(&other.blocks);
+        self.parents
+            .extend((0..other.blocks.len()).map(|i| other.parent(i).map(|p| p as u32 + first)));
+        first
+    }
 }
 
 /// One thing drawn.

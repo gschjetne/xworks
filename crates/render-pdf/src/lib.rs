@@ -4,7 +4,9 @@
 //! [`pdf`] writes [`scene::Page`]s as a tagged PDF document, a page each,
 //! with the document's [`scene::Structure`]: its paragraphs, headings and
 //! figures in reading order, each holding the text and images that belong
-//! to it, wherever they're drawn, with its language.
+//! to it, wherever they're drawn, with its language; and nested as lists
+//! (`L`, `LI`, `Lbl`, `LBody`), quotes (`BlockQuote`), code (`Code`) and
+//! tables (`Table`, `TR`, `TH`, `TD`) nest them.
 //!
 //! Invariants:
 //!
@@ -35,8 +37,8 @@ use krilla::page::PageSettings;
 use krilla::paint::{Fill, FillRule, Stroke};
 use krilla::surface::Surface;
 use krilla::tagging::{
-    Artifact, ArtifactType, BBox, ContentTag, Identifier, Node, SpanTag, Tag, TagGroup, TagKind,
-    TagTree,
+    Artifact, ArtifactType, BBox, ContentTag, Identifier, ListNumbering, Node, SpanTag,
+    TableHeaderScope, Tag, TagGroup, TagKind, TagTree,
 };
 use krilla::text::{Font, GlyphId};
 use krilla::{Data, Document};
@@ -145,34 +147,41 @@ pub fn pdf(pages: &[Page], structure: &Structure, title: Option<&str>) -> Result
         pdf_page.finish();
     }
     let mut tree = TagTree::new().with_lang(structure.language.clone());
-    for (role, mut held) in structure.blocks.iter().zip(writer.blocks) {
-        if held.is_empty() {
-            continue;
+    // Each block's group, built from the last back, so the blocks inside
+    // one, which come after it, are built before it.
+    let mut groups: Vec<Option<TagGroup>> = Vec::new();
+    groups.resize_with(structure.blocks.len(), || None);
+    let mut inside: Vec<Vec<usize>> = vec![Vec::new(); structure.blocks.len()];
+    for i in 0..structure.blocks.len() {
+        if let Some(p) = structure.parent(i) {
+            inside[p].push(i);
         }
+    }
+    for (i, mut held) in writer.blocks.into_iter().enumerate().rev() {
+        let role = structure.blocks[i];
         // In reading order; a stable sort keeps the drawing order of parts
         // that start together.
         held.sort_by_key(|(offset, _)| *offset);
-        let kind: TagKind = match role {
-            Role::Paragraph => Tag::P.into(),
-            Role::Heading(level) => {
-                let level =
-                    NonZeroU16::new(u16::from(*level).clamp(1, 6)).unwrap_or(NonZeroU16::MIN);
-                Tag::Hn(level, None).into()
-            }
-            Role::Figure => {
-                let picture = held.iter().find_map(|(_, h)| match h {
-                    Held::Picture { alt, bbox, .. } => Some((alt.clone(), *bbox)),
-                    Held::Text(_) => None,
-                });
-                let (alt, bbox) = picture.unwrap_or_default();
-                Tag::Figure(alt).with_bbox(bbox).into()
-            }
-        };
-        let mut group = TagGroup::new(kind);
+        let mut group = TagGroup::new(tag(role, &held));
         for (_, h) in held {
-            group.push(h.node(Some(*role)));
+            group.push(h.node(Some(role)));
         }
-        tree.push(group);
+        for &child in &inside[i] {
+            if let Some(g) = groups[child].take() {
+                group.push(g);
+            }
+        }
+        // A block with nothing in it, drawn or nested, isn't tagged.
+        if !group.children.is_empty() {
+            groups[i] = Some(group);
+        }
+    }
+    for (i, group) in groups.into_iter().enumerate() {
+        if let Some(group) = group
+            && structure.parent(i).is_none()
+        {
+            tree.push(group);
+        }
     }
     for h in writer.loose {
         match h {
@@ -426,6 +435,41 @@ impl CustomImage for Pixels {
 
     fn color_space(&self) -> ImageColorspace {
         ImageColorspace::Rgb
+    }
+}
+
+/// The PDF tag of a block of `role`, holding `held`: a figure's carries its
+/// picture's alternative text and where it's drawn.
+fn tag(role: Role, held: &[(usize, Held)]) -> TagKind {
+    match role {
+        Role::Paragraph => Tag::P.into(),
+        Role::Heading(level) => {
+            let level = NonZeroU16::new(u16::from(level).clamp(1, 6)).unwrap_or(NonZeroU16::MIN);
+            Tag::Hn(level, None).into()
+        }
+        Role::Figure => {
+            let picture = held.iter().find_map(|(_, h)| match h {
+                Held::Picture { alt, bbox, .. } => Some((alt.clone(), *bbox)),
+                Held::Text(_) => None,
+            });
+            let (alt, bbox) = picture.unwrap_or_default();
+            Tag::Figure(alt).with_bbox(bbox).into()
+        }
+        Role::List { ordered } => Tag::L(if ordered {
+            ListNumbering::Decimal
+        } else {
+            ListNumbering::Disc
+        })
+        .into(),
+        Role::ListItem => Tag::LI.into(),
+        Role::Label => Tag::Lbl.into(),
+        Role::ListBody => Tag::LBody.into(),
+        Role::Quote => Tag::BlockQuote.into(),
+        Role::Code => Tag::Code.into(),
+        Role::Table => Tag::Table.into(),
+        Role::Row => Tag::TR.into(),
+        Role::Cell { header: true } => Tag::TH(TableHeaderScope::Column).into(),
+        Role::Cell { header: false } => Tag::TD.into(),
     }
 }
 

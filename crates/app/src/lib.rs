@@ -23,6 +23,7 @@
 //! - The same events give the same document and the same frames, so scripted
 //!   sessions can be played headless and compared.
 
+mod blocks;
 mod editor;
 pub mod picture;
 mod resources;

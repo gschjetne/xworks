@@ -313,6 +313,33 @@ pub(crate) fn document_with(style: &canvas::PageStyle, serif: &str, sans: &str) 
     canvas::automatic(&document, &sheet, style, fonts())
 }
 
+/// The document with every kind of block (`spec/documents/m2-blocks.ron`)
+/// in M2's styles, its automatic pages side by side on a grey sheet.
+pub fn blocks_sheet() -> Page {
+    sheet(&blocks_pages().pages)
+}
+
+/// The document with every kind of block in M2's styles, in automatic
+/// pages.
+pub fn blocks_pages() -> canvas::Pages {
+    #[derive(serde::Deserialize)]
+    struct Sheet {
+        page: canvas::PageStyleSpec,
+    }
+    let styles = spec("styles", "m1");
+    let page: Sheet = ron::from_str(&styles).expect("a page style");
+    let sheet: story::StyleSheet = ron::from_str(&styles).expect("a style sheet");
+    let blocks: Vec<story::BlockSpec> =
+        ron::from_str(&spec("documents", "m2-blocks")).expect("a document");
+    let document = story::build(&blocks);
+    canvas::automatic(
+        &document,
+        &sheet,
+        &canvas::PageStyle::from_spec(&page.page),
+        fonts(),
+    )
+}
+
 /// The spec `spec/{dir}/{name}.ron`.
 fn spec(dir: &str, name: &str) -> String {
     testkit::specs(dir)

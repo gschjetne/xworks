@@ -34,17 +34,18 @@ pub(crate) fn draw(editor: &Editor) -> Page {
             path: Path::rect(x, y, style.width, style.height),
             color: Color::WHITE,
         });
-        for piece in &parts.pieces[n] {
-            let origin = Point::new(x + style.left, y + style.top + piece.y);
-            out.items
-                .extend(parts.paragraphs[piece.block].layout.paint_lines(
-                    fonts,
-                    piece.lines.clone(),
-                    origin,
-                    None,
-                    |_| Color::BLACK,
-                ));
-        }
+        out.items.extend(canvas::paint_page(
+            &res.sheet.blocks,
+            canvas::Poured {
+                paragraphs: parts.paragraphs,
+                units: parts.units,
+                blocks: parts.blocks,
+            },
+            &parts.pieces[n],
+            Point::new(x + style.left, y + style.top),
+            fonts,
+            None,
+        ));
     }
 
     // The selection, a rectangle for each stretch together on screen.

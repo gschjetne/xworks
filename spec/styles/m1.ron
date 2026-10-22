@@ -74,6 +74,7 @@
         // Bullets by depth, over again deeper: characters every document
         // face has.
         bullets: ["•", "–"],
+        marker_gap: Pt(6),
         quote_indent: Pt(16),
         quote_bar: Pt(2.5),
         quote_color: (196, 196, 196),

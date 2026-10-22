@@ -1,0 +1,76 @@
+// M2's blocks (docs/ROADMAP.md, M2 stage 2): a document with every kind of
+// block a story holds, and the marks Markdown puts on text, as story::build
+// reads it. shot draws it (`blocks`).
+//
+// Paragraph(style, runs), each run its text and character properties;
+// Code(info, lines); List(numbered, items, each of blocks); Quote(blocks);
+// Table(alignments, rows, the header first, each of cells' runs).
+[
+    Paragraph("Heading 1", [("Blocks of a story", {})]),
+    Paragraph("Body", [
+        ("A story holds paragraphs and the blocks around them: lists, quotes, code and tables. Its text has the marks Markdown has, ", {}),
+        ("emphasis", {"italic": Bool(true)}),
+        (", ", {}),
+        ("strong emphasis", {"bold": Bool(true)}),
+        (", ", {}),
+        ("code", {"code": Bool(true)}),
+        (" and ", {}),
+        ("links", {"link": Text("https://commonmark.org")}),
+        (", so a Markdown file reads into one and writes back as it was.", {}),
+    ]),
+    Paragraph("Heading 2", [("Lists", {})]),
+    List(false, [
+        [Paragraph("Body", [("Bullets for a list whose order doesn't matter.", {})])],
+        [
+            Paragraph("Body", [("Lists nest, each level its own bullet:", {})]),
+            List(false, [
+                [Paragraph("Body", [("a list in an item,", {})])],
+                [Paragraph("Body", [("and another item in it.", {})])],
+            ]),
+        ],
+        [Paragraph("Body", [("Back at the first level.", {})])],
+    ]),
+    List(true, [
+        [Paragraph("Body", [("Numbers are counted, not stored, so they stay right as items come and go.", {})])],
+        [
+            Paragraph("Body", [("An item can hold more than one paragraph.", {})]),
+            Paragraph("Body", [("This is its second, under the same number, set in from the margin as the item's text is.", {})]),
+        ],
+        [Paragraph("Body", [("And code, in an item:", {})]), Code("", ["cargo run -p shot"])],
+    ]),
+    Paragraph("Heading 2", [("Quotes", {})]),
+    Quote([
+        Paragraph("Body", [("A quote sets its blocks in, with a bar beside them. It holds whatever a story holds: paragraphs,", {})]),
+        List(false, [
+            [Paragraph("Body", [("lists,", {})])],
+            [Paragraph("Body", [("and quotes:", {})])],
+        ]),
+        Quote([Paragraph("Body", [("A quote in a quote has a bar of its own.", {})])]),
+    ]),
+    Paragraph("Heading 2", [("Code", {})]),
+    Code("rust", [
+        "/// The story's paragraphs, in reading order.",
+        "pub fn paragraphs(&self) -> Vec<ObjectId> {",
+        "    let mut out = Vec::new();",
+        "    let mut stack = vec![self.root];",
+        "    while let Some(x) = stack.pop() {",
+        "        // …",
+        "    }",
+        "    out",
+        "}",
+    ]),
+    Paragraph("Body", [
+        ("Code blocks are set in JetBrains Mono on a tint, their lines broken where the code breaks them, and ", {}),
+        ("code in a sentence", {"code": Bool(true)}),
+        (" gets the same face and tint.", {}),
+    ]),
+    Paragraph("Heading 2", [("Tables", {})]),
+    Table(["", "center", "end"], [
+        [[("Block", {})], [("Holds", {})], [("Markdown", {})]],
+        [[("List", {})], [("items", {})], [("- or 1.", {})]],
+        [[("Quote", {})], [("blocks", {})], [(">", {})]],
+        [[("Code", {})], [("lines of code", {})], [("```", {})]],
+        [[("Table", {})], [("rows of cells", {})], [("|", {})]],
+    ]),
+    Paragraph("Body", [("A table's columns share its width, each aligned as Markdown says, and its header is bold, with a rule above and below it.", {})]),
+]

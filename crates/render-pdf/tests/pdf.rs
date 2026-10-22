@@ -85,6 +85,7 @@ fn paragraphs(n: usize) -> Structure {
     Structure {
         language: Some("en".to_string()),
         blocks: vec![Role::Paragraph; n],
+        parents: Vec::new(),
     }
 }
 
@@ -192,6 +193,7 @@ fn the_pdf_is_tagged_with_the_documents_structure() {
     let structure = Structure {
         language: Some("en".to_string()),
         blocks: vec![Role::Heading(1), Role::Paragraph, Role::Paragraph],
+        parents: Vec::new(),
     };
     let pdf = render_pdf::pdf(&[first, second], &structure, Some("Tagged")).expect("a PDF");
     let found: Vec<(String, usize)> = elements(&pdf)
@@ -312,6 +314,119 @@ fn the_same_pages_give_the_same_bytes() {
     );
 }
 
+/// Every structure element of `pdf` under the document, in the tree's
+/// order, as its depth, its type and how many kids it has.
+fn tree(pdf: &[u8]) -> Vec<(usize, String, usize)> {
+    let document = lopdf::Document::load_mem(pdf).expect("the PDF reads");
+    let root = document
+        .catalog()
+        .expect("a catalog")
+        .get(b"StructTreeRoot")
+        .and_then(|r| document.dereference(r))
+        .and_then(|(_, r)| r.as_dict())
+        .expect("a structure tree");
+    let mut out = Vec::new();
+    let mut stack = vec![(0, root.get(b"K").expect("the root has kids").clone())];
+    while let Some((depth, object)) = stack.pop() {
+        let (_, object) = document.dereference(&object).expect("a kid");
+        match object {
+            lopdf::Object::Array(kids) => {
+                stack.extend(kids.iter().rev().cloned().map(|k| (depth, k)));
+            }
+            lopdf::Object::Dictionary(dict) => {
+                let Ok(kind) = dict.get(b"S").and_then(|s| s.as_name()) else {
+                    continue;
+                };
+                let kind = String::from_utf8_lossy(kind).into_owned();
+                let kids = match dict.get(b"K") {
+                    Ok(lopdf::Object::Array(kids)) => kids.clone(),
+                    Ok(kid) => vec![kid.clone()],
+                    Err(_) => Vec::new(),
+                };
+                let below = if kind == "Document" { 0 } else { depth + 1 };
+                if kind != "Document" {
+                    out.push((depth, kind, kids.len()));
+                }
+                stack.extend(kids.into_iter().rev().map(|k| (below, k)));
+            }
+            _ => {}
+        }
+    }
+    out
+}
+
+/// Lists, quotes, code and tables nest as tagged PDF nests them: L, LI,
+/// Lbl and LBody; BlockQuote; Code; Table, TR, TH and TD.
+#[test]
+fn blocks_nest_in_the_tags() {
+    use Role::*;
+    let roles = [
+        (List { ordered: false }, None),
+        (ListItem, Some(0)),
+        (Label, Some(1)),
+        (ListBody, Some(1)),
+        (Paragraph, Some(3)),
+        (Quote, None),
+        (Paragraph, Some(5)),
+        (Table, None),
+        (Row, Some(7)),
+        (Cell { header: true }, Some(8)),
+        (Row, Some(7)),
+        (Cell { header: false }, Some(10)),
+        (Code, None),
+        // A list with nothing drawn in it isn't tagged.
+        (List { ordered: true }, None),
+        (ListItem, Some(13)),
+    ];
+    let structure = Structure {
+        language: Some("en".to_string()),
+        blocks: roles.iter().map(|r| r.0).collect(),
+        parents: roles.iter().map(|r| r.1).collect(),
+    };
+    let mut page = Page::new(4 * INCH, 4 * INCH);
+    page.fill_background(Color::WHITE);
+    for (n, (block, text)) in [
+        (2, "•"),
+        (4, "one"),
+        (6, "quoted"),
+        (9, "Name"),
+        (11, "a"),
+        (12, "let x = 1;"),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let one = page_from(4 * INCH, INCH, &[("en", text)], false, block);
+        page.place(&one, Point::new(0, n as i64 * INCH / 2));
+    }
+    let pdf = render_pdf::pdf(&[page], &structure, Some("Blocks")).expect("a PDF");
+    let found: Vec<(usize, String, usize)> = tree(&pdf)
+        .into_iter()
+        .filter(|(_, kind, _)| kind != "Span")
+        .collect();
+    let want: Vec<(usize, String, usize)> = [
+        (0, "L", 1),
+        (1, "LI", 2),
+        (2, "Lbl", 1),
+        (2, "LBody", 1),
+        (3, "P", 1),
+        (0, "BlockQuote", 1),
+        (1, "P", 1),
+        (0, "Table", 2),
+        (1, "TR", 1),
+        (2, "TH", 1),
+        (1, "TR", 1),
+        (2, "TD", 1),
+        (0, "Code", 1),
+    ]
+    .into_iter()
+    .map(|(d, k, n)| (d, k.to_string(), n))
+    .collect();
+    assert_eq!(found, want);
+    let text = squeeze(&pdf_extract::extract_text_from_mem(&pdf).expect("text extracts"));
+    assert!(text.contains("•onequotedNamealetx=1;"), "{text}");
+}
+
 #[test]
 fn a_page_pdf_cant_hold_is_refused() {
     let none = Structure::default();
@@ -362,6 +477,7 @@ fn images_are_figures_with_their_alternative_text() {
     let structure = Structure {
         language: Some("en".to_string()),
         blocks: vec![Role::Paragraph, Role::Figure],
+        parents: Vec::new(),
     };
     let pdf = render_pdf::pdf(&[page], &structure, Some("Figures")).expect("a PDF");
     let found: Vec<(String, usize)> = elements(&pdf)
