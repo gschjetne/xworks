@@ -32,9 +32,25 @@ fn every_bundled_face_loads_with_its_family_weight_and_slant() {
             want.push((family.to_string(), weight, false));
         }
     }
-    // The interface's font: regular, medium and semibold.
-    for weight in [400, 500, 600] {
-        want.push(("Inter".to_string(), weight, false));
+    // Inter: the interface's regular, medium and semibold, and documents'
+    // bold and italics.
+    for (weight, italic) in [
+        (400, false),
+        (500, false),
+        (600, false),
+        (700, false),
+        (400, true),
+        (700, true),
+    ] {
+        want.push(("Inter".to_string(), weight, italic));
+    }
+    // Documents' serif and code.
+    for family in ["Source Serif 4", "JetBrains Mono"] {
+        for weight in [400, 700] {
+            for italic in [false, true] {
+                want.push((family.to_string(), weight, italic));
+            }
+        }
     }
     want.sort();
     assert_eq!(faces, want);

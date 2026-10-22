@@ -1,14 +1,15 @@
 // The fonts xWorks bundles, and the families text falls back to for
-// characters a family lacks: Noto for documents, and Inter for the
-// interface, all under the SIL Open Font License 1.1.
+// characters a family lacks, all under the SIL Open Font License 1.1:
+//
+// - Source Serif 4, Inter and JetBrains Mono, documents' serif, sans and
+//   code (project owner, 2026-10-22, review pysc65hp);
+// - Inter, the interface's font too (review frhewnk0);
+// - Noto, for every script the others lack.
 //
 // They aren't committed: `cargo run -p fetch-fonts` downloads them into
 // fonts/ from pinned commits and releases and checks each against its
-// hash. CI does the same.
-//
-// Inter is the interface's font (project owner, 2026-10-22, review
-// frhewnk0), under the SIL Open Font License 1.1 too. Its static faces come
-// only in its release's zip archive, so they're taken out of it.
+// hash. CI does the same. Static faces that come only in a release's zip
+// archive are taken out of it.
 //
 // The CJK fonts are the pan-CJK ones: each holds Japanese, Korean and both
 // Chinese forms, and its `locl` feature picks them by language. Noto Serif
@@ -120,6 +121,72 @@
             sha256: "78a843fade9d4612a5567302fb595b56976eb5fcebf4fea5a5912d638bafcde3",
         ),
         (
+            file: "Inter-Bold.ttf",
+            url: "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip",
+            member: Some("extras/ttf/Inter-Bold.ttf"),
+            sha256: "288316099b1e0a47a4716d159098005eef7c0066921f34e3200393dbdb01947f",
+        ),
+        (
+            file: "Inter-Italic.ttf",
+            url: "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip",
+            member: Some("extras/ttf/Inter-Italic.ttf"),
+            sha256: "bbc051dd204b5019a1aa0bc0ae2aa8a05ab13e7a3f979fa357631dc7feb6833a",
+        ),
+        (
+            file: "Inter-BoldItalic.ttf",
+            url: "https://github.com/rsms/inter/releases/download/v4.1/Inter-4.1.zip",
+            member: Some("extras/ttf/Inter-BoldItalic.ttf"),
+            sha256: "948405a16cdc62701da5f4005ed068ca5f4d27061d98f7974ccfc37831d9581d",
+        ),
+        (
+            file: "SourceSerif4-Regular.ttf",
+            url: "https://github.com/adobe-fonts/source-serif/releases/download/4.005R/source-serif-4.005_Desktop.zip",
+            member: Some("source-serif-4.005_Desktop/TTF/SourceSerif4-Regular.ttf"),
+            sha256: "e5a4ee6a3d87bb9024796be390c6771e2a0eb1883dae25effaf57ca01668e24b",
+        ),
+        (
+            file: "SourceSerif4-It.ttf",
+            url: "https://github.com/adobe-fonts/source-serif/releases/download/4.005R/source-serif-4.005_Desktop.zip",
+            member: Some("source-serif-4.005_Desktop/TTF/SourceSerif4-It.ttf"),
+            sha256: "9d2950a8f1da66e21502c35d646a1d2148e79f9ea43fd2158cf02f5232e7f430",
+        ),
+        (
+            file: "SourceSerif4-Bold.ttf",
+            url: "https://github.com/adobe-fonts/source-serif/releases/download/4.005R/source-serif-4.005_Desktop.zip",
+            member: Some("source-serif-4.005_Desktop/TTF/SourceSerif4-Bold.ttf"),
+            sha256: "7cf4f4e1ad74f45058d5bc61716b82560442fbdcd9d3654d2dea96bf6c683d86",
+        ),
+        (
+            file: "SourceSerif4-BoldIt.ttf",
+            url: "https://github.com/adobe-fonts/source-serif/releases/download/4.005R/source-serif-4.005_Desktop.zip",
+            member: Some("source-serif-4.005_Desktop/TTF/SourceSerif4-BoldIt.ttf"),
+            sha256: "7b215b37f8873f5579f3f8d2ded3ca7c588e2f435cd996605ebfc5befe2cd5eb",
+        ),
+        (
+            file: "JetBrainsMono-Regular.ttf",
+            url: "https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip",
+            member: Some("fonts/ttf/JetBrainsMono-Regular.ttf"),
+            sha256: "a0bf60ef0f83c5ed4d7a75d45838548b1f6873372dfac88f71804491898d138f",
+        ),
+        (
+            file: "JetBrainsMono-Italic.ttf",
+            url: "https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip",
+            member: Some("fonts/ttf/JetBrainsMono-Italic.ttf"),
+            sha256: "9d0a1f7a708e6af183f1193b7e81d40da294f5c67682c085d8401c60aac8ded4",
+        ),
+        (
+            file: "JetBrainsMono-Bold.ttf",
+            url: "https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip",
+            member: Some("fonts/ttf/JetBrainsMono-Bold.ttf"),
+            sha256: "5590990c82e097397517f275f430af4546e1c45cff408bde4255dad142479dcb",
+        ),
+        (
+            file: "JetBrainsMono-BoldItalic.ttf",
+            url: "https://github.com/JetBrains/JetBrainsMono/releases/download/v2.304/JetBrainsMono-2.304.zip",
+            member: Some("fonts/ttf/JetBrainsMono-BoldItalic.ttf"),
+            sha256: "4039d5ce0ed225bf9c8b2c8c6436290ae2f356b7e90d70fa666227238324aa3b",
+        ),
+        (
             file: "NotoSansCJKsc-Regular.otf",
             url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
             sha256: "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
@@ -157,6 +224,14 @@
         ),
         (
             family: "Inter",
+            fallback: ["Noto Sans", "Noto Sans Arabic", "Noto Sans Hebrew", "Noto Sans CJK SC"],
+        ),
+        (
+            family: "Source Serif 4",
+            fallback: ["Noto Serif", "Noto Naskh Arabic", "Noto Serif Hebrew", "Noto Serif CJK SC"],
+        ),
+        (
+            family: "JetBrains Mono",
             fallback: ["Noto Sans", "Noto Sans Arabic", "Noto Sans Hebrew", "Noto Sans CJK SC"],
         ),
     ],
