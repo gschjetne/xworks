@@ -1,0 +1,22 @@
+// Words hyphenated by each language's patterns and exceptions
+// (hyphenation.ron), as Liang's algorithm breaks them, with the hyphens
+// written in. They come from an implementation of the algorithm
+// independent of crates/text's, in Python, on the same files. A word with
+// no hyphens never breaks: "project" is one of US English's exceptions.
+[
+    ("en-US", ["hy-phen-ation", "type-set-ting", "jus-ti-fied", "para-graphs", "as-so-ciate", "ta-ble", "project", "com-puter"]),
+    ("en-GB", ["hy-phen-a-tion", "ma-nu-scripts", "col-our", "how-ever", "com-puter"]),
+    // Australian English takes British patterns; Canadian, which has none
+    // of its own, takes US English's, as en.
+    ("en-AU", ["hy-phen-a-tion"]),
+    ("en-CA", ["hy-phen-ation"]),
+    ("de", ["Do-nau-dampf-schiff-fahrts-ge-sell-schaft", "au-ßer-ge-wöhn-li-cher", "Sil-ben-tren-nung", "Recht-schrei-bung"]),
+    ("fr", ["ty-po-gra-phie", "ex-tra-or-di-naire", "ou-ver-ture", "l'ou-ver-ture", "consti-tu-tion"]),
+    ("es", ["ti-po-gra-fía", "ex-tra-or-di-na-rio", "cons-ti-tu-ción"]),
+    ("nb", ["ord-de-ling", "ar-beids-le-dig-het", "be-tre"]),
+    ("no", ["be-tre"]),
+    ("nn", ["ord-de-ling", "bet-re", "att-en-de"]),
+    ("sv", ["av-stav-ning", "sjuk-skö-ters-ka", "re-ge-ring-en"]),
+    ("ru", ["пе-ре-но-сы", "биз-нес-мен", "кон-сти-ту-ция"]),
+    ("el", ["συλ-λα-βι-σμός", "τυ-πο-γρα-φί-α", "Σύ-νταγ-μα"]),
+]

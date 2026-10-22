@@ -34,6 +34,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "hyphenation_patterns"
+path = "fuzz_targets/hyphenation_patterns.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "paragraph"
 path = "fuzz_targets/paragraph.rs"
 test = false

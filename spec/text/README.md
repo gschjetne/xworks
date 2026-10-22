@@ -96,3 +96,12 @@ Text whose glyphs depend on its language: the tag must reach the shaper,
 which picks the font's localized forms (`locl`). Each entry lays out the
 text in one family and checks the glyphs, by ID in the bundled font, for
 each language. The IDs are HarfBuzz's.
+
+## Hyphenation: `hyphenation.ron` and `hyphenated.ron`
+
+`hyphenation.ron` lists TeX's pattern files that documents hyphenate with,
+by Liang's algorithm, fetched by hash into `hyphenation/` with the fonts,
+and each language's tags, licence and fewest letters a break leaves on
+each side. `hyphenated.ron` holds words in each language with their
+hyphens written in, from an implementation of the algorithm independent
+of `text`'s, in Python, on the same files.
