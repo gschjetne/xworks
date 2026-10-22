@@ -34,6 +34,7 @@ shot = { path = "tools/shot" }
 # External crates. Each one needs a stated reason (CLAUDE.md, rule 5).
 anyhow = "1.0.104"      # error handling in tools only
 fearless_simd = { version = "0.7.0", default-features = false, features = ["force_support_fallback"] }  # vello_cpu's SIMD levels; this feature gives the portable scalar one, whose pixels are the same everywhere
+glifo = { version = "=0.4.0", default-features = false }  # the glyph type vello_gpu draws, which it doesn't re-export; already in the build through it
 harfrust = "0.14.0"     # shaping text (docs/ARCHITECTURE.md, section 9); it shares read-fonts with skrifa
 krilla = { version = "=0.8.2", default-features = false }  # PDF output (docs/ARCHITECTURE.md, section 10): fonts embedded and subset, text kept extractable; its default features would bring rustybuzz
 icu_locale_core = "2.3.0"   # language tags
@@ -42,6 +43,7 @@ icu_segmenter = "2.3.0"     # line, word and grapheme boundaries (docs/ARCHITECT
 lopdf = { version = "0.42.0", default-features = false }  # reading PDFs back in tests: fonts, pages
 pdf-extract = "=0.12.1" # reading PDFs' text back in tests
 png = "0.18.1"
+pollster = "=0.4.0"     # waits for wgpu's device to open; wgpu's setup is async, and we have no runtime (CLAUDE.md, rule 3)
 postcard = { version = "1.1.3", default-features = false, features = ["use-std"] }  # the .xw file's compact binary encoding of operations and snapshots (review dfx97ttt); its wire format is specified and stable          # writing test renders as PNG
 proptest = "1.11.0"     # property tests (docs/ARCHITECTURE.md, section 13)
 ron = "0.12.2"          # specs and golden records are RON data
@@ -51,6 +53,8 @@ sha2 = { version = "0.11.0", default-features = false }  # golden images are rec
 skrifa = "0.48.0"       # reading fonts: tables, metrics, character maps and outlines (docs/ARCHITECTURE.md, section 9)
 thiserror = "2.0.21"    # error types in libraries
 vello_cpu = { version = "=0.3.0", default-features = false, features = ["std", "text", "u8_pipeline"] }  # the CPU renderer (D7, docs/ARCHITECTURE.md, section 10); single-threaded, so render-cpu stays pure
+vello_gpu = "=0.3.0"    # the GPU renderer (D7, docs/ARCHITECTURE.md, section 10), vello_cpu's twin
+wgpu = "=30.0.1"        # the GPU, for vello_gpu and the shells' windows
 unicode-bidi = { version = "0.3.18", default-features = false, features = ["std"] }  # the bidi algorithm, run on ICU4X's data
 
 [workspace.lints.rust]

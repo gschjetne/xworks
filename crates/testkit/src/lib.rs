@@ -27,8 +27,13 @@ use std::path::{Path, PathBuf};
 pub use error::Error;
 pub use image::Image;
 
-/// The workspace's root directory, where `spec/` and `target/` are.
+/// The workspace's root directory, where `spec/` and `target/` are:
+/// `XWORKS_ROOT` if it's set, as for a Windows build run from WSL, which
+/// sees the workspace by another path than the one it was built in.
 pub fn workspace_root() -> PathBuf {
+    if let Some(root) = std::env::var_os("XWORKS_ROOT") {
+        return PathBuf::from(root);
+    }
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .ancestors()
         .nth(2)
