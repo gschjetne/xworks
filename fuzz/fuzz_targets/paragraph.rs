@@ -39,10 +39,11 @@ fuzz_target!(|data: &[u8]| {
         1 => Some(Direction::Ltr),
         _ => Some(Direction::Rtl),
     };
-    let align = match (settings / 3) % 3 {
+    let align = match (settings / 3) % 4 {
         0 => Align::Start,
         1 => Align::Center,
-        _ => Align::End,
+        2 => Align::End,
+        _ => Align::Justify,
     };
     let spans = [Span {
         len: text.len(),
