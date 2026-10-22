@@ -16,8 +16,8 @@ office suite built from scratch to be usable, fast and correct.
 
 M0 (architecture) is done. M1, the walking skeleton, is under way:
 `calc`'s decimal numbers, `doc`, `locale`, `text`, `scene`, `render-cpu`,
-`render-pdf`, `story`, `canvas` and `store` are in place, and the other
-crates are empty until their stages fill them
+`render-pdf`, `story`, `canvas`, `store`, `chrome`, `toolkit`, `app`,
+`render-gpu` and the generic shell are in place
 ([docs/ROADMAP.md](docs/ROADMAP.md)).
 
 The tests lay text out in the bundled fonts, which aren't committed. Fetch
@@ -52,6 +52,11 @@ the tests on Linux, Windows and macOS.
 - Golden records and how they're approved: [spec/golden/README.md](spec/golden/README.md).
 - `fuzz/` holds the fuzz targets (rule 8), in a workspace of their own;
   run one with `cargo +nightly fuzz run TARGET` from there.
+- **Running xWorks:** `cargo run -p xworks [FILE.xw]` on Linux, and
+  `tools/run-windows.sh [--release] [FILE.xw]` for the Windows build from
+  WSL. New documents go to the Documents folder in the home folder
+  (`XWORKS_DOCUMENTS` to change it). Under WSL the Linux build draws with
+  render-cpu, as WSL's GPU is software, and uses X11.
 - **GPU work runs on Windows.** This machine is WSL2, whose Linux sees only
   llvmpipe, a software rasterizer. Build for Windows with `cargo xwin build
   --target x86_64-pc-windows-msvc` and run the `.exe` from WSL, which
