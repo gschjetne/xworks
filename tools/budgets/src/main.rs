@@ -76,7 +76,7 @@ impl Amount {
 struct Measured {
     id: &'static str,
     samples: Vec<f64>,
-    parts: Vec<(&'static str, Vec<f64>)>,
+    parts: Vec<(String, Vec<f64>)>,
     note: &'static str,
 }
 
@@ -121,35 +121,29 @@ fn main() -> anyhow::Result<()> {
         Err(e) => println!("budgets: no cold start or memory: {e:#}"),
     }
 
-    // The cold start's parts, once in this process: what the shell does
-    // before its first frame.
-    let began = Instant::now();
-    let before = resident_kb(std::process::id());
+    // Memory's parts, in this process: what loading the fonts and specs
+    // takes, and opening the GPU.
+    let resident = || resident_kb(std::process::id());
+    let before = resident();
     let mac = cfg!(target_os = "macos");
     let res = Arc::new(Resources::load(&root, scratch.clone(), mac)?);
-    let mut start = vec![("fonts and specs", millis(began.elapsed()))];
-    let after = resident_kb(std::process::id());
-    let (mut frames, opening) = Frames::new(scale);
-    start.extend(opening);
-    let began = Instant::now();
-    let mut blank = Editor::create(res.clone())?;
-    blank.update(Event::Resize {
-        width: WINDOW.0,
-        height: WINDOW.1,
-    });
-    frames.draw(&blank)?;
-    start.push(("blank document and first frame", millis(began.elapsed())));
-    drop(blank);
-    if let Some(cold) = measured.iter_mut().find(|m| m.id == "cold-start") {
-        cold.parts = start.into_iter().map(|(what, t)| (what, vec![t])).collect();
-    }
-    if let (Some(memory), Some(before), Some(after)) = (
+    let loaded = resident();
+    let mut frames = Frames::new(scale);
+    let opened = resident();
+    if let (Some(memory), Some(before), Some(loaded), Some(opened)) = (
         measured.iter_mut().find(|m| m.id == "memory"),
         before,
-        after,
+        loaded,
+        opened,
     ) {
-        let fonts = after.saturating_sub(before) as f64 / 1024.0;
-        memory.parts = vec![("fonts and specs", vec![fonts])];
+        let mb = |kb: u64| vec![kb as f64 / 1024.0];
+        memory.parts = vec![
+            (
+                "fonts and specs".to_string(),
+                mb(loaded.saturating_sub(before)),
+            ),
+            ("GPU opened".to_string(), mb(opened.saturating_sub(loaded))),
+        ];
     }
     let path = scratch.join("report.xw");
     let (paragraphs, pages) = report(&root, &res, &path, spec.report_pages)?;
@@ -250,6 +244,9 @@ fn startup(shell: &Path, scratch: &Path, runs: usize) -> anyhow::Result<Vec<Meas
     }
     let mut times = Vec::new();
     let mut memory = Vec::new();
+    // The phases the shell reports, in its order, with the process's own
+    // start first: until the shell's clock starts.
+    let mut phases: Vec<(String, Vec<f64>)> = vec![("process".to_string(), Vec::new())];
     for run in 0..runs {
         let documents = scratch.join(format!("start-{run}"));
         std::fs::create_dir_all(&documents)?;
@@ -265,11 +262,25 @@ fn startup(shell: &Path, scratch: &Path, runs: usize) -> anyhow::Result<Vec<Meas
         let mut line = String::new();
         out.read_line(&mut line)?;
         let elapsed = began.elapsed();
-        if !line.starts_with("ready") {
+        let mut words = line.split_whitespace();
+        let (Some("ready"), Some(Ok(own))) = (words.next(), words.next().map(str::parse::<f64>))
+        else {
             let _ = child.kill();
             bail!("the shell said {line:?}, not that it was ready");
-        }
+        };
         times.push(millis(elapsed));
+        phases[0].1.push(millis(elapsed) - own / 1000.0);
+        for word in words {
+            let Some((phase, Ok(micros))) =
+                word.split_once('=').map(|(p, v)| (p, v.parse::<f64>()))
+            else {
+                continue;
+            };
+            match phases.iter_mut().find(|(p, _)| p == phase) {
+                Some((_, v)) => v.push(micros / 1000.0),
+                None => phases.push((phase.to_string(), vec![micros / 1000.0])),
+            }
+        }
         if let Some(kb) = resident_kb(child.id()) {
             memory.push(kb as f64 / 1024.0);
         }
@@ -279,9 +290,9 @@ fn startup(shell: &Path, scratch: &Path, runs: usize) -> anyhow::Result<Vec<Meas
     let mut lines = vec![Measured {
         id: "cold-start",
         samples: times,
-        parts: Vec::new(),
+        parts: phases,
         note: "from starting the process to its first frame presented and done; \
-               its parts measured once in this process",
+               the phases as the shell times them",
     }];
     if !memory.is_empty() {
         lines.push(Measured {
@@ -289,7 +300,7 @@ fn startup(shell: &Path, scratch: &Path, runs: usize) -> anyhow::Result<Vec<Meas
             samples: memory,
             parts: Vec::new(),
             note: "resident memory once the first frame is done; \
-                   its fonts' part measured in this process",
+                   its parts measured in this process",
         });
     }
     Ok(lines)
@@ -363,9 +374,7 @@ struct Frames {
 
 impl Frames {
     /// Opens the GPU, if there's a hardware one, and makes the renderer.
-    /// Returns how long each took, too.
-    fn new(scale: f64) -> (Frames, Vec<(&'static str, f64)>) {
-        let began = Instant::now();
+    fn new(scale: f64) -> Frames {
         let size = (
             (WINDOW.0 * scale).round() as u16,
             (WINDOW.1 * scale).round() as u16,
@@ -374,7 +383,6 @@ impl Frames {
             wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
         let gpu = render_gpu::open(&instance, None)
             .filter(|d| d.adapter.get_info().device_type != wgpu::DeviceType::Cpu);
-        let opened = began.elapsed();
         let gpu = gpu.map(|device| {
             let format = wgpu::TextureFormat::Rgba8Unorm;
             let renderer = render_gpu::Renderer::new(&device.device, format);
@@ -394,16 +402,11 @@ impl Frames {
             });
             (device, renderer, texture)
         });
-        let frames = Frames {
+        Frames {
             gpu,
             ppi: 96.0 * scale,
             size,
-        };
-        let made = millis(began.elapsed() - opened);
-        (
-            frames,
-            vec![("GPU opened", millis(opened)), ("renderer made", made)],
-        )
+        }
     }
 
     fn by(&self) -> String {
@@ -457,9 +460,13 @@ fn frame(
     Ok(millis(began.elapsed()))
 }
 
-fn named(parts: [Vec<f64>; 3], first: &'static str) -> Vec<(&'static str, Vec<f64>)> {
+fn named(parts: [Vec<f64>; 3], first: &str) -> Vec<(String, Vec<f64>)> {
     let [a, b, c] = parts;
-    vec![(first, a), ("view", b), ("drawing", c)]
+    vec![
+        (first.to_string(), a),
+        ("view".to_string(), b),
+        ("drawing".to_string(), c),
+    ]
 }
 
 /// Opening the report, typing in its middle, and scrolling through it.
@@ -497,10 +504,10 @@ fn in_editor(
         id: "open",
         samples: opening,
         parts: vec![
-            ("read the file", read),
-            ("lay out", lay_out),
-            ("view", view),
-            ("drawing", draw),
+            ("read the file".to_string(), read),
+            ("lay out".to_string(), lay_out),
+            ("view".to_string(), view),
+            ("drawing".to_string(), draw),
         ],
         note: "",
     };

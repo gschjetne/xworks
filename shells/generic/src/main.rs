@@ -16,14 +16,16 @@
 //!   the Documents folder in the home folder.
 //! - `XWORKS_WAYLAND`: under WSL, use Wayland rather than X11.
 //! - `XWORKS_MEASURE_STARTUP`: for `tools/budgets`: once the first frame
-//!   is presented, print "ready" and the time since starting, then quit
-//!   when standard input closes.
+//!   is presented, print "ready", the microseconds since starting, and
+//!   each phase of the start as `phase=microseconds`, then quit when
+//!   standard input closes.
 //! - `WGPU_BACKEND`: vulkan, dx12, metal or gl, to pick a GPU backend;
 //!   otherwise Vulkan, Metal or DirectX 12, whichever the system has.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail};
 use app::{Editor, Effect, Event, Resources};
@@ -78,17 +80,55 @@ struct Shell {
     modifiers: ModifiersState,
     start: Option<Option<PathBuf>>,
     proxy: EventLoopProxy<UserEvent>,
-    /// When the program started, if it's measuring its start.
-    measuring: Option<std::time::Instant>,
+    /// The start's phases, if it's measuring them.
+    measuring: Option<Measuring>,
+}
+
+/// The phases of the start, timed for `tools/budgets`.
+struct Measuring {
+    started: Instant,
+    last: Instant,
+    phases: Vec<(&'static str, Duration)>,
+}
+
+impl Measuring {
+    /// Ends `phase`, which began when the last one ended.
+    fn mark(&mut self, phase: &'static str) {
+        let now = Instant::now();
+        self.phases.push((phase, now - self.last));
+        self.last = now;
+    }
+
+    /// "ready", the time since starting, and the phases, in microseconds.
+    fn report(&self) -> String {
+        let mut line = format!("ready {}", self.started.elapsed().as_micros());
+        for (phase, took) in &self.phases {
+            line.push_str(&format!(" {phase}={}", took.as_micros()));
+        }
+        line
+    }
+}
+
+/// Marks the end of a phase of the start, if it's being measured.
+fn mark(measuring: &mut Option<Measuring>, phase: &'static str) {
+    if let Some(m) = measuring {
+        m.mark(phase);
+    }
 }
 
 fn main() -> anyhow::Result<()> {
-    let started = std::time::Instant::now();
+    let started = Instant::now();
+    let mut measuring = std::env::var_os("XWORKS_MEASURE_STARTUP").map(|_| Measuring {
+        started,
+        last: started,
+        phases: Vec::new(),
+    });
     let root = root().context("can't find xWorks' spec/ and fonts/; set XWORKS_ROOT")?;
     let documents = documents();
     let mac = cfg!(target_os = "macos");
     let res =
         Resources::load(&root, documents, mac).context("loading fonts, styles and commands")?;
+    mark(&mut measuring, "resources");
     let start = std::env::args_os().nth(1).map(PathBuf::from);
     let mut builder = EventLoop::<UserEvent>::with_user_event();
     #[cfg(target_os = "linux")]
@@ -100,6 +140,7 @@ fn main() -> anyhow::Result<()> {
         builder.with_x11();
     }
     let event_loop = builder.build()?;
+    mark(&mut measuring, "event-loop");
     let display = Box::new(event_loop.owned_display_handle());
     let mut descriptor = wgpu::InstanceDescriptor::new_with_display_handle_from_env(display);
     if std::env::var_os("WGPU_BACKEND").is_none() {
@@ -107,9 +148,11 @@ fn main() -> anyhow::Result<()> {
         // breaks the Wayland connection under WSLg, even when Vulkan draws.
         descriptor.backends = wgpu::Backends::PRIMARY;
     }
+    let instance = wgpu::Instance::new(descriptor);
+    mark(&mut measuring, "instance");
     let mut shell = Shell {
         res: Arc::new(res),
-        instance: wgpu::Instance::new(descriptor),
+        instance,
         gpu: None,
         software: false,
         renderers: HashMap::new(),
@@ -118,7 +161,7 @@ fn main() -> anyhow::Result<()> {
         modifiers: ModifiersState::empty(),
         start: Some(start),
         proxy: event_loop.create_proxy(),
-        measuring: std::env::var_os("XWORKS_MEASURE_STARTUP").map(|_| started),
+        measuring,
     };
     event_loop.run_app(&mut shell)?;
     Ok(())
@@ -257,6 +300,7 @@ impl Shell {
             Some(path) => format!("opening {}", path.display()),
             None => "making a new document".to_string(),
         })?;
+        mark(&mut self.measuring, "document");
         let attributes = Window::default_attributes()
             .with_title(format!("{} — xWorks", editor.title()))
             .with_inner_size(LogicalSize::new(1000.0, 820.0))
@@ -269,7 +313,9 @@ impl Shell {
         );
         window.set_visible(true);
         window.set_ime_allowed(true);
+        mark(&mut self.measuring, "window");
         let surface = self.instance.create_surface(window.clone())?;
+        mark(&mut self.measuring, "surface");
         if self.gpu.is_none() {
             self.gpu = render_gpu::open(&self.instance, Some(&surface));
             self.software = self
@@ -277,6 +323,7 @@ impl Shell {
                 .as_ref()
                 .is_some_and(|g| g.adapter.get_info().device_type == wgpu::DeviceType::Cpu);
         }
+        mark(&mut self.measuring, "adapter");
         let Some(gpu) = &self.gpu else {
             bail!("no GPU can draw this window");
         };
@@ -314,6 +361,7 @@ impl Shell {
         self.renderers
             .entry(format)
             .or_insert_with(|| render_gpu::Renderer::new(&gpu.device, format));
+        mark(&mut self.measuring, "renderer");
         let mut win = Win {
             window,
             surface,
@@ -368,10 +416,11 @@ impl Shell {
         }
         win.window.pre_present_notify();
         gpu.queue.present(frame);
-        if let Some(started) = self.measuring.take() {
+        if let Some(mut measuring) = self.measuring.take() {
             // The first frame is on screen once the GPU has done it.
             let _ = gpu.device.poll(wgpu::PollType::wait_indefinitely());
-            println!("ready {}", started.elapsed().as_micros());
+            measuring.mark("frame");
+            println!("{}", measuring.report());
             let proxy = self.proxy.clone();
             std::thread::spawn(move || {
                 let mut rest = String::new();
