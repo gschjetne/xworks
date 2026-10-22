@@ -23,9 +23,10 @@
 //! - `WGPU_BACKEND`: vulkan, dx12, metal or gl, to pick a GPU backend;
 //!   otherwise Vulkan, Metal or DirectX 12, whichever the system has.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail};
@@ -33,16 +34,17 @@ use app::{Editor, Effect, Event, Resources};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::event::{ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy};
+use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy, OwnedDisplayHandle};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use winit::window::{Window, WindowId};
 
 /// What arrives on the event loop from elsewhere.
-#[derive(Debug)]
 enum UserEvent {
     /// A screen reader wants the tree, or wants something done.
     Access(accesskit_winit::Event),
+    /// A renderer for frames of a format, its shaders compiled.
+    Renderer(wgpu::TextureFormat, Box<render_gpu::Renderer>),
     /// Measuring is done: standard input closed.
     Measured,
 }
@@ -65,12 +67,17 @@ struct Win {
 
 struct Shell {
     res: Arc<Resources>,
-    instance: wgpu::Instance,
+    /// The thread opening the GPU, until the first window joins it.
+    opening: Option<JoinHandle<Gpu>>,
+    instance: Option<wgpu::Instance>,
     gpu: Option<render_gpu::Device>,
     /// Whether the GPU is software, such as llvmpipe, so frames are drawn
     /// by render-cpu, which is faster on a CPU, and copied to the window.
     software: bool,
     renderers: HashMap<wgpu::TextureFormat, render_gpu::Renderer>,
+    /// The formats whose renderers are compiling their shaders on a
+    /// thread; render-cpu draws their frames meanwhile.
+    compiling: HashSet<wgpu::TextureFormat>,
     windows: HashMap<WindowId, Win>,
     clipboard: Clipboard,
     modifiers: ModifiersState,
@@ -78,6 +85,59 @@ struct Shell {
     proxy: EventLoopProxy<UserEvent>,
     /// The start's phases, if it's measuring them.
     measuring: Option<Measuring>,
+    /// When the start began, while measuring waits for the GPU renderer's
+    /// first frame.
+    settling: Option<Instant>,
+}
+
+/// What the thread opening the GPU hands over.
+struct Gpu {
+    instance: wgpu::Instance,
+    /// A device on the fastest adapter, if there's one.
+    device: Option<render_gpu::Device>,
+    /// How long the instance and the device took, for measuring.
+    took: [(&'static str, Duration); 2],
+}
+
+/// Opens the GPU, on a thread of its own from the program's start, while
+/// the fonts load and the window opens: an instance, and a device on the
+/// fastest adapter, which a window's surface is checked against once there
+/// is one. The backend is Vulkan, Metal or DirectX 12 unless
+/// `WGPU_BACKEND` asks; on Windows, Vulkan first, which opens in a fifth
+/// of the time, and DirectX 12 where there's no Vulkan.
+fn open_gpu(display: OwnedDisplayHandle) -> Gpu {
+    let started = Instant::now();
+    let asked = std::env::var_os("WGPU_BACKEND").is_some();
+    let instance = |backends| {
+        let mut descriptor =
+            wgpu::InstanceDescriptor::new_with_display_handle_from_env(Box::new(display.clone()));
+        if !asked {
+            // Not OpenGL unless asked: starting it as well breaks the
+            // Wayland connection under WSLg, even when Vulkan draws.
+            descriptor.backends = backends;
+        }
+        wgpu::Instance::new(descriptor)
+    };
+    let windows = cfg!(target_os = "windows") && !asked;
+    let mut made = instance(if windows {
+        wgpu::Backends::VULKAN
+    } else {
+        wgpu::Backends::PRIMARY
+    });
+    let instanced = started.elapsed();
+    let mut device = render_gpu::open(&made, None);
+    if device.is_none() && windows {
+        made = instance(wgpu::Backends::DX12);
+        device = render_gpu::open(&made, None);
+    }
+    Gpu {
+        instance: made,
+        device,
+        took: [
+            ("gpu-instance", instanced),
+            ("gpu-device", started.elapsed() - instanced),
+        ],
+    }
 }
 
 /// The clipboard, as plain text: the system's, opened at the first cut,
@@ -175,12 +235,6 @@ fn main() -> anyhow::Result<()> {
         last: started,
         phases: Vec::new(),
     });
-    let root = root().context("can't find xWorks' spec/ and fonts/; set XWORKS_ROOT")?;
-    let documents = documents();
-    let mac = cfg!(target_os = "macos");
-    let res =
-        Resources::load(&root, documents, mac).context("loading fonts, styles and commands")?;
-    mark(&mut measuring, "resources");
     let start = std::env::args_os().nth(1).map(PathBuf::from);
     let mut builder = EventLoop::<UserEvent>::with_user_event();
     #[cfg(target_os = "linux")]
@@ -192,28 +246,30 @@ fn main() -> anyhow::Result<()> {
         builder.with_x11();
     }
     let event_loop = builder.build()?;
+    let display = event_loop.owned_display_handle();
+    let opening = std::thread::spawn(move || open_gpu(display));
     mark(&mut measuring, "event-loop");
-    let display = Box::new(event_loop.owned_display_handle());
-    let mut descriptor = wgpu::InstanceDescriptor::new_with_display_handle_from_env(display);
-    if std::env::var_os("WGPU_BACKEND").is_none() {
-        // Vulkan, Metal or DirectX 12 unless asked: starting OpenGL as well
-        // breaks the Wayland connection under WSLg, even when Vulkan draws.
-        descriptor.backends = wgpu::Backends::PRIMARY;
-    }
-    let instance = wgpu::Instance::new(descriptor);
-    mark(&mut measuring, "instance");
+    let root = root().context("can't find xWorks' spec/ and fonts/; set XWORKS_ROOT")?;
+    let documents = documents();
+    let mac = cfg!(target_os = "macos");
+    let res =
+        Resources::load(&root, documents, mac).context("loading fonts, styles and commands")?;
+    mark(&mut measuring, "resources");
     let mut shell = Shell {
         res: Arc::new(res),
-        instance,
+        opening: Some(opening),
+        instance: None,
         gpu: None,
         software: false,
         renderers: HashMap::new(),
+        compiling: HashSet::new(),
         windows: HashMap::new(),
         clipboard: Clipboard::default(),
         modifiers: ModifiersState::empty(),
         start: Some(start),
         proxy: event_loop.create_proxy(),
         measuring,
+        settling: None,
     };
     event_loop.run_app(&mut shell)?;
     Ok(())
@@ -398,16 +454,36 @@ impl Shell {
         window.set_visible(true);
         window.set_ime_allowed(true);
         mark(&mut self.measuring, "window");
-        let surface = self.instance.create_surface(window.clone())?;
-        mark(&mut self.measuring, "surface");
-        if self.gpu.is_none() {
-            self.gpu = render_gpu::open(&self.instance, Some(&surface));
-            self.software = self
-                .gpu
-                .as_ref()
-                .is_some_and(|g| g.adapter.get_info().device_type == wgpu::DeviceType::Cpu);
+        if let Some(opening) = self.opening.take() {
+            let opened = opening
+                .join()
+                .map_err(|_| anyhow::anyhow!("opening the GPU failed"))?;
+            self.instance = Some(opened.instance);
+            self.gpu = opened.device;
+            if let Some(m) = &mut self.measuring {
+                m.mark("gpu");
+                m.phases.extend(opened.took);
+            }
         }
-        mark(&mut self.measuring, "adapter");
+        let instance = self.instance.as_ref().context("no GPU instance")?;
+        let surface = instance.create_surface(window.clone())?;
+        mark(&mut self.measuring, "surface");
+        // The GPU was opened without a window. Where its adapter can't
+        // draw on this one, as on a laptop whose display hangs off its
+        // other GPU, one that can is opened.
+        if !self
+            .gpu
+            .as_ref()
+            .is_some_and(|g| g.adapter.is_surface_supported(&surface))
+        {
+            self.gpu = render_gpu::open(instance, Some(&surface));
+            self.renderers.clear();
+            mark(&mut self.measuring, "adapter");
+        }
+        self.software = self
+            .gpu
+            .as_ref()
+            .is_some_and(|g| g.adapter.get_info().device_type == wgpu::DeviceType::Cpu);
         let Some(gpu) = &self.gpu else {
             bail!("no GPU can draw this window");
         };
@@ -422,11 +498,14 @@ impl Shell {
             .or_else(|| caps.formats.first().copied())
             .context("the surface offers no format")?;
         let size = window.inner_size();
+        // render-cpu's frames are copied in: on a software GPU, and on
+        // others until the GPU renderer is ready, where the surface allows.
         let config = wgpu::SurfaceConfiguration {
             usage: if self.software {
                 wgpu::TextureUsages::COPY_DST
             } else {
                 wgpu::TextureUsages::RENDER_ATTACHMENT
+                    | (caps.usages & wgpu::TextureUsages::COPY_DST)
             },
             format,
             width: size.width.max(1),
@@ -443,11 +522,20 @@ impl Shell {
         };
         surface.configure(&gpu.device, &config);
         // render-cpu draws for a software GPU, so it needs no renderer:
-        // making one compiles shaders that llvmpipe would run.
-        if !self.software {
-            self.renderers
-                .entry(format)
-                .or_insert_with(|| render_gpu::Renderer::new(&gpu.device, format));
+        // making one compiles shaders that llvmpipe would run. On others,
+        // vello_gpu compiles its shaders on a thread, which takes a quarter
+        // of a second, and render-cpu draws the frames until it's done.
+        if !self.software && !self.renderers.contains_key(&format) {
+            if !config.usage.contains(wgpu::TextureUsages::COPY_DST) {
+                let renderer = render_gpu::Renderer::new(&gpu.device, format);
+                self.renderers.insert(format, renderer);
+            } else if self.compiling.insert(format) {
+                let (device, proxy) = (gpu.device.clone(), self.proxy.clone());
+                std::thread::spawn(move || {
+                    let renderer = Box::new(render_gpu::Renderer::new(&device, format));
+                    let _ = proxy.send_event(UserEvent::Renderer(format, renderer));
+                });
+            }
         }
         mark(&mut self.measuring, "renderer");
         let mut win = Win {
@@ -490,25 +578,40 @@ impl Shell {
             win.config.width.min(65_535) as u16,
             win.config.height.min(65_535) as u16,
         );
-        if self.software {
-            upload(gpu, &frame.texture, &page, ppi, win.config.format);
-        } else {
-            let view = frame
-                .texture
-                .create_view(&wgpu::TextureViewDescriptor::default());
-            if let Some(renderer) = self.renderers.get_mut(&win.config.format)
-                && let Err(e) = renderer.render(gpu, &page, ppi, &view, w, h, self.res.theme.desk)
-            {
-                eprintln!("xworks: drawing the window: {e}");
+        let renderer = match self.software {
+            true => None,
+            false => self.renderers.get_mut(&win.config.format),
+        };
+        let drawn_by_gpu = renderer.is_some();
+        match renderer {
+            Some(renderer) => {
+                let view = frame
+                    .texture
+                    .create_view(&wgpu::TextureViewDescriptor::default());
+                let desk = self.res.theme.desk;
+                if let Err(e) = renderer.render(gpu, &page, ppi, &view, w, h, desk) {
+                    eprintln!("xworks: drawing the window: {e}");
+                }
             }
+            None => upload(gpu, &frame.texture, &page, ppi, win.config.format),
         }
         win.window.pre_present_notify();
         gpu.queue.present(frame);
+        if drawn_by_gpu && let Some(started) = self.settling.take() {
+            let _ = gpu.device.poll(wgpu::PollType::wait_indefinitely());
+            println!("settled {}", started.elapsed().as_micros());
+        }
         if let Some(mut measuring) = self.measuring.take() {
             // The first frame is on screen once the GPU has done it.
             let _ = gpu.device.poll(wgpu::PollType::wait_indefinitely());
             measuring.mark("frame");
             println!("{}", measuring.report());
+            // Memory is measured once the renderer that stays draws.
+            if drawn_by_gpu || self.software {
+                println!("settled {}", measuring.started.elapsed().as_micros());
+            } else {
+                self.settling = Some(measuring.started);
+            }
             let proxy = self.proxy.clone();
             std::thread::spawn(move || {
                 let mut rest = String::new();
@@ -578,6 +681,14 @@ impl ApplicationHandler<UserEvent> for Shell {
     fn user_event(&mut self, event_loop: &ActiveEventLoop, event: UserEvent) {
         let event = match event {
             UserEvent::Access(event) => event,
+            UserEvent::Renderer(format, renderer) => {
+                self.compiling.remove(&format);
+                self.renderers.insert(format, *renderer);
+                for win in self.windows.values().filter(|w| w.config.format == format) {
+                    win.window.request_redraw();
+                }
+                return;
+            }
             UserEvent::Measured => return event_loop.exit(),
         };
         let Some(win) = self.windows.get_mut(&event.window_id) else {

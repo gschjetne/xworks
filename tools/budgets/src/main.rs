@@ -281,6 +281,14 @@ fn startup(shell: &Path, scratch: &Path, runs: usize) -> anyhow::Result<Vec<Meas
                 None => phases.push((phase.to_string(), vec![micros / 1000.0])),
             }
         }
+        // Memory once the renderer that stays draws: the GPU's, which
+        // compiles while render-cpu draws the first frames.
+        line.clear();
+        out.read_line(&mut line)?;
+        if !line.starts_with("settled") {
+            let _ = child.kill();
+            bail!("the shell said {line:?}, not that it had settled");
+        }
         if let Some(kb) = resident_kb(child.id()) {
             memory.push(kb as f64 / 1024.0);
         }
@@ -292,14 +300,15 @@ fn startup(shell: &Path, scratch: &Path, runs: usize) -> anyhow::Result<Vec<Meas
         samples: times,
         parts: phases,
         note: "from starting the process to its first frame presented and done; \
-               the phases as the shell times them",
+               the phases as the shell times them, gpu-instance and gpu-device \
+               on a thread alongside the others",
     }];
     if !memory.is_empty() {
         lines.push(Measured {
             id: "memory",
             samples: memory,
             parts: Vec::new(),
-            note: "resident memory once the first frame is done; \
+            note: "resident memory once the renderer that stays has drawn a frame; \
                    its parts measured in this process",
         });
     }
