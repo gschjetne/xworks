@@ -448,6 +448,22 @@ flowchart LR
 8. **Exit.** Each foundation crate's contract is written down in its
    `lib.rs` and the architecture, and the budgets are measured again.
 
+### Progress
+
+**Stage 1 is done (2026-10-22).** The owner settled the interaction model
+(review frhewnk0), now in ARCHITECTURE.md section 8. That's a window per
+document; parts edited in place; one selection at one level; a menu bar,
+inspector, palette and status bar, with a ruler and no global toolbar;
+platform shortcuts; Inter, compact, light and dark; Lucide's icons; and
+white pages on an off-white desk. The owner then approved four mockups as
+goldens and chose xWorks' own title bar (review 3ce247c2). Along the way:
+- `fetch-fonts` learned to take fonts out of release archives, which
+  brought Inter and, for stage 3, Source Serif 4 and JetBrains Mono;
+- `toolkit` reads and draws Lucide's icons.
+
+Stages 2 to 4 run in parallel, each by an agent in its own worktree, on
+plans the owner approved in review pysc65hp.
+
 ### Exit criteria
 
 - A Markdown file, opened in xWorks, edited and saved, is still the same
