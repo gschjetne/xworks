@@ -14,6 +14,7 @@
 mod drawing;
 mod mockups;
 mod pages;
+mod typeset;
 
 use testkit::Image;
 
@@ -143,6 +144,13 @@ pub fn scenes() -> &'static [Scene] {
             description: "underlines and lines through text in several fonts, sizes and scripts, at 144 pixels per inch",
             ppi: 144.0,
             page: drawing::decorations_page,
+            pages: None,
+        },
+        Scene {
+            name: "typeset",
+            description: "text set well: one text ragged and justified, hyphenated and justified paragraphs in six languages, Japanese and Hebrew justified, and tab stops, at 144 pixels per inch",
+            ppi: 144.0,
+            page: typeset::typeset_page,
             pages: None,
         },
     ]
