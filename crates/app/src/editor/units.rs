@@ -83,7 +83,7 @@ impl Editor {
         if let Some(c) = self.unit_move(k, cursor, unit, forward) {
             return self.position(k, c);
         }
-        let ids = self.document.paragraphs();
+        let ids = self.ids();
         let next = if forward {
             k.checked_add(1).filter(|&n| n < ids.len())
         } else {
@@ -172,7 +172,7 @@ impl Editor {
         let value = Some(Value::Text(language.to_string()));
         let (start, end) = self.ordered();
         let collapsed = self.collapsed();
-        let ids = self.document.paragraphs().to_vec();
+        let ids = self.ids().to_vec();
         let (a, b) = (self.index_of(start.paragraph), self.index_of(end.paragraph));
         let mut ops = Vec::new();
         for (i, &id) in ids.iter().enumerate().take(b + 1).skip(a) {
@@ -216,7 +216,7 @@ impl Editor {
             return;
         }
         let (start, end) = self.ordered();
-        let ids = self.document.paragraphs().to_vec();
+        let ids = self.ids().to_vec();
         let (a, b) = (self.index_of(start.paragraph), self.index_of(end.paragraph));
         let ops = ids[a..=b]
             .iter()
