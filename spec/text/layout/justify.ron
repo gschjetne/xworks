@@ -1,20 +1,22 @@
-// Justified text breaks by Knuth and Plass's optimal algorithm: it weighs
-// the paragraph's lines together, so it ends the first line before
-// "great" to keep "lime-tree" whole, where first fit would break after its
-// hyphen. Every line but the last is stretched at its spaces to the
-// paragraph's width.
+// Justified text breaks by Knuth and Plass's optimal algorithm, which
+// weighs the paragraph's lines together. First fit would fill the first
+// line with "still" and leave the third, "whose daughters were all", loose;
+// the optimal breaks move "still" and "a" down and even the lines out.
+// Every line but the last is stretched at its spaces to the paragraph's
+// width.
 (
-    text: "Close by the king's castle lay a great dark forest, and under an old lime-tree in the forest was a well, and when the day was very warm, the king's child went out into the forest and sat down by the side of the cool fountain.",
+    text: "In olden times when wishing still helped one, there lived a king whose daughters were all beautiful; and the youngest was so beautiful that the sun itself, which has seen so much, was astonished whenever it shone in her face.",
     style: (family: "Source Serif 4", language: "en-US"),
-    width: 200,
+    width: 180,
     align: Justify,
     lines: [
-        (text: "Close by the king's castle lay a ", width: 2540000),
-        (text: "great dark forest, and under an old ", width: 2540000),
-        (text: "lime-tree in the forest was a well, and ", width: 2540000),
-        (text: "when the day was very warm, the ", width: 2540000),
-        (text: "king's child went out into the forest ", width: 2540000),
-        (text: "and sat down by the side of the cool ", width: 2540000),
-        (text: "fountain."),
+        (text: "In olden times when wishing ", width: 2286000),
+        (text: "still helped one, there lived a ", width: 2286000),
+        (text: "king whose daughters were all ", width: 2286000),
+        (text: "beautiful; and the youngest was ", width: 2286000),
+        (text: "so beautiful that the sun itself, ", width: 2286000),
+        (text: "which has seen so much, was ", width: 2286000),
+        (text: "astonished whenever it shone in ", width: 2286000),
+        (text: "her face."),
     ],
 )

@@ -379,32 +379,44 @@ const ADJ_DEMERITS: i64 = 10_000;
 /// TeX's \tolerance: the worst badness a line may have, unless no
 /// paragraph is possible without worse.
 const TOLERANCE: i64 = 200;
-/// Infinitely bad.
+/// Infinitely bad, to TeX.
 const INF_BAD: i64 = 10_000;
+/// The worst badness the last pass scores a line, past TeX's cap.
+const WORST: i64 = 1_000_000;
 /// Of a line's width, the emergency stretch the last pass scores lines
-/// with: a quarter.
-const EMERGENCY: i64 = 4;
+/// with: a sixteenth, about TeX's usual two or three ems in a column of
+/// text. More would make loose lines so cheap that hyphens never pay.
+const EMERGENCY: i64 = 16;
 
 /// How bad a line is that must stretch by `slack` with glue that
 /// stretches by `stretch`: 100 times the cube of their ratio, up to
 /// 10 000, as TeX computes it in integers. The ratio is scaled by 297,
 /// whose cube is about 100 · 2¹⁸, so the cube stays small.
-pub(crate) fn badness(slack: i64, stretch: i64) -> i64 {
+#[cfg(test)]
+fn badness(slack: i64, stretch: i64) -> i64 {
+    badness_up_to(slack, stretch, INF_BAD)
+}
+
+/// [`badness`], but up to `most` rather than TeX's 10 000, so that lines
+/// too loose for TeX are still ranked: one that stretches twenty times
+/// its glue is a million.
+fn badness_up_to(slack: i64, stretch: i64, most: i64) -> i64 {
     if slack <= 0 {
         return 0;
     }
     if stretch <= 0 {
-        return INF_BAD;
+        return most;
     }
     let ratio = match slack.checked_mul(297) {
         Some(scaled) => scaled / stretch,
         None => slack / (stretch / 297).max(1),
     };
-    if ratio > 1290 {
-        INF_BAD
-    } else {
-        (ratio * ratio * ratio + 0x20000) / 0x40000
+    // 6237 is 297 times 21, whose cube times 100 is near a million; its
+    // cube fits easily.
+    if ratio > 6237 {
+        return most;
     }
+    ((ratio * ratio * ratio + 0x20000) / 0x40000).min(most)
 }
 
 /// How tight a line is, by its badness, for TeX's demerits of
@@ -439,9 +451,9 @@ const STATES: usize = 6;
 /// A first pass allows lines up to TeX's tolerance. If no paragraph fits
 /// that, as in narrow columns, a second allows any line that fits, scoring
 /// each as though it had emergency stretch, as TeX's \emergencystretch
-/// does: so a line that must stretch far is still worse than one that
-/// stretches less, rather than both infinitely bad. Words too wide for a
-/// line break between graphemes.
+/// does, and past TeX's cap on badness: so a line that must stretch far
+/// is still worse than one that stretches less, rather than both
+/// infinitely bad. Words too wide for a line break between graphemes.
 pub(crate) fn knuth_plass(
     text: &str,
     graphemes: &[usize],
@@ -471,7 +483,7 @@ pub(crate) fn knuth_plass(
     all.dedup_by_key(|c| c.offset);
 
     let path = pass(&all, width, TOLERANCE, 0, &measure, &stretch)
-        .or_else(|| pass(&all, width, INF_BAD, width / EMERGENCY, &measure, &stretch))
+        .or_else(|| pass(&all, width, WORST, width / EMERGENCY, &measure, &stretch))
         .unwrap_or_default();
     let mut lines = Vec::with_capacity(path.len() + 1);
     let mut start = 0;
@@ -531,14 +543,16 @@ fn pass(
             if best[i].iter().all(Option::is_none) {
                 continue;
             }
+            // TeX's badness, or past its cap in the last pass.
+            let most = tolerance.max(INF_BAD);
             let bad = if natural > width {
                 // One piece too wide for any line: allowed when nothing
                 // else is.
-                INF_BAD
+                most
             } else if last {
                 0
             } else {
-                badness(width - natural, stretch(start..end) + emergency)
+                badness_up_to(width - natural, stretch(start..end) + emergency, most)
             };
             if bad > tolerance || (bad >= INF_BAD && tolerance < INF_BAD) {
                 continue;
@@ -609,6 +623,11 @@ mod tests {
         assert_eq!(badness(1000, 100), INF_BAD);
         assert_eq!(badness(i64::MAX, 1), INF_BAD);
         assert_eq!(badness(i64::MAX, i64::MAX), 100);
+        // Past TeX's cap, for the last pass: ten times the stretch is
+        // about 100 000, and far more is the worst.
+        assert_eq!(badness_up_to(1000, 100, WORST), 99_938);
+        assert_eq!(badness_up_to(100_000, 1, WORST), WORST);
+        assert_eq!(badness_up_to(100, 100, WORST), 100);
     }
 
     /// Words of these widths, a space of 10 between them that stretches by
