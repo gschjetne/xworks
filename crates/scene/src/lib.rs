@@ -1,14 +1,20 @@
 //! The display list: what a view draws, as data, for the renderers to draw
-//! (docs/ARCHITECTURE.md, section 10). M1 has fills, strokes and glyph
-//! runs; images, clips and transforms come with the tracks that need them.
+//! (docs/ARCHITECTURE.md, section 10).
 //!
 //! - [`Page`]: a page's size and its [`Item`]s, drawn in order, each over
-//!   the ones before.
+//!   the ones before: fills, strokes, glyph runs, images, and groups of
+//!   items clipped and transformed.
 //! - [`Glyphs`]: glyphs from one font, with the text they show, so PDF
 //!   output can be searched and copied and screen readers can read it.
-//! - [`Path`], [`Color`], [`Font`].
+//! - [`Image`]: a raster image, sRGB and premultiplied, at most
+//!   [`MAX_SIDE`] pixels a side, with smaller copies of itself for drawing
+//!   it small, made by a resampler whose pixels are the same everywhere.
+//! - [`Group`]: items drawn through a [`Transform`], within a clip.
+//! - [`Path`], [`Rect`], [`Color`], [`Font`].
 //! - [`Structure`]: a document's blocks in reading order, which glyph runs
-//!   point into ([`Source`]), for tagged PDF and accessibility.
+//!   and images point into ([`Source`]), for tagged PDF and accessibility.
+//! - [`changed`] and [`redraw`]: where two display lists draw differently,
+//!   so a window draws only that again.
 //!
 //! Invariants:
 //!
@@ -17,6 +23,13 @@
 //! - A display list holds no references into the document or the view that
 //!   made it: it can be drawn on any thread, by any renderer, any number of
 //!   times, and draws the same each time.
+//! - An item's [`Item::bounds`] hold everything it draws.
+
+mod damage;
+mod image;
+
+pub use damage::{PixelRect, changed, merge, redraw};
+pub use image::{Image, ImageError, Level, MAX_SIDE};
 
 use std::ops::Range;
 use std::sync::Arc;
@@ -94,6 +107,150 @@ impl Point {
     /// The point (`x`, `y`).
     pub const fn new(x: i64, y: i64) -> Point {
         Point { x, y }
+    }
+}
+
+/// A rectangle, in layout units.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Rect {
+    /// Its left edge.
+    pub x: i64,
+    /// Its top edge.
+    pub y: i64,
+    /// Its width.
+    pub width: i64,
+    /// Its height.
+    pub height: i64,
+}
+
+impl Rect {
+    /// Larger than any page: what an item covers when it can't say.
+    pub const EVERYWHERE: Rect = Rect {
+        x: -(1 << 60),
+        y: -(1 << 60),
+        width: 1 << 61,
+        height: 1 << 61,
+    };
+
+    /// The rectangle `width` by `height` with its top left at (`x`, `y`).
+    pub const fn new(x: i64, y: i64, width: i64, height: i64) -> Rect {
+        Rect {
+            x,
+            y,
+            width,
+            height,
+        }
+    }
+
+    /// Its right edge.
+    pub fn right(&self) -> i64 {
+        self.x + self.width
+    }
+
+    /// Its bottom edge.
+    pub fn bottom(&self) -> i64 {
+        self.y + self.height
+    }
+
+    /// Whether it covers nothing.
+    pub fn is_empty(&self) -> bool {
+        self.width <= 0 || self.height <= 0
+    }
+
+    /// The smallest rectangle holding both.
+    pub fn union(self, other: Rect) -> Rect {
+        let (x, y) = (self.x.min(other.x), self.y.min(other.y));
+        let (r, b) = (
+            self.right().max(other.right()),
+            self.bottom().max(other.bottom()),
+        );
+        Rect::new(x, y, r - x, b - y)
+    }
+
+    /// Where the two overlap, if they do.
+    pub fn intersection(self, other: Rect) -> Option<Rect> {
+        let (x, y) = (self.x.max(other.x), self.y.max(other.y));
+        let (r, b) = (
+            self.right().min(other.right()),
+            self.bottom().min(other.bottom()),
+        );
+        (r > x && b > y).then(|| Rect::new(x, y, r - x, b - y))
+    }
+
+    /// The rectangle grown by `by` on every side.
+    pub fn outset(self, by: i64) -> Rect {
+        Rect::new(
+            self.x - by,
+            self.y - by,
+            self.width + 2 * by,
+            self.height + 2 * by,
+        )
+    }
+}
+
+/// An affine transform, as PDF and kurbo write one: a point (x, y) goes to
+/// (a·x + c·y + e, b·x + d·y + f), for `[a, b, c, d, e, f]`, with e and f
+/// in layout units.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Transform(pub [f64; 6]);
+
+impl Transform {
+    /// Leaves everything where it is.
+    pub const IDENTITY: Transform = Transform([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+
+    /// Moves everything by (`x`, `y`).
+    pub fn translate(x: i64, y: i64) -> Transform {
+        Transform([1.0, 0.0, 0.0, 1.0, x as f64, y as f64])
+    }
+
+    /// Scales everything about the origin.
+    pub fn scale(x: f64, y: f64) -> Transform {
+        Transform([x, 0.0, 0.0, y, 0.0, 0.0])
+    }
+
+    /// Turns everything `degrees` clockwise on the page about the origin.
+    /// Quarter turns are exact; others take their sine and cosine from
+    /// the platform, which may differ in the last bit between platforms,
+    /// so goldens turn by quarters or give the matrix itself.
+    pub fn rotate(degrees: f64) -> Transform {
+        let quarter = degrees / 90.0;
+        let (sin, cos) = if quarter.fract() == 0.0 {
+            match quarter.rem_euclid(4.0) as u8 {
+                0 => (0.0, 1.0),
+                1 => (1.0, 0.0),
+                2 => (0.0, -1.0),
+                _ => (-1.0, 0.0),
+            }
+        } else {
+            degrees.to_radians().sin_cos()
+        };
+        Transform([cos, sin, -sin, cos, 0.0, 0.0])
+    }
+
+    /// `self`, then `next`: what applying one and then the other does.
+    pub fn then(self, next: Transform) -> Transform {
+        let [a, b, c, d, e, f] = self.0;
+        let [na, nb, nc, nd, ne, nf] = next.0;
+        Transform([
+            na * a + nc * b,
+            nb * a + nd * b,
+            na * c + nc * d,
+            nb * c + nd * d,
+            na * e + nc * f + ne,
+            nb * e + nd * f + nf,
+        ])
+    }
+
+    /// Where the point (`x`, `y`) goes.
+    pub fn apply(&self, x: f64, y: f64) -> (f64, f64) {
+        let [a, b, c, d, e, f] = self.0;
+        (a * x + c * y + e, b * x + d * y + f)
+    }
+}
+
+impl Default for Transform {
+    fn default() -> Transform {
+        Transform::IDENTITY
     }
 }
 
@@ -191,6 +348,9 @@ pub enum Role {
     Paragraph,
     /// A heading, of level 1 (the highest) to 6.
     Heading(u8),
+    /// A figure: a picture on its own, which its image items' alternative
+    /// text describes.
+    Figure,
 }
 
 /// A document's logical structure: its blocks in reading order, whatever
@@ -224,6 +384,34 @@ pub enum Item {
     },
     /// Glyphs.
     Glyphs(Glyphs),
+    /// An image, stretched to fill a rectangle.
+    Image {
+        /// The image.
+        image: Image,
+        /// Where it's drawn: its top left pixel's corner at the
+        /// rectangle's, its bottom right's at the rectangle's.
+        rect: Rect,
+        /// What it shows, in words, for screen readers and tagged PDF.
+        alt: Option<String>,
+        /// Where it belongs in the document's structure, if anywhere: in a
+        /// figure block, or in a block of text at an offset.
+        source: Option<Source>,
+    },
+    /// Items drawn through a transform, within a clip.
+    Group(Group),
+}
+
+/// Items drawn together: through a transform, and only within a clip.
+#[derive(Clone, Debug, Default)]
+pub struct Group {
+    /// Where its items show, in the coordinates the group is drawn in,
+    /// before its transform: nothing outside it shows. `None` clips
+    /// nothing.
+    pub clip: Option<Path>,
+    /// What its items' coordinates go through on the way to the group's.
+    pub transform: Transform,
+    /// Its items, back to front.
+    pub items: Vec<Item>,
 }
 
 /// A page: its size, and what's drawn on it, back to front. Nothing is
@@ -259,63 +447,89 @@ impl Page {
     /// Draws `other`'s items on this page with `other`'s top left corner at
     /// `at`: for sheets of pages, side by side.
     pub fn place(&mut self, other: &Page, at: Point) {
-        let shift = |p: Point| Point::new(p.x + at.x, p.y + at.y);
-        let path = |path: &Path| {
-            Path(
-                path.0
-                    .iter()
-                    .map(|segment| match *segment {
-                        Segment::MoveTo(a) => Segment::MoveTo(shift(a)),
-                        Segment::LineTo(a) => Segment::LineTo(shift(a)),
-                        Segment::QuadTo(a, b) => Segment::QuadTo(shift(a), shift(b)),
-                        Segment::CubicTo(a, b, c) => Segment::CubicTo(shift(a), shift(b), shift(c)),
-                        Segment::Close => Segment::Close,
-                    })
-                    .collect(),
-            )
-        };
-        for item in &other.items {
-            self.items.push(match item {
-                Item::Fill { path: p, color } => Item::Fill {
-                    path: path(p),
-                    color: *color,
-                },
-                Item::Stroke {
-                    path: p,
-                    width,
-                    color,
-                } => Item::Stroke {
-                    path: path(p),
-                    width: *width,
-                    color: *color,
-                },
-                Item::Glyphs(run) => Item::Glyphs(Glyphs {
-                    baseline: run.baseline + at.y,
-                    glyphs: run
-                        .glyphs
-                        .iter()
-                        .map(|g| Glyph {
-                            at: shift(g.at),
-                            ..g.clone()
-                        })
-                        .collect(),
-                    ..run.clone()
-                }),
-            });
-        }
+        self.items
+            .extend(other.items.iter().map(|item| shifted(item, at)));
     }
 
     /// Every font its glyphs use, each once, in the order first used.
     pub fn fonts(&self) -> Vec<Font> {
         let mut fonts: Vec<Font> = Vec::new();
-        for item in &self.items {
-            if let Item::Glyphs(g) = item
-                && !fonts.iter().any(|f| f.same(&g.font))
-            {
-                fonts.push(g.font.clone());
+        fn walk(items: &[Item], fonts: &mut Vec<Font>) {
+            for item in items {
+                match item {
+                    Item::Glyphs(g) if !fonts.iter().any(|f| f.same(&g.font)) => {
+                        fonts.push(g.font.clone());
+                    }
+                    Item::Group(group) => walk(&group.items, fonts),
+                    _ => {}
+                }
             }
         }
+        walk(&self.items, &mut fonts);
         fonts
+    }
+}
+
+/// `item` moved by `at`.
+fn shifted(item: &Item, at: Point) -> Item {
+    let shift = |p: Point| Point::new(p.x + at.x, p.y + at.y);
+    let path = |path: &Path| {
+        Path(
+            path.0
+                .iter()
+                .map(|segment| match *segment {
+                    Segment::MoveTo(a) => Segment::MoveTo(shift(a)),
+                    Segment::LineTo(a) => Segment::LineTo(shift(a)),
+                    Segment::QuadTo(a, b) => Segment::QuadTo(shift(a), shift(b)),
+                    Segment::CubicTo(a, b, c) => Segment::CubicTo(shift(a), shift(b), shift(c)),
+                    Segment::Close => Segment::Close,
+                })
+                .collect(),
+        )
+    };
+    match item {
+        Item::Fill { path: p, color } => Item::Fill {
+            path: path(p),
+            color: *color,
+        },
+        Item::Stroke {
+            path: p,
+            width,
+            color,
+        } => Item::Stroke {
+            path: path(p),
+            width: *width,
+            color: *color,
+        },
+        Item::Glyphs(run) => Item::Glyphs(Glyphs {
+            baseline: run.baseline + at.y,
+            glyphs: run
+                .glyphs
+                .iter()
+                .map(|g| Glyph {
+                    at: shift(g.at),
+                    ..g.clone()
+                })
+                .collect(),
+            ..run.clone()
+        }),
+        Item::Image {
+            image,
+            rect,
+            alt,
+            source,
+        } => Item::Image {
+            image: image.clone(),
+            rect: Rect::new(rect.x + at.x, rect.y + at.y, rect.width, rect.height),
+            alt: alt.clone(),
+            source: *source,
+        },
+        // The group's items stay in its coordinates; the group moves.
+        Item::Group(group) => Item::Group(Group {
+            clip: group.clip.as_ref().map(path),
+            transform: group.transform.then(Transform::translate(at.x, at.y)),
+            items: group.items.clone(),
+        }),
     }
 }
 
@@ -351,6 +565,64 @@ mod tests {
             panic!("a fill");
         };
         assert_eq!(path, &Path::rect(51, 62, 3, 4));
+    }
+
+    #[test]
+    fn transforms_compose_in_order() {
+        let t = Transform::scale(2.0, 3.0).then(Transform::translate(10, 20));
+        assert_eq!(t.apply(1.0, 1.0), (12.0, 23.0));
+        let t = Transform::translate(10, 20).then(Transform::scale(2.0, 3.0));
+        assert_eq!(t.apply(1.0, 1.0), (22.0, 63.0));
+        // A quarter turn clockwise on the page, exactly.
+        assert_eq!(Transform::rotate(90.0).apply(10.0, 0.0), (0.0, 10.0));
+        assert_eq!(Transform::rotate(-90.0).apply(10.0, 0.0), (0.0, -10.0));
+        assert_eq!(Transform::rotate(180.0).apply(1.0, 2.0), (-1.0, -2.0));
+        assert_eq!(
+            Transform::rotate(90.0).then(Transform::rotate(270.0)),
+            Transform::IDENTITY
+        );
+    }
+
+    #[test]
+    fn rects_meet_and_join() {
+        let a = Rect::new(0, 0, 10, 10);
+        let b = Rect::new(5, 5, 10, 10);
+        assert_eq!(a.union(b), Rect::new(0, 0, 15, 15));
+        assert_eq!(a.intersection(b), Some(Rect::new(5, 5, 5, 5)));
+        assert_eq!(a.intersection(Rect::new(10, 0, 5, 5)), None);
+        assert_eq!(a.outset(2), Rect::new(-2, -2, 14, 14));
+    }
+
+    #[test]
+    fn a_placed_page_moves_images_and_groups() {
+        let image = Image::new(1, 1, vec![0, 0, 0, 255]).unwrap();
+        let mut inner = Page::new(10, 10);
+        inner.items.push(Item::Image {
+            image: image.clone(),
+            rect: Rect::new(1, 2, 3, 4),
+            alt: None,
+            source: None,
+        });
+        inner.items.push(Item::Group(Group {
+            clip: Some(Path::rect(0, 0, 5, 5)),
+            transform: Transform::scale(2.0, 2.0),
+            items: vec![Item::Fill {
+                path: Path::rect(1, 1, 1, 1),
+                color: Color::BLACK,
+            }],
+        }));
+        let mut sheet = Page::new(100, 100);
+        sheet.place(&inner, Point::new(50, 60));
+        let Item::Image { rect, .. } = &sheet.items[0] else {
+            panic!("an image");
+        };
+        assert_eq!(*rect, Rect::new(51, 62, 3, 4));
+        let Item::Group(group) = &sheet.items[1] else {
+            panic!("a group");
+        };
+        assert_eq!(group.clip, Some(Path::rect(50, 60, 5, 5)));
+        assert_eq!(group.transform.apply(1.0, 1.0), (52.0, 62.0));
+        assert_eq!(sheet.items[1].bounds(), Some(Rect::new(52, 62, 2, 2)));
     }
 
     #[test]
