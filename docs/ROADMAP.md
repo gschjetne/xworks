@@ -334,7 +334,13 @@ gqbnbar4).
 
 ## M2: Foundations for documents
 
-*Proposed (2026-10-22), awaiting the project owner's review.*
+*Plan approved by the project owner in review 3p2m36fm (2026-10-22).* The
+owner chose:
+- **Scope:** foundations for documents, proven by Markdown; calculation
+  waits for M3, with the grid.
+- **Pace:** several stages at once, by agents in separate worktrees. Each
+  stage still has its plan and its reviews, and lands on `master` when its
+  checks pass.
 
 M1 made one thin path through every layer. M2 hardens the interfaces that
 documents build on into the contracts the substrate and product tracks
