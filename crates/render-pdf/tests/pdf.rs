@@ -313,3 +313,102 @@ fn a_page_pdf_cant_hold_is_refused() {
         Err(render_pdf::Error::PageSize { page: 0, .. })
     ));
 }
+
+/// A 3 by 2 image: a red row over a half-transparent blue one.
+fn picture() -> scene::Image {
+    let rgba = [[255, 0, 0, 255]; 3]
+        .into_iter()
+        .chain([[0, 0, 255, 128]; 3])
+        .flatten()
+        .collect();
+    scene::Image::new(3, 2, rgba).expect("an image")
+}
+
+#[test]
+fn images_are_figures_with_their_alternative_text() {
+    let mut page = page_from(
+        4 * INCH,
+        4 * INCH,
+        &[("en", "Before the figure.")],
+        false,
+        0,
+    );
+    let image = picture();
+    page.items.push(scene::Item::Image {
+        image: image.clone(),
+        rect: scene::Rect::new(INCH, INCH, 3 * INCH / 2, INCH),
+        alt: Some("A red stripe over a blue one".to_string()),
+        source: Some(scene::Source {
+            block: 1,
+            offset: 0,
+        }),
+    });
+    // An image of no block is a figure of its own, after the structure.
+    page.items.push(scene::Item::Image {
+        image,
+        rect: scene::Rect::new(INCH, 3 * INCH, INCH, INCH),
+        alt: None,
+        source: None,
+    });
+    let structure = Structure {
+        language: Some("en".to_string()),
+        blocks: vec![Role::Paragraph, Role::Figure],
+    };
+    let pdf = render_pdf::pdf(&[page], &structure, Some("Figures")).expect("a PDF");
+    let found: Vec<(String, usize)> = elements(&pdf)
+        .into_iter()
+        .filter(|(kind, _)| matches!(kind.as_str(), "P" | "Figure"))
+        .collect();
+    assert_eq!(
+        found,
+        [
+            ("P".to_string(), 1),
+            ("Figure".to_string(), 1),
+            ("Figure".to_string(), 1)
+        ]
+    );
+    let document = lopdf::Document::load_mem(&pdf).expect("the PDF reads");
+    let mut alts = Vec::new();
+    let mut images = Vec::new();
+    for object in document.objects.values() {
+        if let Ok(dict) = object.as_dict()
+            && let Ok(alt) = dict.get(b"Alt")
+        {
+            alts.push(lopdf::decode_text_string(alt).expect("text"));
+        }
+        if let Ok(stream) = object.as_stream()
+            && stream.dict.get(b"Subtype").and_then(|s| s.as_name()).ok() == Some(b"Image")
+        {
+            let n = |key: &[u8]| stream.dict.get(key).and_then(|v| v.as_i64()).unwrap_or(0);
+            images.push((n(b"Width"), n(b"Height"), stream.dict.has(b"SMask")));
+        }
+    }
+    assert_eq!(alts, ["A red stripe over a blue one"]);
+    // The same image twice is written once, its alpha as a soft mask,
+    // which is an image too.
+    images.sort();
+    assert_eq!(images, [(3, 2, false), (3, 2, true)]);
+}
+
+#[test]
+fn groups_are_clipped_and_transformed_in_the_pdf_too() {
+    let line = page_from(4 * INCH, 4 * INCH, &[("en", "Turned text")], false, 0);
+    let mut page = Page::new(4 * INCH, 4 * INCH);
+    page.items.push(scene::Item::Group(scene::Group {
+        clip: Some(scene::Path::rect(0, 0, 2 * INCH, 4 * INCH)),
+        transform: scene::Transform::rotate(90.0).then(scene::Transform::translate(3 * INCH, 0)),
+        items: line.items,
+    }));
+    let pdf = render_pdf::pdf(&[page], &paragraphs(1), None).expect("a PDF");
+    let extracted = squeeze(&pdf_extract::extract_text_from_mem(&pdf).expect("text extracts"));
+    assert!(extracted.contains("Turnedtext"), "{extracted}");
+    let document = lopdf::Document::load_mem(&pdf).expect("the PDF reads");
+    let content = document
+        .get_page_content(*document.get_pages().get(&1).expect("page 1"))
+        .expect("page 1's content");
+    let content = String::from_utf8_lossy(&content);
+    // A clip, then the quarter turn, which krilla writes with PDF's page,
+    // whose y grows up, turned the other way.
+    assert!(content.contains("W\nn"), "{content}");
+    assert!(content.contains("0 -1 -1 0 216 288 cm"), "{content}");
+}

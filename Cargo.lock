@@ -3301,7 +3301,10 @@ name = "render-cpu"
 version = "0.0.0"
 dependencies = [
  "fearless_simd",
+ "ron",
  "scene",
+ "testkit",
+ "text",
  "vello_cpu",
 ]
 

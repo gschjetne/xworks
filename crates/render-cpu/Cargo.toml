@@ -12,5 +12,10 @@ fearless_simd.workspace = true
 scene.workspace = true
 vello_cpu.workspace = true
 
+[dev-dependencies]
+ron.workspace = true
+testkit.workspace = true
+text.workspace = true
+
 [lints]
 workspace = true

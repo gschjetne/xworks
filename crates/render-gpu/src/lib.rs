@@ -89,6 +89,9 @@ struct Uploaded {
 /// Frames after which an image not drawn in them leaves the atlas.
 const FORGET_AFTER: u64 = 32;
 
+/// The side of an atlas page: the largest image, and its border.
+const ATLAS_SIDE: u16 = scene::MAX_SIDE as u16 + 2;
+
 /// The size in pixels of a `units`-long side at `ppi` pixels per inch,
 /// rounded up, between 1 and 65 535: as render-cpu sizes its images.
 pub fn pixels(units: i64, ppi: f64) -> u16 {
@@ -103,7 +106,7 @@ impl Renderer {
             memory_settings: vello_gpu::MemorySettings {
                 image_atlas_config: AtlasConfig {
                     max_atlases: MOST_IMAGES,
-                    atlas_size: (scene::MAX_SIDE as u16, scene::MAX_SIDE as u16),
+                    atlas_size: (ATLAS_SIDE, ATLAS_SIDE),
                     ..AtlasConfig::default()
                 },
                 ..vello_gpu::MemorySettings::default()
@@ -328,7 +331,7 @@ impl Renderer {
                     &device.device,
                     &device.queue,
                     encoder,
-                    &LevelWriter(&image.levels()[level]),
+                    &Bordered::new(&image.levels()[level]),
                 );
                 self.images.insert(
                     key,
@@ -493,9 +496,12 @@ impl Drawer<'_> {
                                 alpha: 1.0,
                             },
                         });
+                        // The level is in the atlas with a texel of border.
                         let (lw, lh) = (f64::from(level.width), f64::from(level.height));
                         self.scene.set_paint_transform(
-                            Affine::translate((x, y)) * Affine::scale_non_uniform(w / lw, h / lh),
+                            Affine::translate((x, y))
+                                * Affine::scale_non_uniform(w / lw, h / lh)
+                                * Affine::translate((-1.0, -1.0)),
                         );
                         self.scene.fill_rect(&kurbo::Rect::new(x, y, x + w, y + h));
                         self.scene.reset_paint_transform();
@@ -527,16 +533,44 @@ impl Drawer<'_> {
     }
 }
 
-/// An image level, written into the atlas as it is: premultiplied RGBA.
-struct LevelWriter<'a>(&'a scene::Level);
+/// An image level as it goes into the atlas: premultiplied RGBA, with a
+/// texel of border around it copied from its edge. vello_gpu holds a
+/// sample to the image before it takes half a texel off to sample
+/// bilinearly, so without the border its last half texel on the right and
+/// at the bottom would blend the last two; with it, its edges are held
+/// as vello_cpu holds them.
+struct Bordered {
+    width: u32,
+    height: u32,
+    pixels: Vec<u8>,
+}
 
-impl vello_gpu::AtlasWriter for LevelWriter<'_> {
+impl Bordered {
+    fn new(level: &scene::Level) -> Bordered {
+        let (w, h) = (level.width as usize, level.height as usize);
+        let mut pixels = Vec::with_capacity((w + 2) * (h + 2) * 4);
+        for y in 0..h + 2 {
+            let source = (y.clamp(1, h) - 1) * w * 4;
+            let line = &level.pixels[source..source + w * 4];
+            pixels.extend_from_slice(&line[..4]);
+            pixels.extend_from_slice(line);
+            pixels.extend_from_slice(&line[(w - 1) * 4..]);
+        }
+        Bordered {
+            width: level.width + 2,
+            height: level.height + 2,
+            pixels,
+        }
+    }
+}
+
+impl vello_gpu::AtlasWriter for Bordered {
     fn width(&self) -> u16 {
-        self.0.width as u16
+        self.width as u16
     }
 
     fn height(&self) -> u16 {
-        self.0.height as u16
+        self.height as u16
     }
 
     fn write_to_atlas(
@@ -561,7 +595,7 @@ impl vello_gpu::AtlasWriter for LevelWriter<'_> {
                 },
                 aspect: wgpu::TextureAspect::All,
             },
-            &self.0.pixels,
+            &self.pixels,
             wgpu::TexelCopyBufferLayout {
                 offset: 0,
                 bytes_per_row: Some(4 * width),

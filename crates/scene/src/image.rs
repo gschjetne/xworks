@@ -4,10 +4,11 @@
 use std::sync::Arc;
 
 /// The longest side an [`Image`] keeps, in pixels. Larger pictures are
-/// scaled down to it when they're made: render-gpu keeps images in atlas
-/// pages of this size, and at 4 096 pixels across a picture still prints
-/// sharp at 300 dots to the inch over 34 centimetres.
-pub const MAX_SIDE: u32 = 4096;
+/// scaled down to it when they're made: render-gpu keeps each image in a
+/// vello_gpu atlas page of 4 096 pixels a side, with a pixel of border
+/// around it, and at 4 094 pixels across a picture still prints sharp at
+/// 300 dots to the inch over 34 centimetres.
+pub const MAX_SIDE: u32 = 4094;
 
 /// Why an image couldn't be made.
 #[derive(Debug, PartialEq, Eq, thiserror::Error)]
