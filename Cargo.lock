@@ -631,6 +631,19 @@ name = "budgets"
 version = "0.0.0"
 dependencies = [
  "anyhow",
+ "app",
+ "canvas",
+ "chrome",
+ "doc",
+ "render-cpu",
+ "render-gpu",
+ "ron",
+ "scene",
+ "serde",
+ "store",
+ "story",
+ "testkit",
+ "wgpu",
 ]
 
 [[package]]

@@ -57,6 +57,9 @@ the tests on Linux, Windows and macOS.
   WSL. New documents go to the Documents folder in the home folder
   (`XWORKS_DOCUMENTS` to change it). Under WSL the Linux build draws with
   render-cpu, as WSL's GPU is software, and uses X11.
+- **Budgets:** `cargo build --release -p xworks -p budgets` and
+  `target/release/budgets` measure the M1 budgets on Linux;
+  `tools/run-windows.sh --release -p budgets` does so on Windows.
 - **GPU work runs on Windows.** This machine is WSL2, whose Linux sees only
   llvmpipe, a software rasterizer. Build for Windows with `cargo xwin build
   --target x86_64-pc-windows-msvc` and run the `.exe` from WSL, which

@@ -1,0 +1,42 @@
+// The performance budgets that M1 measures, read by tools/budgets. Each
+// names a row of docs/ARCHITECTURE.md, section 12, word for word, and holds
+// its number; a test in tools/budgets checks the names. The table there is
+// the decision; this is its number for the harness, so change both
+// together.
+(
+    // The report that "Open a 500-page report" opens: the sample document
+    // repeated until it fills this many automatic pages.
+    report_pages: 500,
+    budgets: [
+        (
+            id: "cold-start",
+            interaction: "Cold start to an editable blank document",
+            budget: Millis(300.0),
+        ),
+        (
+            id: "keystroke",
+            interaction: "Keystroke to the glyph on screen",
+            budget: Millis(16.7),
+        ),
+        (
+            id: "open",
+            interaction: "Open a 500-page report, first page shown",
+            budget: Millis(200.0),
+        ),
+        (
+            id: "scroll",
+            interaction: "Scroll any document",
+            budget: Millis(16.7),
+        ),
+        (
+            id: "save",
+            interaction: "Save after a small edit, any document size",
+            budget: Millis(50.0),
+        ),
+        (
+            id: "memory",
+            interaction: "Memory for an empty document window",
+            budget: Megabytes(60.0),
+        ),
+    ],
+)

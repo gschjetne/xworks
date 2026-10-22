@@ -1,7 +1,619 @@
-//! `budgets`: measures the performance budgets on the machine it runs on and
-//! prints each against its budget (docs/ARCHITECTURE.md, section 12). M1's
-//! stage 10 builds it.
+//! `budgets`: measures the performance budgets that apply to M1 on the
+//! machine it runs on, and prints each against its budget
+//! (`spec/budgets.ron`; docs/ARCHITECTURE.md, section 12; docs/ROADMAP.md,
+//! M1 stage 10).
+//!
+//! ```text
+//! budgets [--shell PATH] [--runs N] [--scale S]
+//! ```
+//!
+//! - **Cold start** and **memory for an empty window**: it runs the shell
+//!   (`--shell`, by default `xworks` beside this program) with
+//!   `XWORKS_MEASURE_STARTUP`, from starting it to its first frame
+//!   presented, and reads its resident memory then. Run a release build.
+//! - **Opening a 500-page report**, **keystroke to glyph**, **scrolling**
+//!   and **saving after a small edit**: in this process, with the app's
+//!   editor, on a report it makes from the sample document. Frames are
+//!   drawn as the shell draws them, in a window of the shell's size (times
+//!   `--scale`, for a display that scales): with render-gpu on a hardware
+//!   GPU, or render-cpu where the GPU is software or missing. A frame
+//!   counts until the GPU has finished it.
+//!
+//! Measure on a quiet machine. Each line gives the median and the worst,
+//! and the parts of a frame where the time goes.
+
+use std::io::BufRead;
+use std::path::{Path, PathBuf};
+use std::process::{Command, Stdio};
+use std::sync::Arc;
+use std::time::{Duration, Instant};
+
+use anyhow::{Context, bail};
+use app::{Editor, Event, Resources};
+use chrome::{Key, Modifiers};
+use doc::{Op, Props, Run};
+use serde::Deserialize;
+use store::{Entry, Store};
+
+/// `spec/budgets.ron`.
+#[derive(Deserialize)]
+struct Spec {
+    report_pages: usize,
+    budgets: Vec<Budget>,
+}
+
+#[derive(Deserialize)]
+struct Budget {
+    id: String,
+    interaction: String,
+    budget: Amount,
+}
+
+#[derive(Clone, Copy, Deserialize)]
+enum Amount {
+    Millis(f64),
+    Megabytes(f64),
+}
+
+impl Amount {
+    fn value(self) -> f64 {
+        match self {
+            Amount::Millis(v) | Amount::Megabytes(v) => v,
+        }
+    }
+
+    fn show(self, v: f64) -> String {
+        match self {
+            Amount::Millis(_) if v >= 1000.0 => format!("{:.2} s", v / 1000.0),
+            Amount::Millis(_) => format!("{v:.1} ms"),
+            Amount::Megabytes(_) => format!("{v:.0} MB"),
+        }
+    }
+}
+
+/// What was measured for a budget: samples in its unit (milliseconds or
+/// megabytes), and the parts of each, in milliseconds.
+struct Measured {
+    id: &'static str,
+    samples: Vec<f64>,
+    parts: Vec<(&'static str, Vec<f64>)>,
+    note: &'static str,
+}
+
+/// The shell's window, in logical pixels (shells/generic).
+const WINDOW: (f64, f64) = (1000.0, 820.0);
 
 fn main() -> anyhow::Result<()> {
-    anyhow::bail!("budgets arrives in M1's stage 10")
+    let mut shell: Option<PathBuf> = None;
+    let mut runs = 5;
+    let mut scale = 1.0;
+    let mut args = std::env::args().skip(1);
+    while let Some(arg) = args.next() {
+        match arg.as_str() {
+            "--shell" => shell = Some(args.next().context("--shell needs a path")?.into()),
+            "--runs" => runs = args.next().context("--runs needs a number")?.parse()?,
+            "--scale" => scale = args.next().context("--scale needs a number")?.parse()?,
+            "-h" | "--help" => {
+                println!("usage: budgets [--shell PATH] [--runs N] [--scale S]");
+                return Ok(());
+            }
+            _ => bail!("unknown argument {arg}; try --help"),
+        }
+    }
+    let root = root().context("can't find xWorks' spec/ and fonts/; set XWORKS_ROOT")?;
+    let spec: Spec = ron::from_str(&std::fs::read_to_string(root.join("spec/budgets.ron"))?)
+        .context("spec/budgets.ron")?;
+    let scratch = std::env::temp_dir().join(format!("xworks-budgets-{}", std::process::id()));
+    std::fs::create_dir_all(&scratch)?;
+    println!("budgets: on {}", machine());
+
+    let mut measured = Vec::new();
+    let shell = shell.unwrap_or_else(|| {
+        let exe = std::env::current_exe().unwrap_or_default();
+        exe.with_file_name(if cfg!(windows) {
+            "xworks.exe"
+        } else {
+            "xworks"
+        })
+    });
+    match startup(&shell, &scratch, runs) {
+        Ok(lines) => measured.extend(lines),
+        Err(e) => println!("budgets: no cold start or memory: {e:#}"),
+    }
+
+    // The cold start's parts, once in this process: what the shell does
+    // before its first frame.
+    let began = Instant::now();
+    let before = resident_kb(std::process::id());
+    let mac = cfg!(target_os = "macos");
+    let res = Arc::new(Resources::load(&root, scratch.clone(), mac)?);
+    let mut start = vec![("fonts and specs", millis(began.elapsed()))];
+    let after = resident_kb(std::process::id());
+    let (mut frames, opening) = Frames::new(scale);
+    start.extend(opening);
+    let began = Instant::now();
+    let mut blank = Editor::create(res.clone())?;
+    blank.update(Event::Resize {
+        width: WINDOW.0,
+        height: WINDOW.1,
+    });
+    frames.draw(&blank)?;
+    start.push(("blank document and first frame", millis(began.elapsed())));
+    drop(blank);
+    if let Some(cold) = measured.iter_mut().find(|m| m.id == "cold-start") {
+        cold.parts = start.into_iter().map(|(what, t)| (what, vec![t])).collect();
+    }
+    if let (Some(memory), Some(before), Some(after)) = (
+        measured.iter_mut().find(|m| m.id == "memory"),
+        before,
+        after,
+    ) {
+        let fonts = after.saturating_sub(before) as f64 / 1024.0;
+        memory.parts = vec![("fonts and specs", vec![fonts])];
+    }
+    let path = scratch.join("report.xw");
+    let (paragraphs, pages) = report(&root, &res, &path, spec.report_pages)?;
+    println!("budgets: a report of {pages} pages, {paragraphs} paragraphs");
+    println!("budgets: frames drawn by {}", frames.by());
+    measured.extend(in_editor(&res, &path, &mut frames, runs)?);
+    measured.push(saving(&path)?);
+
+    println!();
+    println!(
+        "{:<44} {:>9} {:>9} {:>9} {:>9}",
+        "", "budget", "median", "95th", "worst"
+    );
+    for budget in &spec.budgets {
+        let Some(m) = measured.iter().find(|m| m.id == budget.id) else {
+            println!(
+                "{:<44} {:>9}  not measured",
+                budget.interaction,
+                budget.budget.show(budget.budget.value())
+            );
+            continue;
+        };
+        let amount = budget.budget;
+        // Judged by the 95th percentile: a budget holds nearly every time.
+        let p95 = percentile(&m.samples, 95);
+        let worst = m.samples.iter().copied().fold(0.0, f64::max);
+        let verdict = if p95 <= amount.value() {
+            "within"
+        } else {
+            "OVER"
+        };
+        println!(
+            "{:<44} {:>9} {:>9} {:>9} {:>9}  {verdict}",
+            budget.interaction,
+            amount.show(amount.value()),
+            amount.show(percentile(&m.samples, 50)),
+            amount.show(p95),
+            amount.show(worst),
+        );
+        if !m.parts.is_empty() {
+            let parts: Vec<String> = m
+                .parts
+                .iter()
+                .map(|(what, v)| format!("{what} {}", amount.show(percentile(v, 50))))
+                .collect();
+            println!("    parts, medians: {}", parts.join(", "));
+        }
+        if !m.note.is_empty() {
+            println!("    {}", m.note);
+        }
+    }
+    let _ = std::fs::remove_dir_all(&scratch);
+    Ok(())
+}
+
+fn millis(d: Duration) -> f64 {
+    d.as_secs_f64() * 1000.0
+}
+
+fn percentile(samples: &[f64], p: usize) -> f64 {
+    let mut sorted = samples.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    sorted
+        .get(sorted.len().saturating_sub(1) * p / 100)
+        .copied()
+        .unwrap_or_default()
+}
+
+/// Where `spec/` and `fonts/` are, as the shell finds them.
+fn root() -> Option<PathBuf> {
+    if let Some(root) = std::env::var_os("XWORKS_ROOT") {
+        return Some(PathBuf::from(root));
+    }
+    let has = |dir: &Path| dir.join("spec/text/fonts.ron").is_file();
+    [std::env::current_exe().ok(), std::env::current_dir().ok()]
+        .into_iter()
+        .flatten()
+        .find_map(|start| start.ancestors().find(|d| has(d)).map(Path::to_path_buf))
+}
+
+/// A line about the machine: its system and processors.
+fn machine() -> String {
+    let threads = std::thread::available_parallelism().map_or(0, |n| n.get());
+    format!(
+        "{} {}, {threads} threads",
+        std::env::consts::OS,
+        std::env::consts::ARCH
+    )
+}
+
+/// Cold start and memory: the shell run `runs` times to its first frame.
+fn startup(shell: &Path, scratch: &Path, runs: usize) -> anyhow::Result<Vec<Measured>> {
+    if !shell.is_file() {
+        bail!(
+            "{} isn't there; build it (cargo build --release -p xworks) or pass --shell",
+            shell.display()
+        );
+    }
+    let mut times = Vec::new();
+    let mut memory = Vec::new();
+    for run in 0..runs {
+        let documents = scratch.join(format!("start-{run}"));
+        std::fs::create_dir_all(&documents)?;
+        let began = Instant::now();
+        let mut child = Command::new(shell)
+            .env("XWORKS_MEASURE_STARTUP", "1")
+            .env("XWORKS_DOCUMENTS", &documents)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .spawn()
+            .with_context(|| format!("starting {}", shell.display()))?;
+        let mut out = std::io::BufReader::new(child.stdout.take().context("its output")?);
+        let mut line = String::new();
+        out.read_line(&mut line)?;
+        let elapsed = began.elapsed();
+        if !line.starts_with("ready") {
+            let _ = child.kill();
+            bail!("the shell said {line:?}, not that it was ready");
+        }
+        times.push(millis(elapsed));
+        if let Some(kb) = resident_kb(child.id()) {
+            memory.push(kb as f64 / 1024.0);
+        }
+        drop(child.stdin.take());
+        child.wait()?;
+    }
+    let mut lines = vec![Measured {
+        id: "cold-start",
+        samples: times,
+        parts: Vec::new(),
+        note: "from starting the process to its first frame presented and done; \
+               its parts measured once in this process",
+    }];
+    if !memory.is_empty() {
+        lines.push(Measured {
+            id: "memory",
+            samples: memory,
+            parts: Vec::new(),
+            note: "resident memory once the first frame is done; \
+                   its fonts' part measured in this process",
+        });
+    }
+    Ok(lines)
+}
+
+/// A process's resident memory in kilobytes, if it can be read.
+fn resident_kb(pid: u32) -> Option<u64> {
+    if cfg!(target_os = "linux") {
+        let status = std::fs::read_to_string(format!("/proc/{pid}/status")).ok()?;
+        let line = status.lines().find(|l| l.starts_with("VmRSS:"))?;
+        line.split_whitespace().nth(1)?.parse().ok()
+    } else if cfg!(windows) {
+        // "xworks.exe","1234","Console","1","123,456 K": the working set.
+        let out = Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/FO", "CSV", "/NH"])
+            .output()
+            .ok()?;
+        let text = String::from_utf8_lossy(&out.stdout);
+        let field = text.trim().rsplit("\",\"").next()?;
+        let digits: String = field.chars().filter(char::is_ascii_digit).collect();
+        digits.parse().ok()
+    } else {
+        let out = Command::new("ps")
+            .args(["-o", "rss=", "-p", &pid.to_string()])
+            .output()
+            .ok()?;
+        String::from_utf8_lossy(&out.stdout).trim().parse().ok()
+    }
+}
+
+/// Makes the report at `path`: the sample document repeated until it fills
+/// `pages` automatic pages. Returns its paragraphs and pages.
+fn report(
+    root: &Path,
+    res: &Resources,
+    path: &Path,
+    pages: usize,
+) -> anyhow::Result<(usize, usize)> {
+    let sample = std::fs::read_to_string(root.join("spec/documents/m1-sample.ron"))?;
+    let sample: Vec<(String, Vec<(String, Props)>)> = ron::from_str(&sample)?;
+    let count = |copies: usize| {
+        let all: Vec<_> = sample
+            .iter()
+            .cycle()
+            .take(sample.len() * copies)
+            .cloned()
+            .collect();
+        let document = story::document(&all);
+        let laid = canvas::automatic(&document, &res.sheet, &res.page, &res.fonts);
+        (all, document, laid.pages.len())
+    };
+    // Twenty copies say how many pages a copy fills.
+    let (_, _, twenty) = count(20);
+    let mut copies = (pages * 20).div_ceil(twenty.max(1));
+    loop {
+        let (all, document, made) = count(copies);
+        if made >= pages {
+            Store::create(path, &document, "story")?;
+            return Ok((all.len(), made));
+        }
+        copies += 1;
+    }
+}
+
+/// What draws frames: the GPU if it's hardware, the CPU otherwise.
+struct Frames {
+    gpu: Option<(render_gpu::Device, render_gpu::Renderer, wgpu::Texture)>,
+    ppi: f64,
+    size: (u16, u16),
+}
+
+impl Frames {
+    /// Opens the GPU, if there's a hardware one, and makes the renderer.
+    /// Returns how long each took, too.
+    fn new(scale: f64) -> (Frames, Vec<(&'static str, f64)>) {
+        let began = Instant::now();
+        let size = (
+            (WINDOW.0 * scale).round() as u16,
+            (WINDOW.1 * scale).round() as u16,
+        );
+        let instance =
+            wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+        let gpu = render_gpu::open(&instance, None)
+            .filter(|d| d.adapter.get_info().device_type != wgpu::DeviceType::Cpu);
+        let opened = began.elapsed();
+        let gpu = gpu.map(|device| {
+            let format = wgpu::TextureFormat::Rgba8Unorm;
+            let renderer = render_gpu::Renderer::new(&device.device, format);
+            let texture = device.device.create_texture(&wgpu::TextureDescriptor {
+                label: Some("frame"),
+                size: wgpu::Extent3d {
+                    width: u32::from(size.0),
+                    height: u32::from(size.1),
+                    depth_or_array_layers: 1,
+                },
+                mip_level_count: 1,
+                sample_count: 1,
+                dimension: wgpu::TextureDimension::D2,
+                format,
+                usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
+                view_formats: &[],
+            });
+            (device, renderer, texture)
+        });
+        let frames = Frames {
+            gpu,
+            ppi: 96.0 * scale,
+            size,
+        };
+        let made = millis(began.elapsed() - opened);
+        (
+            frames,
+            vec![("GPU opened", millis(opened)), ("renderer made", made)],
+        )
+    }
+
+    fn by(&self) -> String {
+        let (w, h) = self.size;
+        match &self.gpu {
+            Some((device, _, _)) => {
+                let info = device.adapter.get_info();
+                format!("render-gpu on {} ({:?}), {w}×{h}", info.name, info.backend)
+            }
+            None => format!("render-cpu, {w}×{h}"),
+        }
+    }
+
+    /// Draws `editor`'s window as the shell would, and waits for it to be
+    /// done. Returns how long making the display list took, and drawing it.
+    fn draw(&mut self, editor: &Editor) -> anyhow::Result<(f64, f64)> {
+        let began = Instant::now();
+        let page = editor.view();
+        let viewed = began.elapsed();
+        let (w, h) = self.size;
+        match &mut self.gpu {
+            Some((device, renderer, texture)) => {
+                let view = texture.create_view(&wgpu::TextureViewDescriptor::default());
+                renderer
+                    .render(device, &page, self.ppi, &view, w, h, scene::Color::WHITE)
+                    .map_err(anyhow::Error::msg)?;
+                device.device.poll(wgpu::PollType::wait_indefinitely())?;
+            }
+            None => {
+                render_cpu::render(&page, self.ppi, render_cpu::Level::Fastest);
+            }
+        }
+        Ok((millis(viewed), millis(began.elapsed() - viewed)))
+    }
+}
+
+/// Times `event` in `editor` and its frame: the whole, and its parts.
+fn frame(
+    editor: &mut Editor,
+    frames: &mut Frames,
+    event: Event,
+    parts: &mut [Vec<f64>; 3],
+) -> anyhow::Result<f64> {
+    let began = Instant::now();
+    editor.update(event);
+    let updated = millis(began.elapsed());
+    let (view, draw) = frames.draw(editor)?;
+    parts[0].push(updated);
+    parts[1].push(view);
+    parts[2].push(draw);
+    Ok(millis(began.elapsed()))
+}
+
+fn named(parts: [Vec<f64>; 3], first: &'static str) -> Vec<(&'static str, Vec<f64>)> {
+    let [a, b, c] = parts;
+    vec![(first, a), ("view", b), ("drawing", c)]
+}
+
+/// Opening the report, typing in its middle, and scrolling through it.
+fn in_editor(
+    res: &Arc<Resources>,
+    path: &Path,
+    frames: &mut Frames,
+    runs: usize,
+) -> anyhow::Result<Vec<Measured>> {
+    let window = || Event::Resize {
+        width: WINDOW.0,
+        height: WINDOW.1,
+    };
+    // Opening: the file read, the document laid out, the first frame.
+    let mut opening = Vec::new();
+    let mut parts: [Vec<f64>; 4] = Default::default();
+    for _ in 0..runs {
+        // Reading alone, to tell it from laying out.
+        let began = Instant::now();
+        drop(Store::open(path)?);
+        let read = millis(began.elapsed());
+        let began = Instant::now();
+        let mut editor = Editor::open(res.clone(), path)?;
+        editor.update(window());
+        let opened = millis(began.elapsed());
+        let (view, draw) = frames.draw(&editor)?;
+        opening.push(millis(began.elapsed()));
+        parts[0].push(read);
+        parts[1].push(opened - read);
+        parts[2].push(view);
+        parts[3].push(draw);
+    }
+    let [read, lay_out, view, draw] = parts;
+    let open = Measured {
+        id: "open",
+        samples: opening,
+        parts: vec![
+            ("read the file", read),
+            ("lay out", lay_out),
+            ("view", view),
+            ("drawing", draw),
+        ],
+        note: "",
+    };
+
+    let mut editor = Editor::open(res.clone(), path)?;
+    editor.update(window());
+    // To the middle of the report, a page at a time.
+    let paragraphs = editor.document().paragraphs().to_vec();
+    let middle = paragraphs.len() / 2;
+    let at = |editor: &Editor| {
+        let caret = editor.selection().1.paragraph;
+        paragraphs.iter().position(|&p| p == caret).unwrap_or(0)
+    };
+    while at(&editor) < middle {
+        editor.update(Event::Key {
+            key: Key::PageDown,
+            modifiers: Modifiers::default(),
+        });
+    }
+    frames.draw(&editor)?;
+    let mut typing = Vec::new();
+    let mut parts: [Vec<f64>; 3] = Default::default();
+    for c in "The quick brown fox jumps over the lazy dog. ".chars() {
+        typing.push(frame(
+            &mut editor,
+            frames,
+            Event::Text(c.to_string()),
+            &mut parts,
+        )?);
+    }
+    let keystroke = Measured {
+        id: "keystroke",
+        samples: typing,
+        parts: named(parts, "update and save"),
+        note: "from the event to the frame done; to the display itself is out of scope",
+    };
+
+    // Scrolling a wheel's line at a time (the shell's 48 pixels), down and
+    // back up.
+    let mut scrolling = Vec::new();
+    let mut parts: [Vec<f64>; 3] = Default::default();
+    for step in 0..200 {
+        let dy = if step < 100 { 48.0 } else { -48.0 };
+        scrolling.push(frame(&mut editor, frames, Event::Scroll(dy), &mut parts)?);
+    }
+    let scroll = Measured {
+        id: "scroll",
+        samples: scrolling,
+        parts: named(parts, "update"),
+        note: "every frame at 60 Hz",
+    };
+    Ok(vec![open, keystroke, scroll])
+}
+
+/// Saving after a small edit: appending one transaction to the report's
+/// file, and with every hundredth a snapshot of the whole document.
+fn saving(path: &Path) -> anyhow::Result<Measured> {
+    let opened = Store::open(path)?;
+    let (mut store, mut document) = (opened.store, opened.document);
+    let paragraph = document.paragraphs()[document.paragraphs().len() / 2];
+    let mut times = Vec::new();
+    for _ in 0..200 {
+        let t = document.transact(
+            "Typing",
+            vec![Op::InsertText {
+                paragraph,
+                offset: 0,
+                text: "x".to_string(),
+                runs: vec![Run::new(1, Props::new())],
+            }],
+        )?;
+        let began = Instant::now();
+        store.append(Entry::Commit(&t), &document)?;
+        times.push(millis(began.elapsed()));
+    }
+    Ok(Measured {
+        id: "save",
+        samples: times,
+        parts: Vec::new(),
+        note: "the worst is a snapshot of the whole document, every hundredth save",
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Every budget names a row of ARCHITECTURE.md's table, word for word.
+    #[test]
+    fn the_budgets_are_the_architectures() {
+        let root = testkit::workspace_root();
+        let spec: Spec =
+            ron::from_str(&std::fs::read_to_string(root.join("spec/budgets.ron")).unwrap())
+                .unwrap();
+        let architecture = std::fs::read_to_string(root.join("docs/ARCHITECTURE.md")).unwrap();
+        let section = architecture
+            .split("## 12. Performance budgets")
+            .nth(1)
+            .and_then(|s| s.split("\n## ").next())
+            .expect("section 12");
+        let rows: Vec<&str> = section
+            .lines()
+            .filter_map(|l| l.strip_prefix("| "))
+            .filter_map(|l| l.split(" |").next())
+            .collect();
+        for budget in &spec.budgets {
+            assert!(
+                rows.contains(&budget.interaction.as_str()),
+                "{:?} isn't a row of section 12: {rows:?}",
+                budget.interaction
+            );
+        }
+        let ids: std::collections::HashSet<_> = spec.budgets.iter().map(|b| &b.id).collect();
+        assert_eq!(ids.len(), spec.budgets.len(), "ids are unique");
+    }
 }

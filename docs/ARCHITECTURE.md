@@ -609,6 +609,10 @@ exit, with a benchmark harness that any machine can run (project owner,
 will check them on every push, and a regression will fail the build; that
 runner is a noted to-do, not yet planned.
 
+The harness is `tools/budgets`. It reads the numbers it measures against
+from `spec/budgets.ron`, whose names must match this table's rows, and
+judges each by its 95th percentile.
+
 | Interaction | Budget |
 |---|---|
 | Cold start to an editable blank document | 300 ms |
