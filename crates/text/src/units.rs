@@ -12,7 +12,7 @@ pub const MILLIMETRE: i64 = 36_000;
 /// A pixel at 96 dots to the inch.
 pub const PIXEL: i64 = 9_525;
 
-/// A length as specs write it: points, millimetres or inches.
+/// A length as specs write it: points, millimetres, inches or pixels.
 #[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize)]
 pub enum Length {
     /// Typographic points.
@@ -21,6 +21,8 @@ pub enum Length {
     Mm(f64),
     /// Inches.
     In(f64),
+    /// Pixels at 96 to the inch, for the chrome.
+    Px(f64),
 }
 
 impl Length {
@@ -30,6 +32,7 @@ impl Length {
             Length::Pt(n) => (n, POINT),
             Length::Mm(n) => (n, MILLIMETRE),
             Length::In(n) => (n, INCH),
+            Length::Px(n) => (n, PIXEL),
         };
         (n * unit as f64).round() as i64
     }

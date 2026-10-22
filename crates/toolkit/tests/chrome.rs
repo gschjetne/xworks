@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 use chrome::{CommandState, Commands};
 use text::Fonts;
 use text::units::PIXEL;
-use toolkit::{List, MenuBar, MenuHit, Theme};
+use toolkit::{List, MenuBar, MenuHit, Theme, ThemeSpec};
 
 fn fonts() -> &'static Fonts {
     static FONTS: OnceLock<Fonts> = OnceLock::new();
@@ -17,6 +17,16 @@ fn fonts() -> &'static Fonts {
         }
         fonts
     })
+}
+
+fn theme() -> Theme {
+    let source = testkit::specs("themes")
+        .expect("spec/themes")
+        .into_iter()
+        .find(|(name, _)| name == "m1")
+        .expect("m1.ron")
+        .1;
+    Theme::from_spec(&ron::from_str::<ThemeSpec>(&source).expect("a theme"))
 }
 
 fn commands() -> Commands {
@@ -31,7 +41,7 @@ fn commands() -> Commands {
 
 #[test]
 fn menus_hit_what_they_draw() {
-    let theme = Theme::default();
+    let theme = theme();
     let bar = commands().menu_bar(false, |id| CommandState {
         enabled: id != "redo",
         checked: id == "bold",
@@ -69,7 +79,7 @@ fn menus_hit_what_they_draw() {
 
 #[test]
 fn lists_hit_their_rows() {
-    let theme = Theme::default();
+    let theme = theme();
     let list = List::new(
         &theme,
         "Open",

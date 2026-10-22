@@ -38,9 +38,6 @@ use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use winit::window::{Window, WindowId};
 
-/// The desk behind the pages, which clears each frame.
-const DESK: scene::Color = scene::Color::rgb(200, 201, 204);
-
 /// What arrives on the event loop from elsewhere.
 #[derive(Debug)]
 enum UserEvent {
@@ -500,7 +497,7 @@ impl Shell {
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
             if let Some(renderer) = self.renderers.get_mut(&win.config.format)
-                && let Err(e) = renderer.render(gpu, &page, ppi, &view, w, h, DESK)
+                && let Err(e) = renderer.render(gpu, &page, ppi, &view, w, h, self.res.theme.desk)
             {
                 eprintln!("xworks: drawing the window: {e}");
             }

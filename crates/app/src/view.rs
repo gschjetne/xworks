@@ -6,23 +6,13 @@ use text::units::PIXEL;
 
 use crate::Editor;
 
-/// The colour behind the pages.
-const DESK: Color = Color::rgb(200, 201, 204);
-/// The selection's highlight, over the text.
-const SELECTION: Color = Color {
-    r: 60,
-    g: 120,
-    b: 230,
-    a: 80,
-};
-
 pub(crate) fn draw(editor: &Editor) -> Page {
     let res = editor.resources();
     let parts = editor.view_parts();
     let fonts = &res.fonts;
     let style = &res.page;
     let mut out = Page::new(parts.width, parts.height);
-    out.fill_background(DESK);
+    out.fill_background(res.theme.desk);
 
     // The pages in view, and their text.
     let (view_top, view_bottom) = (parts.top, parts.top + parts.view_height);
@@ -63,7 +53,15 @@ pub(crate) fn draw(editor: &Editor) -> Page {
             let layout = &parts.paragraphs[k].layout;
             let start = if k == first { from } else { 0 };
             let end = if k == last { to } else { usize::MAX / 2 };
-            highlight(editor, &mut out, k, layout, start..end, SELECTION, false);
+            highlight(
+                editor,
+                &mut out,
+                k,
+                layout,
+                start..end,
+                res.theme.selection,
+                false,
+            );
         }
     }
     // The composition, underlined.

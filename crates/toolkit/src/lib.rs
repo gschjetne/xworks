@@ -8,7 +8,8 @@
 //! - [`List`]: a panel of choices, such as documents to open.
 //!
 //! Everything is in layout units, with the window's top left at the origin,
-//! and drawn with the bundled fonts in [`Theme`]'s sizes.
+//! and drawn with the bundled fonts in [`Theme`]'s sizes. The theme is data,
+//! read from a [`ThemeSpec`] (`spec/themes/`).
 //!
 //! Invariants:
 //!
@@ -20,24 +21,83 @@ use std::ops::Range;
 
 use chrome::MenuItem;
 use scene::{Color, Item, Path, Point};
-use text::units::PIXEL;
+use serde::Deserialize;
+use text::units::{Length, PIXEL};
 use text::{Align, Fonts, Language, Paragraph, Span, Style};
 
-/// The chrome's look: its font, sizes and colours.
+/// A colour as specs write it: red, green and blue, and opacity, each 0 to
+/// 255.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub enum ColorSpec {
+    /// Opaque.
+    Rgb(u8, u8, u8),
+    /// With its opacity.
+    Rgba(u8, u8, u8, u8),
+}
+
+impl ColorSpec {
+    fn color(self) -> Color {
+        match self {
+            ColorSpec::Rgb(r, g, b) => Color::rgb(r, g, b),
+            ColorSpec::Rgba(r, g, b, a) => Color { r, g, b, a },
+        }
+    }
+}
+
+/// A theme as `spec/themes/` writes it; [`Theme::from_spec`] reads it.
+/// Each field is [`Theme`]'s of the same name.
+#[derive(Clone, Debug, Deserialize)]
+pub struct ThemeSpec {
+    /// The font family.
+    pub family: String,
+    /// The font size.
+    pub size: Length,
+    /// The menu bar's and status bar's height.
+    pub bar_height: Length,
+    /// The height of a menu item.
+    pub item_height: Length,
+    /// Space at a label's sides.
+    pub padding: Length,
+    /// The bars' background.
+    pub background: ColorSpec,
+    /// Menus' and panels' background.
+    pub surface: ColorSpec,
+    /// Text.
+    pub ink: ColorSpec,
+    /// Text that can't be chosen.
+    pub disabled: ColorSpec,
+    /// Text that says less.
+    pub secondary: ColorSpec,
+    /// What's under the pointer, or open.
+    pub highlight: ColorSpec,
+    /// Text on the highlight.
+    pub highlight_ink: ColorSpec,
+    /// Lines between things.
+    pub line: ColorSpec,
+    /// Behind the pages.
+    pub desk: ColorSpec,
+    /// The selection, over the text.
+    pub selection: ColorSpec,
+}
+
+/// The app's look: the chrome's font, sizes and colours, and the desk
+/// behind the pages.
 #[derive(Clone, Debug)]
 pub struct Theme {
     /// The font family.
     pub family: String,
     /// The font size.
     pub size: i64,
-    /// The menu bar's height.
+    /// The menu bar's and status bar's height.
     pub bar_height: i64,
     /// The height of a menu item.
     pub item_height: i64,
     /// Space at a label's sides.
     pub padding: i64,
-    /// The chrome's background.
+    /// The bars' background.
     pub background: Color,
+    /// Menus' and panels' background.
+    pub surface: Color,
     /// Its text.
     pub ink: Color,
     /// Text that can't be chosen.
@@ -50,23 +110,31 @@ pub struct Theme {
     pub highlight_ink: Color,
     /// Lines between things.
     pub line: Color,
+    /// Behind the pages.
+    pub desk: Color,
+    /// The selection, over the text.
+    pub selection: Color,
 }
 
-impl Default for Theme {
-    fn default() -> Theme {
+impl Theme {
+    /// The theme `spec` describes, in layout units.
+    pub fn from_spec(spec: &ThemeSpec) -> Theme {
         Theme {
-            family: "Noto Sans".to_string(),
-            size: 9 * text::units::POINT + text::units::POINT / 2,
-            bar_height: 26 * PIXEL,
-            item_height: 24 * PIXEL,
-            padding: 10 * PIXEL,
-            background: Color::rgb(240, 240, 238),
-            ink: Color::rgb(20, 20, 20),
-            disabled: Color::rgb(165, 165, 165),
-            secondary: Color::rgb(105, 105, 105),
-            highlight: Color::rgb(40, 90, 200),
-            highlight_ink: Color::WHITE,
-            line: Color::rgb(200, 200, 196),
+            family: spec.family.clone(),
+            size: spec.size.units(),
+            bar_height: spec.bar_height.units(),
+            item_height: spec.item_height.units(),
+            padding: spec.padding.units(),
+            background: spec.background.color(),
+            surface: spec.surface.color(),
+            ink: spec.ink.color(),
+            disabled: spec.disabled.color(),
+            secondary: spec.secondary.color(),
+            highlight: spec.highlight.color(),
+            highlight_ink: spec.highlight_ink.color(),
+            line: spec.line.color(),
+            desk: spec.desk.color(),
+            selection: spec.selection.color(),
         }
     }
 }
@@ -340,7 +408,7 @@ impl MenuBar {
             });
             out.push(Item::Fill {
                 path: rect.path(),
-                color: Color::WHITE,
+                color: theme.surface,
             });
             out.push(Item::Stroke {
                 path: rect.path(),
@@ -517,7 +585,7 @@ impl List {
             },
             Item::Fill {
                 path: r.path(),
-                color: Color::WHITE,
+                color: theme.surface,
             },
             Item::Stroke {
                 path: r.path(),

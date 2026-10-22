@@ -3982,6 +3982,7 @@ dependencies = [
  "chrome",
  "ron",
  "scene",
+ "serde",
  "testkit",
  "text",
 ]

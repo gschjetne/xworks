@@ -9,7 +9,7 @@ use chrome::Commands;
 use serde::Deserialize;
 use story::StyleSheet;
 use text::{FontSpec, Fonts};
-use toolkit::Theme;
+use toolkit::{Theme, ThemeSpec};
 
 /// Why resources couldn't be loaded.
 #[derive(Debug, thiserror::Error)]
@@ -112,12 +112,13 @@ impl Resources {
             path: commands_path,
             message: e.to_string(),
         })?;
+        let theme: ThemeSpec = spec(&root.join("spec/themes/m1.ron"))?;
         Ok(Resources {
             fonts: Arc::new(fonts),
             sheet,
             page: PageStyle::from_spec(&page.page),
             commands,
-            theme: Theme::default(),
+            theme: Theme::from_spec(&theme),
             documents,
             mac,
         })
