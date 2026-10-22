@@ -358,9 +358,13 @@ impl Shell {
             view_formats: Vec::new(),
         };
         surface.configure(&gpu.device, &config);
-        self.renderers
-            .entry(format)
-            .or_insert_with(|| render_gpu::Renderer::new(&gpu.device, format));
+        // render-cpu draws for a software GPU, so it needs no renderer:
+        // making one compiles shaders that llvmpipe would run.
+        if !self.software {
+            self.renderers
+                .entry(format)
+                .or_insert_with(|| render_gpu::Renderer::new(&gpu.device, format));
+        }
         mark(&mut self.measuring, "renderer");
         let mut win = Win {
             window,
