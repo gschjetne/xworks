@@ -13,6 +13,13 @@ ignore = [
     # lopdf, which render-pdf's tests use to read back PDFs we wrote; no
     # shipped code depends on it.
     { id = "RUSTSEC-2026-0192", reason = "test-only, via lopdf; unmaintained, not vulnerable" },
+    # zbus_names, zvariant and zvariant_derive are unmaintained, not
+    # vulnerable: they were
+    # merged into zbus 6. AccessKit's Linux adapter, which carries the
+    # accessibility tree to screen readers over D-Bus, still uses zbus 5.
+    { id = "RUSTSEC-2026-0370", reason = "via accesskit_unix's zbus 5; merged into zbus 6, unmaintained, not vulnerable" },
+    { id = "RUSTSEC-2026-0371", reason = "via accesskit_unix's zbus 5; merged into zbus 6, unmaintained, not vulnerable" },
+    { id = "RUSTSEC-2026-0372", reason = "via accesskit_unix's zbus 5; merged into zbus 6, unmaintained, not vulnerable" },
 ]
 
 [licenses]

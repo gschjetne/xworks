@@ -32,6 +32,8 @@ toolkit = { path = "crates/toolkit" }
 shot = { path = "tools/shot" }
 
 # External crates. Each one needs a stated reason (CLAUDE.md, rule 5).
+accesskit = "0.25.1"    # the shell's accessibility tree, for screen readers
+accesskit_winit = "0.34.1"  # carries the accessibility tree to the platform through winit
 anyhow = "1.0.104"      # error handling in tools only
 fearless_simd = { version = "0.7.0", default-features = false, features = ["force_support_fallback"] }  # vello_cpu's SIMD levels; this feature gives the portable scalar one, whose pixels are the same everywhere
 glifo = { version = "=0.4.0", default-features = false }  # the glyph type vello_gpu draws, which it doesn't re-export; already in the build through it
@@ -53,6 +55,7 @@ sha2 = { version = "0.11.0", default-features = false }  # golden images are rec
 skrifa = "0.48.0"       # reading fonts: tables, metrics, character maps and outlines (docs/ARCHITECTURE.md, section 9)
 thiserror = "2.0.21"    # error types in libraries
 vello_cpu = { version = "=0.3.0", default-features = false, features = ["std", "text", "u8_pipeline"] }  # the CPU renderer (D7, docs/ARCHITECTURE.md, section 10); single-threaded, so render-cpu stays pure
+winit = "0.30.13"       # the generic shell's windows and input (docs/ARCHITECTURE.md, section 8)
 vello_gpu = "=0.3.0"    # the GPU renderer (D7, docs/ARCHITECTURE.md, section 10), vello_cpu's twin
 wgpu = "=30.0.1"        # the GPU, for vello_gpu and the shells' windows
 unicode-bidi = { version = "0.3.18", default-features = false, features = ["std"] }  # the bidi algorithm, run on ICU4X's data
