@@ -111,6 +111,18 @@
         (id: "language-zh-Hans", title: "Chinese (Simplified)", kind: Some("Language")),
         (id: "language-zh-Hant", title: "Chinese (Traditional)", kind: Some("Language")),
 
+        // M2's stage 7: a picture comes from a file chosen in the system's
+        // dialog, and goes in the text at the caret; Versions lists the
+        // named versions, newest first, and one chosen opens read-only in
+        // a window of its own, where Copy Out makes it a document; Save
+        // Recent Session writes the last few minutes of what was done in
+        // the window to "xWorks sessions" in the documents folder, for a
+        // bug report.
+        (id: "insert-picture", title: "&Picture…"),
+        (id: "versions", title: "&Versions…"),
+        (id: "copy-out", title: "Cop&y Out as a Document"),
+        (id: "save-session", title: "Save Recent &Session"),
+
         (id: "about", title: "&About xWorks"),
 
         // What the inspector and the ruler set, each with its value: a
@@ -141,7 +153,7 @@
         (title: "&File", items: [
             "new", "open", ">open-recent", "-",
             "rename", "move-to", "-",
-            "save-version", "-",
+            "save-version", "versions", "copy-out", "-",
             "export-pdf", "print", "-",
             "close", "quit",
         ]),
@@ -151,7 +163,7 @@
             "toggle-inspector", "toggle-ruler", "-",
             "command-palette",
         ]),
-        (title: "&Insert", items: ["insert-table"]),
+        (title: "&Insert", items: ["insert-picture", "insert-table"]),
         (title: "F&ormat", items: [
             "bold", "italic", "code", "-",
             "style-body", "style-heading-1", "style-heading-2", "style-heading-3", "style-code", "-",
@@ -159,6 +171,6 @@
             "align-start", "align-center", "align-end", "align-justify", "-",
             "size-bigger", "size-smaller",
         ]),
-        (title: "&Help", items: ["about"]),
+        (title: "&Help", items: ["save-session", "-", "about"]),
     ],
 )

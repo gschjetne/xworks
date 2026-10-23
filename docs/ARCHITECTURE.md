@@ -356,6 +356,27 @@ settled.
   changed paragraph's block is made again before pouring, which made a
   keystroke's update cheaper than M1's.
 
+**Pictures in the story** (M2's stage 7; open to the owner's review). A
+picture is in a paragraph's text, as Markdown's `![alt](src)` is: the
+character U+FFFC, whose run names the picture by its ID in the file
+(`picture`), says what it shows (`picture-alt`) and gives the size it's
+placed at (`picture-width`, `picture-height`). A paragraph holding one
+picture and nothing else is a figure, as a Markdown image alone in its
+paragraph is. Inline rather than a block of its own, because:
+
+- Markdown's images are inline, often alone in a paragraph but not
+  always, and stage 6 reads and writes Markdown; a block couldn't hold
+  an image within a line.
+- Operations, rebasing and the editor already serve characters and their
+  runs: placing, deleting, undoing and copying out a picture needed no new
+  operation or object, and the file's encoding is as it was.
+- Layout sets a picture as an inline object (`text::Inline`), a box on the
+  baseline that lines break around and grow to hold, scaled down to its
+  paragraph's width.
+
+A figure with a caption can come later as a container of a figure
+paragraph and its caption, which this doesn't prevent.
+
 ## 6. File format (`store`)
 
 One file per document, with the extension `.xw`, the same for every kind of
@@ -447,6 +468,34 @@ dump of it.
 document uses are embedded, subset where the font's license requires it, so it
 lays out the same on every machine. Missing-font substitution, and the reflow
 it causes, is one of the commonest ways office documents break.
+
+**What M2's stage 7 built** (storage). The choices below are the stage's
+own, open to the owner's review unless marked settled.
+
+- **A document is open to write in one program at a time** (settled:
+  project owner, 2026-10-23, review a23vvez8). The program writing it
+  holds a lock on a file beside it, its name and `-lock`
+  (`Report.xw-lock`), as SQLite's own files beside it are its name and
+  `-wal` or `-shm`. The lock is the standard library's `File::try_lock`,
+  flock on Linux and macOS and LockFileEx on Windows, so it needs no
+  dependency; locking the document's own file would fight SQLite's locks
+  on Windows. The system lets a lock go when its program ends, however it
+  ends; the lock file goes when the document closes. Any other program
+  opens the document read-only and says who has it, as the lock file says
+  ("open in xWorks, process 4120 on studio"), or, on Windows, whose lock
+  keeps others from reading even that, that another program has it.
+  Within one xWorks, the shell brings forward the window that has a
+  document rather than open it again. A document renamed or moved while
+  it's open takes its lock file along, still held (`Store::moved`).
+- **Named versions** open read-only in windows of their own, opened only
+  to read (`Store::open_to_read`), without the lock, so the document goes
+  on being written meanwhile. Copy Out writes one as a document of its
+  own beside the original, "Report (Version 2).xw", with no history,
+  carrying the fonts and the pictures it shows (`Store::copy_out`).
+- **Pictures are kept** in schema 2's `image` table, once each by the
+  SHA-256 of their bytes, and never deleted, as undoing may bring one
+  back. Bytes that aren't what their ID says are damage. The dump lists
+  pictures where a file has some, so M1's fixture dumps as it did.
 
 ## 7. Values and formulas (`calc`)
 
@@ -659,6 +708,24 @@ a style**, need documents to hold their style sheet and page style, which
 the file format doesn't (they come from `spec/styles/`); the inspector's
 Page tab shows them, unchangeable, until the owner decides where they
 live.
+
+**The session recorder** (built in M2's stage 7; open to the owner's
+review but where settled above). Each window notes every event it
+handles as a step of a session (`app::recorder`), in the format of
+`spec/sessions/`, and now and then, when the window is at rest, a
+checkpoint: its document and history, which share what's unchanged, its
+selection, scroll and run of typing, and what its chrome showed (stage 5
+moved the recorder from the editor to the window, so what's done in the
+chrome plays back too). What's kept starts at the newest
+checkpoint at least five minutes old (`spec/recorder.ron`), and a session
+starts there, its document written whole, so it plays back headless to
+the same document (`Window::resume`), which tests show. Text pasted is
+kept as what the clipboard held; a picture placed, as its file's path,
+so a session played on another machine lacks the picture. Save Recent
+Session writes it, and when xWorks fails the shell's panic hook writes
+every window's, to "xWorks sessions" in the documents folder, where the
+person finds their documents, and says where: in the status bar, or on
+the terminal. Nothing is sent anywhere.
 
 ## 9. Text (`text`)
 
@@ -884,7 +951,16 @@ a fuzz target.
 - **render-pdf writes images as figures**, with their alternative text,
   from the same sRGB pixels the screen draws. An sRGB JPEG is to pass
   through unchanged instead, keeping its size (project owner, 2026-10-23,
-  review dcn5ejrd).
+  review dcn5ejrd). Stage 7 built that: a colour JPEG shown as it's
+  stored, without a profile or with one that converts to sRGB as itself,
+  keeps its file in its `scene::Image`, and render-pdf writes the file as
+  it is, through krilla's JPEG path. A grey, CMYK or turned JPEG, or one
+  in another space, prints from its pixels.
+- **Pictures in documents** (stage 7) are drawn by `canvas` where their
+  characters stand, from the pictures the app decoded (`canvas::Pictures`),
+  as images in the structure where their characters are, so PDF tags each
+  as a figure with its alternative text; a figure paragraph is a figure
+  block. One the document's file lacks is a tint.
 - **Underline and strikethrough** are fills that `text` places from each
   run's font's own `post` and `OS/2` tables, as long as its glyphs but for
   the spaces hanging at a line's end. As fills they're decoration in PDF,
@@ -999,8 +1075,10 @@ writing it, is the bottleneck. The rules follow from that:
 - **Specs are data:** commands, functions, styles, default themes and limits
   live as RON under `spec/`, where they make readable diffs.
 - **Properties and fuzzing:** operations are property-tested for inversion
-  and rebase. Readers are fuzzed, and formulas are differentially tested
-  against independent implementations where their meanings coincide.
+  and rebase. Readers are fuzzed, every night in CI from the corpora the
+  last runs kept (`.github/workflows/fuzz.yml`), and formulas are
+  differentially tested against independent implementations where their
+  meanings coincide.
 - **Plain, explicit Rust; small crates; few pinned dependencies.** That
   keeps each agent's context bounded and its feedback loop fast. Contracts
   between crates are written before parallel work starts on either side.

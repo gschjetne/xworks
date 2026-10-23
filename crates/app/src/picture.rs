@@ -12,9 +12,14 @@
 //!   RGB or grey one, to sRGB; one that can't be read is taken as sRGB, as
 //!   is a picture without one.
 //! - A JPEG is turned as its EXIF orientation says, as cameras expect.
+//! - An sRGB JPEG shown as it's stored, a colour one without a profile or
+//!   with one that converts to sRGB as itself, keeps its file
+//!   ([`scene::Image::jpeg`]), for PDF to hold unchanged (project owner,
+//!   2026-10-23, review dcn5ejrd).
 
 use std::io::Cursor;
 use std::num::NonZeroU64;
+use std::sync::Arc;
 
 use serde::Deserialize;
 
@@ -114,12 +119,21 @@ pub fn decode_as(format: Format, bytes: &[u8], limits: &Limits) -> Result<Pictur
         mut rgba,
         icc,
         orientation,
+        colour,
     } = raw;
+    // An sRGB JPEG, shown as it's stored, keeps its file.
+    let keep =
+        format == Format::Jpeg && colour && orientation == 1 && icc.as_deref().is_none_or(is_srgb);
     if let Some(icc) = icc {
         to_srgb(&mut rgba, &icc);
     }
     let (width, height, rgba) = orient(width, height, rgba, orientation);
-    let image = scene::Image::new(width, height, rgba).map_err(|e| damaged(e.to_string()))?;
+    let image = if keep {
+        scene::Image::with_jpeg(width, height, rgba, Arc::new(bytes.to_vec()))
+    } else {
+        scene::Image::new(width, height, rgba)
+    }
+    .map_err(|e| damaged(e.to_string()))?;
     Ok(Picture {
         format,
         width,
@@ -136,6 +150,9 @@ struct Raw {
     icc: Option<Vec<u8>>,
     /// The EXIF orientation, 1 to 8; 1 shows it as it's stored.
     orientation: u8,
+    /// Whether it's stored in colour, as RGB or YCbCr: not grey, and not
+    /// CMYK.
+    colour: bool,
 }
 
 /// Why a decoder failed: a picture too large, or what it said.
@@ -219,6 +236,7 @@ fn png(bytes: &[u8], limits: &Limits) -> Result<Raw, Failure> {
         rgba,
         icc,
         orientation: 1,
+        colour: true,
     })
 }
 
@@ -246,6 +264,10 @@ fn jpeg(bytes: &[u8], limits: &Limits) -> Result<Raw, Failure> {
         Some(ColorSpace::CMYK | ColorSpace::YCCK)
     );
     let icc = decoder.icc_profile().filter(|_| !cmyk);
+    let colour = matches!(
+        decoder.input_colorspace(),
+        Some(ColorSpace::YCbCr | ColorSpace::RGB)
+    );
     let orientation = decoder.exif().map_or(1, |exif| orientation(exif));
     let pixels = decoder.decode()?;
     let channels = match decoder.output_colorspace() {
@@ -267,6 +289,7 @@ fn jpeg(bytes: &[u8], limits: &Limits) -> Result<Raw, Failure> {
         rgba,
         icc,
         orientation,
+        colour,
     })
 }
 
@@ -317,6 +340,7 @@ fn gif(bytes: &[u8], limits: &Limits) -> Result<Raw, Failure> {
         rgba,
         icc,
         orientation: 1,
+        colour: true,
     })
 }
 
@@ -342,6 +366,7 @@ fn webp(bytes: &[u8], limits: &Limits) -> Result<Raw, Failure> {
         rgba,
         icc,
         orientation: 1,
+        colour: true,
     })
 }
 
@@ -427,6 +452,41 @@ fn to_srgb(rgba: &mut [u8], icc: &[u8]) {
         }
         _ => {}
     }
+}
+
+/// Whether the ICC profile `icc` is sRGB's, as near as 8 bits tell: an RGB
+/// profile whose conversion to sRGB leaves every colour of a grid of six
+/// levels a channel within a level of itself. One that can't be read
+/// isn't.
+fn is_srgb(icc: &[u8]) -> bool {
+    use moxcms::{ColorProfile, DataColorSpace, Layout, TransformOptions};
+    let Ok(profile) = ColorProfile::new_from_slice(icc) else {
+        return false;
+    };
+    if profile.color_space != DataColorSpace::Rgb {
+        return false;
+    }
+    let srgb = ColorProfile::new_srgb();
+    let Ok(transform) = profile.create_transform_8bit(
+        Layout::Rgba,
+        &srgb,
+        Layout::Rgba,
+        TransformOptions::default(),
+    ) else {
+        return false;
+    };
+    let steps = [0u8, 51, 102, 153, 204, 255];
+    let mut grid = Vec::with_capacity(steps.len().pow(3) * 4);
+    for r in steps {
+        for g in steps {
+            for b in steps {
+                grid.extend_from_slice(&[r, g, b, 255]);
+            }
+        }
+    }
+    let mut out = vec![0; grid.len()];
+    transform.transform(&grid, &mut out).is_ok()
+        && grid.iter().zip(&out).all(|(a, b)| a.abs_diff(*b) <= 1)
 }
 
 /// The orientation in EXIF data that starts at its TIFF header: tag 274

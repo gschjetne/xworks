@@ -98,10 +98,18 @@ impl Editor {
         Some(file_name(&first.text))
     }
 
+    /// The name of the document's file, without its folder or extension.
+    pub fn stem(&self) -> String {
+        self.path.file_stem().map_or_else(
+            || "Untitled".to_string(),
+            |s| s.to_string_lossy().into_owned(),
+        )
+    }
+
     /// Whether the file is named as a new document is: "Untitled", or
     /// after its first heading or line, with a number to make it unique.
     pub(super) fn auto_named(&self) -> bool {
-        let stem = self.title();
+        let stem = self.stem();
         is_numbered(&stem, "Untitled")
             || self
                 .derived_name()
@@ -109,9 +117,11 @@ impl Editor {
     }
 
     /// The document's name as the title bar shows it: what its text
-    /// gives it until it's named by hand, and its file's name after.
+    /// gives it until it's named by hand, and its file's name after, with
+    /// the version's if it shows one.
     pub fn name(&self) -> String {
         if !self.named
+            && self.version.is_none()
             && let Some(name) = self.derived_name()
         {
             return name;
@@ -134,7 +144,7 @@ impl Editor {
         let Some(name) = self.derived_name() else {
             return;
         };
-        if is_numbered(&self.title(), &name) {
+        if is_numbered(&self.stem(), &name) {
             return;
         }
         let folder = self

@@ -143,6 +143,7 @@ fn lay_out_set(
             tabs: Some(&tabs),
             line_height,
             indent: points(indent),
+            objects: &[],
         },
     )
 }

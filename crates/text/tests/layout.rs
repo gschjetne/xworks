@@ -205,6 +205,7 @@ fn lay_out(case: &Case) -> Layout {
             tabs: tabs.as_ref(),
             line_height: case.line_height,
             indent: points(case.indent),
+            objects: &[],
         },
     )
 }

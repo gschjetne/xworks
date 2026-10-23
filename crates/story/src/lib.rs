@@ -14,6 +14,12 @@
 //! - [`lay_out`], [`lay_out_paragraph_with`] and [`lay_out_at`]: a
 //!   document's story's paragraphs laid out at their places, aligned and
 //!   hyphenated as their styles and properties say, with their tab stops.
+//! - Pictures are in paragraphs' text, as Markdown's `![alt](src)` is:
+//!   each an [`OBJECT`] character whose run names the picture
+//!   ([`keys::PICTURE`]), its alternative text and the size it's placed
+//!   at, laid out as an inline object scaled down to fit its paragraph
+//!   ([`ParagraphLayout::pictures`]). A paragraph of one picture alone is
+//!   a figure. [`pictures`] lists those a document shows.
 //! - [`word_count`]: a paragraph's words, by its languages' rules.
 //! - [`keys`]: the properties a story reads.
 //! - [`document`] and [`build`]: documents made from styled text, through
@@ -99,6 +105,21 @@ pub mod keys {
     /// [`crate::parse_tabs`] reads them. The document's default stops
     /// still follow them.
     pub const TABS: &str = "tabs";
+    /// A picture, by its ID in the document's file (text), on the run of
+    /// [`super::OBJECT`] characters that show it: Markdown's `![alt](src)`.
+    pub const PICTURE: &str = "picture";
+    /// What a picture shows, in words (text), for screen readers and
+    /// tagged PDF: Markdown's alt.
+    pub const PICTURE_ALT: &str = "picture-alt";
+    /// How wide a picture is placed, in layout units (a number), before
+    /// it's scaled down to fit its paragraph.
+    pub const PICTURE_WIDTH: &str = "picture-width";
+    /// How tall a picture is placed, in layout units (a number).
+    pub const PICTURE_HEIGHT: &str = "picture-height";
+
+    /// The keys that make a run a picture, which text typed after one
+    /// doesn't take from it.
+    pub const PICTURES: [&str; 4] = [PICTURE, PICTURE_ALT, PICTURE_WIDTH, PICTURE_HEIGHT];
 }
 
 /// The most a paragraph's space above or below, or an indent, may be: ten
@@ -229,6 +250,68 @@ pub fn parse_tabs(text: &str) -> Option<Vec<TabStop>> {
     Some(stops)
 }
 
+/// The character a picture in a paragraph's text stands for, U+FFFC
+/// OBJECT REPLACEMENT CHARACTER: one for each picture its run shows
+/// ([`keys::PICTURE`]).
+pub const OBJECT: char = '\u{fffc}';
+
+/// The largest a picture is drawn either way, in layout units: 100
+/// inches, so no file's numbers carry layout past what it can add up.
+pub const LARGEST_PICTURE: i64 = 100 * text::units::INCH;
+
+/// A picture placed in a paragraph's text, as its run's properties say.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Picture {
+    /// The byte offset of its character in the paragraph's text.
+    pub offset: usize,
+    /// Its ID in the document's file.
+    pub id: String,
+    /// What it shows, in words, if that's said.
+    pub alt: Option<String>,
+}
+
+/// The picture a run with properties `props` shows, if it shows one: its
+/// ID, its alternative text, and the size it's placed at, at least a unit
+/// and at most [`LARGEST_PICTURE`] each way.
+pub fn picture_of(props: &Props) -> Option<(String, Option<String>, i64, i64)> {
+    let Some(Value::Text(id)) = props.get(keys::PICTURE) else {
+        return None;
+    };
+    let alt = match props.get(keys::PICTURE_ALT) {
+        Some(Value::Text(alt)) if !alt.is_empty() => Some(alt.clone()),
+        _ => None,
+    };
+    let side = |key: &str| match props.get(key) {
+        Some(Value::Int(n)) => (*n).clamp(1, LARGEST_PICTURE),
+        _ => text::units::INCH,
+    };
+    Some((
+        id.clone(),
+        alt,
+        side(keys::PICTURE_WIDTH),
+        side(keys::PICTURE_HEIGHT),
+    ))
+}
+
+/// The IDs of the pictures `document` shows, each once, in the order
+/// they're first shown.
+pub fn pictures(document: &Document) -> Vec<String> {
+    let mut out: Vec<String> = Vec::new();
+    for id in document.paragraphs() {
+        let Some(p) = document.paragraph(id) else {
+            continue;
+        };
+        for run in &p.runs {
+            if let Some(Value::Text(picture)) = run.props.get(keys::PICTURE)
+                && !out.contains(picture)
+            {
+                out.push(picture.clone());
+            }
+        }
+    }
+    out
+}
+
 /// A paragraph style, as `spec/styles/` gives it.
 #[derive(Clone, Debug, PartialEq, Deserialize)]
 pub struct ParagraphStyle {
@@ -352,6 +435,9 @@ pub struct Blocks {
     pub hairline_color: (u8, u8, u8),
     /// The colour of links' text.
     pub link_color: (u8, u8, u8),
+    /// The colour drawn where a picture can't be, as when the document's
+    /// file lacks it.
+    pub missing_picture: (u8, u8, u8),
 }
 
 /// The paragraph styles of a style sheet, and how other blocks look, as
@@ -445,6 +531,12 @@ pub struct ParagraphLayout {
     pub links: Vec<bool>,
     /// The byte ranges of its text that are code, in runs.
     pub inline_code: Vec<Range<usize>>,
+    /// The pictures in its text, in order; its layout's lines say where
+    /// each went.
+    pub pictures: Vec<Picture>,
+    /// Whether it's a figure: its text is one picture and nothing else,
+    /// as Markdown's `![alt](src)` alone in a paragraph is.
+    pub figure: bool,
 }
 
 impl ParagraphLayout {
@@ -620,7 +712,7 @@ pub fn lay_out_at(
     };
     // Its own indents narrow it, but never to less than a quarter of its
     // room; its tab stops stay where they are on the ruler, measured from
-    // its place's start edge.
+    // its place's start edge; its pictures fit what's left.
     let indents = indents(paragraph);
     let room = (place.width - 2 * inset).max(1);
     let width = (room - indents.start - indents.end).max(room / 4).max(1);
@@ -628,6 +720,7 @@ pub fn lay_out_at(
     for stop in &mut tabs.stops {
         stop.position -= indents.start;
     }
+    let (pictures, objects) = placed_pictures(paragraph, width);
     let layout = text::layout_with(
         fonts,
         &text::Paragraph {
@@ -643,6 +736,7 @@ pub fn lay_out_at(
             tabs: Some(&tabs),
             line_height: line_height(paragraph),
             indent: indents.first.clamp(-width, width),
+            objects: &objects,
         },
     );
     let margin = if layout.direction() == text::Direction::Rtl {
@@ -650,6 +744,7 @@ pub fn lay_out_at(
     } else {
         indents.start
     };
+    let figure = pictures.len() == 1 && paragraph.text.chars().eq([OBJECT]);
     // The marker is in the paragraph's style, whatever its runs say.
     let marker = place.marker.as_ref().map(|marker| {
         let style = base_style(paragraph, sheet, Some(place));
@@ -701,7 +796,51 @@ pub fn lay_out_at(
         code: style.code,
         links,
         inline_code,
+        pictures,
+        figure,
     }
+}
+
+/// The pictures in `paragraph`'s text, and the objects that stand for
+/// them in its layout, `width` wide: each [`OBJECT`] character of a run
+/// that shows a picture, at the size it's placed at, scaled down to the
+/// width if it's wider, keeping its proportions.
+fn placed_pictures(paragraph: &Paragraph, width: i64) -> (Vec<Picture>, Vec<text::Inline>) {
+    let mut pictures = Vec::new();
+    let mut objects = Vec::new();
+    let mut chars = paragraph.text.char_indices();
+    for run in &paragraph.runs {
+        let shown = picture_of(&run.props);
+        for _ in 0..run.len {
+            let Some((offset, c)) = chars.next() else {
+                break;
+            };
+            let Some((id, alt, w, h)) = &shown else {
+                continue;
+            };
+            if c != OBJECT {
+                continue;
+            }
+            let (w, h) = if *w > width {
+                // In i128: both may be as large as LARGEST_PICTURE.
+                let scaled = i128::from(*h) * i128::from(width) / i128::from(*w);
+                (width, (scaled as i64).max(1))
+            } else {
+                (*w, *h)
+            };
+            pictures.push(Picture {
+                offset,
+                id: id.clone(),
+                alt: alt.clone(),
+            });
+            objects.push(text::Inline {
+                offset,
+                width: w,
+                height: h,
+            });
+        }
+    }
+    (pictures, objects)
 }
 
 /// Every paragraph of `document`'s story, in reading order, laid out at

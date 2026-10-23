@@ -8,7 +8,9 @@
 //!   output can be searched and copied and screen readers can read it.
 //! - [`Image`]: a raster image, sRGB and premultiplied, at most
 //!   [`MAX_SIDE`] pixels a side, with smaller copies of itself for drawing
-//!   it small, made by a resampler whose pixels are the same everywhere.
+//!   it small, made by a resampler whose pixels are the same everywhere,
+//!   and, where it's given, the sRGB JPEG file it was decoded from, for
+//!   PDF to hold as it is.
 //! - [`Group`]: items drawn through a [`Transform`], within a clip.
 //! - [`Path`], [`Rect`], [`Color`], [`Font`].
 //! - [`Structure`]: a document's blocks in reading order, nested as lists,
@@ -30,7 +32,7 @@ mod damage;
 mod image;
 
 pub use damage::{PixelRect, changed, merge, redraw};
-pub use image::{Image, ImageError, Level, MAX_SIDE};
+pub use image::{FileData, Image, ImageError, Level, MAX_SIDE};
 
 use std::ops::Range;
 use std::sync::Arc;

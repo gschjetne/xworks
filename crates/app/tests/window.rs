@@ -73,7 +73,11 @@ fn screen_readers_get_lines_words_and_the_selection() {
         let run = node(run);
         assert_eq!(run.role(), Role::TextRun);
         let value = run.value().expect("its text");
-        let lengths: usize = run.character_lengths().iter().map(|&l| usize::from(l)).sum();
+        let lengths: usize = run
+            .character_lengths()
+            .iter()
+            .map(|&l| usize::from(l))
+            .sum();
         assert_eq!(lengths, value.len(), "graphemes cover {value:?}");
         assert!(!run.word_starts().is_empty(), "words start in {value:?}");
         assert!(run.bounds().is_some());

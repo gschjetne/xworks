@@ -261,7 +261,7 @@ fn a_newer_schema_opens_read_only() {
     drop(connection);
 
     let mut opened = Store::open(&path).expect("it opens");
-    assert_eq!(opened.store.read_only(), Some(3));
+    assert_eq!(opened.store.read_only(), Some(&store::ReadOnly::Newer(3)));
     assert_eq!(opened.document, document);
     let t = typing(&mut document, 0, " More.");
     assert!(matches!(

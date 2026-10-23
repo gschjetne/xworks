@@ -22,7 +22,10 @@ mod access;
 mod file;
 mod format;
 mod part;
+mod pictures;
+mod recording;
 mod units;
+mod versions;
 
 pub(crate) use part::view_look;
 use units::Unit;
@@ -157,6 +160,10 @@ pub enum Effect {
     Paste,
     /// Open a window: a new document, or the one at this path.
     Open(Option<PathBuf>),
+    /// Open a window on a named version of the document at this path, as
+    /// it was after this entry of its log, read-only
+    /// ([`Editor::open_version`]).
+    OpenVersion(PathBuf, i64),
     /// Hand this file to the system to open, such as a PDF to print.
     OpenExternally(PathBuf),
     /// Show this file in the system's file manager, such as an export.
@@ -228,6 +235,14 @@ struct Laid {
     words: Vec<usize>,
 }
 
+/// A panel of things to choose from, such as documents to open: each
+/// row's name, and what choosing it does.
+struct Panel {
+    title: &'static str,
+    rows: Vec<(String, Effect)>,
+    selected: usize,
+}
+
 /// One document in one window.
 pub struct Editor {
     res: Arc<Resources>,
@@ -256,10 +271,17 @@ pub struct Editor {
     /// Whether the person named the document; until they do, it's named
     /// after its first heading or line (review a23vvez8).
     named: bool,
+    /// A panel of things to choose from, such as named versions, which
+    /// the window draws.
+    panel: Option<Panel>,
     dragging: bool,
     /// What a double or triple click selected, which dragging extends.
     dragged: Option<(Unit, Position, Position)>,
     message: String,
+    /// The pictures the document shows, decoded, by ID.
+    pictures: canvas::Pictures,
+    /// The named version shown, read-only, if this window shows one.
+    version: Option<store::Version>,
 }
 
 /// Sizes for Bigger and Smaller, in points.
@@ -296,23 +318,7 @@ impl Editor {
     /// A new, empty document, made at once as "Untitled.xw" (or
     /// "Untitled 2.xw" and so on) in the documents folder.
     pub fn create(res: Arc<Resources>) -> Result<Editor, EditorError> {
-        std::fs::create_dir_all(&res.documents).map_err(|source| EditorError::Io {
-            path: res.documents.clone(),
-            source,
-        })?;
-        let mut n = 1;
-        let path = loop {
-            let name = if n == 1 {
-                "Untitled.xw".to_string()
-            } else {
-                format!("Untitled {n}.xw")
-            };
-            let path = res.documents.join(name);
-            if !path.exists() {
-                break path;
-            }
-            n += 1;
-        };
+        let path = Editor::untitled(&res)?;
         let mut document = Document::new();
         let first = document.paragraphs()[0];
         let mut ops = vec![Op::SetParaProp {
@@ -336,6 +342,28 @@ impl Editor {
         Ok(Editor::with(res, path, store, document, History::new()))
     }
 
+    /// Where a new document goes: "Untitled.xw" in the documents folder,
+    /// or "Untitled 2.xw" and so on, the folder made if it isn't there.
+    fn untitled(res: &Resources) -> Result<PathBuf, EditorError> {
+        std::fs::create_dir_all(&res.documents).map_err(|source| EditorError::Io {
+            path: res.documents.clone(),
+            source,
+        })?;
+        let mut n = 1;
+        loop {
+            let name = if n == 1 {
+                "Untitled.xw".to_string()
+            } else {
+                format!("Untitled {n}.xw")
+            };
+            let path = res.documents.join(name);
+            if !path.exists() {
+                return Ok(path);
+            }
+            n += 1;
+        }
+    }
+
     /// The document at `path`.
     pub fn open(res: Arc<Resources>, path: &Path) -> Result<Editor, EditorError> {
         let opened = Store::open(path)?;
@@ -346,6 +374,7 @@ impl Editor {
             opened.document,
             opened.history,
         );
+        editor.load_pictures(story::pictures(&editor.document));
         editor.unwritable();
         Ok(editor)
     }
@@ -394,9 +423,12 @@ impl Editor {
             scroll: 0,
             view: View::Pages,
             named: false,
+            panel: None,
             dragging: false,
             dragged: None,
             message: String::new(),
+            pictures: canvas::Pictures::new(),
+            version: None,
         };
         editor.named = !editor.auto_named();
         editor.relayout(true);
@@ -408,12 +440,17 @@ impl Editor {
         &self.path
     }
 
-    /// The document's name, as its file has it.
+    /// The window's title: the document's name, and the version's if it
+    /// shows one: "Report (Version 2)".
     pub fn title(&self) -> String {
-        self.path.file_stem().map_or_else(
+        let name = self.path.file_stem().map_or_else(
             || "Untitled".to_string(),
             |s| s.to_string_lossy().into_owned(),
-        )
+        );
+        match &self.version {
+            Some(version) => format!("{name} ({})", version.name),
+            None => name,
+        }
     }
 
     /// How the story is shown.
@@ -426,8 +463,8 @@ impl Editor {
         &self.document
     }
 
-    /// What the status bar says at its end, if anything: what was just
-    /// done, or why it couldn't be.
+    /// What the status bar says of the last thing done, such as why the
+    /// document is read-only; empty once all is saved.
     pub fn message(&self) -> &str {
         &self.message
     }
@@ -437,18 +474,17 @@ impl Editor {
         self.message = message.to_string();
     }
 
-    /// Whether the document can be changed: its file is open, and not
-    /// from a newer xWorks.
+    /// Whether the document can be changed: its file is open to write.
     pub(crate) fn writable(&self) -> bool {
         self.store.as_ref().is_some_and(|s| s.read_only().is_none())
     }
 
     /// Whether the document can't be changed, saying why if so.
-    fn unwritable(&mut self) -> bool {
+    pub(super) fn unwritable(&mut self) -> bool {
         match &self.store {
             Some(store) => match store.read_only() {
-                Some(schema) => {
-                    self.message = format!("Read-only: made by a newer xWorks (schema {schema})");
+                Some(why) => {
+                    self.message = format!("Read-only: {why}");
                     true
                 }
                 None => false,
@@ -988,7 +1024,9 @@ impl Editor {
         self.pending.clear();
     }
 
-    /// The selected text, paragraphs ending in newlines but the last.
+    /// The selected text, paragraphs ending in newlines but the last, as
+    /// the clipboard takes it: plain text, without its pictures'
+    /// characters.
     fn selected_text(&self) -> String {
         let (start, end) = self.ordered();
         let ids = self.ids();
@@ -1002,7 +1040,11 @@ impl Editor {
             } else {
                 text.len()
             };
-            out.push_str(&text[from..to.max(from)]);
+            out.extend(
+                text[from..to.max(from)]
+                    .chars()
+                    .filter(|&c| c != story::OBJECT),
+            );
             if i < b {
                 out.push('\n');
             }
@@ -1087,6 +1129,9 @@ impl Editor {
     }
 
     fn key(&mut self, key: Key, modifiers: Modifiers) -> Vec<Effect> {
+        if self.panel.is_some() {
+            return self.panel_key(key);
+        }
         if let Some(command) = self.res.commands.for_key(key, modifiers, self.res.mac) {
             let id = command.id.clone();
             return self.command(&id);
@@ -1217,10 +1262,12 @@ impl Editor {
             Some(Err(e)) => self.message = format!("Couldn't save: {e}"),
             None => {}
         }
+        let placed = Editor::pictures_in(&t.ops);
         if !(continuing && self.history.continue_last(t.clone())) {
             self.history.push(t);
         }
         self.relayout(false);
+        self.load_pictures(placed);
         true
     }
 
@@ -1298,6 +1345,10 @@ impl Editor {
             }
             pos += run.len;
         }
+        // Text typed after a picture is text.
+        for key in keys::PICTURES {
+            props.remove(key);
+        }
         for (k, v) in &self.pending {
             match v {
                 Value::Bool(false) => {
@@ -1312,9 +1363,10 @@ impl Editor {
     }
 
     fn insert_text(&mut self, text: &str) {
+        // A picture's character comes only with its picture.
         let text: String = text
             .chars()
-            .filter(|&c| !c.is_control() || c == '\u{2028}' || c == '\t')
+            .filter(|&c| (!c.is_control() || c == '\u{2028}' || c == '\t') && c != story::OBJECT)
             .collect();
         if text.is_empty() {
             return;
@@ -1544,7 +1596,7 @@ impl Editor {
             }
             let line: String = line
                 .chars()
-                .filter(|&c| !c.is_control() || c == '\t')
+                .filter(|&c| (!c.is_control() || c == '\t') && c != story::OBJECT)
                 .collect();
             if line.is_empty() {
                 continue;
@@ -1748,6 +1800,7 @@ impl Editor {
         let caret = self.after(ops).unwrap_or_else(|| self.document_edge(false));
         self.go(caret, false);
         self.message = format!("{} {}", if redo { "Redid" } else { "Undid" }, t.name);
+        self.load_pictures(Editor::pictures_in(ops));
     }
 
     // ---- commands
@@ -1759,8 +1812,9 @@ impl Editor {
             "undo" => writable && self.history.undo_name().is_some(),
             "redo" => writable && self.history.redo_name().is_some(),
             "cut" | "copy" => !self.collapsed(),
+            "copy-out" => self.version.is_some(),
             "save-version" | "paste" | "bold" | "italic" | "code" | "list-bullets"
-            | "list-numbers" | "quote" | "insert-table" => writable,
+            | "list-numbers" | "quote" | "insert-table" | "insert-picture" => writable,
             _ if id.starts_with("language-") || id.starts_with("align-") => writable,
             _ => true,
         };
@@ -1855,6 +1909,9 @@ impl Editor {
                 }
             }
             "paste" => effects.push(Effect::Paste),
+            "insert-picture" => effects.push(Effect::Choose(Choice::Picture)),
+            "versions" => self.versions_panel(),
+            "copy-out" => effects.extend(self.copy_out()),
             "select-all" => {
                 self.anchor = self.document_edge(false);
                 self.focus = self.document_edge(true);
@@ -1923,7 +1980,14 @@ impl Editor {
             let blocks = canvas::blocks(&paragraphs, look);
             let pages = canvas::paginate(page.body_height(), &blocks);
             return canvas::Pages {
-                pages: canvas::draw(page, look, &paragraphs, &pages, self.res.fonts()),
+                pages: canvas::draw(
+                    page,
+                    look,
+                    &paragraphs,
+                    &pages,
+                    self.res.fonts(),
+                    &self.pictures,
+                ),
                 structure: canvas::structure(&paragraphs),
             };
         }
@@ -1934,6 +1998,7 @@ impl Editor {
                 &self.laid.paragraphs,
                 &self.laid.pages,
                 self.res.fonts(),
+                &self.pictures,
             ),
             structure: canvas::structure(&self.laid.paragraphs),
         }
@@ -1946,9 +2011,53 @@ impl Editor {
         std::fs::write(path, bytes).map_err(|e| e.to_string())
     }
 
+    // ---- a panel of things to choose from, which the window draws
+
+    /// The panel open, if one is: its title, its rows' names, and the row
+    /// lit.
+    pub(crate) fn panel(&self) -> Option<(&str, Vec<String>, usize)> {
+        let panel = self.panel.as_ref()?;
+        let names = panel.rows.iter().map(|(name, _)| name.clone()).collect();
+        Some((panel.title, names, panel.selected))
+    }
+
+    /// Closes the panel, choosing nothing.
+    pub(crate) fn close_panel(&mut self) {
+        self.panel = None;
+    }
+
+    /// What choosing row `row` of the panel does, which closes it.
+    pub(crate) fn choose_row(&mut self, row: usize) -> Vec<Effect> {
+        let chosen = self
+            .panel
+            .take()
+            .and_then(|mut p| (row < p.rows.len()).then(|| p.rows.swap_remove(row).1));
+        chosen.into_iter().collect()
+    }
+
+    pub(crate) fn panel_key(&mut self, key: Key) -> Vec<Effect> {
+        let Some(panel) = &mut self.panel else {
+            return Vec::new();
+        };
+        match key {
+            Key::Up => panel.selected = panel.selected.saturating_sub(1),
+            Key::Down => {
+                panel.selected = (panel.selected + 1).min(panel.rows.len().saturating_sub(1))
+            }
+            Key::Enter => {
+                let row = panel.selected;
+                return self.choose_row(row);
+            }
+            Key::Escape => self.panel = None,
+            _ => {}
+        }
+        Vec::new()
+    }
+
     // ---- events
 
-    /// Handles `event`, returning what the shell should do.
+    /// Handles `event`, returning what the shell should do. (A window's
+    /// recorder notes what it's given: [`crate::Window::record`].)
     pub fn update(&mut self, event: Event) -> Vec<Effect> {
         let px = |v: f64| (v * PIXEL as f64).round() as i64;
         match event {
@@ -1971,8 +2080,11 @@ impl Editor {
             }
             Event::Chosen(Choice::Open, Some(path)) => return vec![Effect::Open(Some(path))],
             Event::Chosen(Choice::MoveTo, Some(path)) => self.move_to_chosen(&path),
-            // Placing pictures is stage 7's.
-            Event::Chosen(..) | Event::Theme { .. } | Event::Maximized(_) => {}
+            Event::Chosen(choice, path) => {
+                self.chosen(choice, path.as_deref());
+                self.reveal();
+            }
+            Event::Theme { .. } | Event::Maximized(_) => {}
             Event::Resize { width, height } => {
                 let column = self.column();
                 self.width = px(width).max(PIXEL);
@@ -2056,6 +2168,7 @@ impl Editor {
             units: &self.laid.units,
             blocks: &self.laid.blocks,
             pieces: &self.laid.pages,
+            pictures: &self.pictures,
             selection: (!self.collapsed()).then(|| {
                 let a = self.cursor(start);
                 let b = self.cursor(end);
@@ -2119,6 +2232,7 @@ pub(crate) struct ViewParts<'a> {
     pub units: &'a [std::ops::Range<usize>],
     pub blocks: &'a [canvas::Block],
     pub pieces: &'a [Vec<Piece>],
+    pub pictures: &'a canvas::Pictures,
     /// The selection, as (paragraph, byte) at its start and end.
     pub selection: Option<(usize, usize, usize, usize)>,
     pub caret: Option<(i64, i64, i64)>,

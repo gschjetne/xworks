@@ -1,0 +1,99 @@
+# Scheduled fuzzing (CLAUDE.md, rule 8; docs/ROADMAP.md, M2 stage 7): every
+# night, and by hand, each target in fuzz/ runs for a set time with
+# cargo-fuzz on the nightly toolchain it needs, from the corpus its last
+# run kept. A crash fails the run, with the input that crashed as an
+# artifact; the corpus is kept either way.
+name: Fuzz
+
+on:
+  schedule:
+    - cron: "17 2 * * *"
+  workflow_dispatch:
+    inputs:
+      seconds:
+        description: How long each target runs, in seconds
+        default: "600"
+
+permissions:
+  contents: read
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  fuzz:
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - font_file
+          - hyphenation_patterns
+          - paragraph
+          - picture_gif
+          - picture_jpeg
+          - picture_png
+          - picture_webp
+          - session_file
+          - store_file
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The pinned toolchain for fetch-fonts and cargo-fuzz; the nightly
+      # one for the targets, whose sanitizers need it.
+      - run: rustup toolchain install
+      - run: rustup toolchain install nightly --profile minimal
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          workspaces: fuzz
+          key: ${{ matrix.target }}
+      # cargo-fuzz, built once and kept by the cache above.
+      - run: cargo install cargo-fuzz --version 0.13.2 --locked
+      # The bundled fonts and hyphenation patterns, which the targets that
+      # lay out text use, as CI fetches and caches them.
+      - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: |
+            fonts
+            hyphenation
+          key: fonts-${{ hashFiles('spec/text/fonts.ron', 'spec/text/hyphenation.ron') }}
+      - run: cargo run -p fetch-fonts
+      # The corpus the target's last run kept, if there's one.
+      - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+          restore-keys: fuzz-corpus-${{ matrix.target }}-
+      - name: Fuzz ${{ matrix.target }}
+        working-directory: fuzz
+        shell: bash
+        env:
+          TARGET: ${{ matrix.target }}
+          SECONDS_EACH: ${{ inputs.seconds || '600' }}
+        run: |
+          mkdir -p "corpus/$TARGET"
+          # Seeds, read but not added to: what each target reads, as xWorks
+          # and its tests have them.
+          seeds=()
+          case "$TARGET" in
+            store_file) seeds=(../spec/format/fixtures) ;;
+            session_file) seeds=(../spec/sessions) ;;
+            picture_jpeg) seeds=(../crates/app/tests/pictures) ;;
+          esac
+          cargo +nightly fuzz run "$TARGET" "corpus/$TARGET" "${seeds[@]}" -- \
+            -max_total_time="$SECONDS_EACH" -rss_limit_mb=4096
+      # The corpus, kept for the next run, whether this one crashed or not.
+      - uses: actions/cache/save@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
+        if: always()
+        with:
+          path: fuzz/corpus/${{ matrix.target }}
+          key: fuzz-corpus-${{ matrix.target }}-${{ github.run_id }}
+      # The input that crashed, to reproduce with
+      # `cargo +nightly fuzz run TARGET artifacts/TARGET/crash-…`.
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        if: failure()
+        with:
+          name: crash-${{ matrix.target }}
+          path: fuzz/artifacts/${{ matrix.target }}
+          if-no-files-found: ignore

@@ -32,6 +32,7 @@ mod blocks;
 mod editor;
 pub mod picture;
 mod recent;
+pub mod recorder;
 mod resources;
 pub mod session;
 mod view;

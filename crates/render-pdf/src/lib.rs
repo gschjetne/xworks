@@ -17,7 +17,9 @@
 //!   so it reads back in that order in any reader; fills and strokes are
 //!   artifacts, outside the reading order.
 //! - Images are figures, with their alternative text, written as the same
-//!   sRGB pixels the screen draws, so print matches the screen.
+//!   sRGB pixels the screen draws, so print matches the screen; but an
+//!   image that keeps the sRGB JPEG it was decoded from is written as that
+//!   file, unchanged, which keeps its size.
 //! - Groups are clips and transforms in the PDF too.
 //! - Each page is its display list's size, 12 700 layout units to the
 //!   point.
@@ -376,9 +378,16 @@ impl Writer {
     }
 }
 
-/// `image` for krilla: its largest level, straight, with an alpha channel
-/// unless it's opaque, sampled smoothly as the screen does.
+/// `image` for krilla: the sRGB JPEG it was decoded from, unchanged, if it
+/// keeps one (project owner, 2026-10-23, review dcn5ejrd); otherwise its
+/// largest level, straight, with an alpha channel unless it's opaque.
+/// Either is sampled smoothly, as the screen does.
 fn picture(image: &scene::Image) -> krilla::image::Image {
+    if let Some(jpeg) = image.jpeg_data()
+        && let Ok(picture) = krilla::image::Image::from_jpeg(Data::from(jpeg), true)
+    {
+        return picture;
+    }
     let (rgb, alpha) = image.straight();
     let pixels = Pixels {
         width: image.width(),

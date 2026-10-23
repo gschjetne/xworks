@@ -45,6 +45,19 @@ impl History {
         self.redo.clear();
     }
 
+    /// History of these stacks, each oldest first, as [`History::stacks`]
+    /// gives them: for history kept elsewhere, as a recorded session
+    /// keeps it.
+    pub fn from_stacks(undo: Vec<Transaction>, redo: Vec<Transaction>) -> History {
+        History { undo, redo }
+    }
+
+    /// The transactions on Undo and on Redo, each oldest first, so the
+    /// last of each is the next undone or redone.
+    pub fn stacks(&self) -> (&[Transaction], &[Transaction]) {
+        (&self.undo, &self.redo)
+    }
+
     /// The name Undo would show, if there's anything to undo.
     pub fn undo_name(&self) -> Option<&str> {
         self.undo.last().map(|t| t.name.as_str())

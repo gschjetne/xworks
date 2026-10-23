@@ -144,10 +144,11 @@ pub struct Paragraph<'a> {
 }
 
 /// How a paragraph is set beyond its text and styles: whether its words
-/// are hyphenated, where its tabs go, how tall its lines are, and how far
-/// its first line is indented. The default hyphenates nothing but at soft
-/// hyphens, makes tabs as wide as spaces, lines as tall as their fonts,
-/// and indents nothing.
+/// are hyphenated, where its tabs go, how tall its lines are, how far
+/// its first line is indented, and what objects stand in its text. The
+/// default hyphenates nothing but at soft hyphens, makes tabs as wide as
+/// spaces, lines as tall as their fonts, indents nothing, and has no
+/// objects.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Setting<'a> {
     /// Whether words may be hyphenated at lines' ends, by their language's
@@ -167,6 +168,41 @@ pub struct Setting<'a> {
     /// in layout units, and so how much narrower it is; negative hangs it
     /// out past the edge.
     pub indent: i64,
+    /// Objects set in the text as characters are, such as pictures, by the
+    /// characters they stand for.
+    pub objects: &'a [Inline],
+}
+
+/// Something set in a paragraph's text as a character is, such as a
+/// picture: a box standing on the baseline in place of the character at
+/// `offset`, usually U+FFFC OBJECT REPLACEMENT CHARACTER. Lines break
+/// around it as the character allows, the caret stands either side of it,
+/// and its line is at least as tall above the baseline as it is. No font
+/// draws it: its caller draws it where [`Line::objects`] says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Inline {
+    /// The byte offset of the character it stands for. One that isn't a
+    /// character's start in the text, or that's there twice, is ignored.
+    pub offset: usize,
+    /// Its width, in layout units; negative counts as none.
+    pub width: i64,
+    /// Its height above the baseline, in layout units; negative counts
+    /// as none.
+    pub height: i64,
+}
+
+/// An inline object on a line, where layout put it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Placed {
+    /// The byte offset of the character it stands for.
+    pub offset: usize,
+    /// Its left edge, from the paragraph's left edge.
+    pub x: i64,
+    /// Its width.
+    pub width: i64,
+    /// Its height: it stands on the line's baseline, so its top is the
+    /// baseline less this.
+    pub height: i64,
 }
 
 /// A paragraph laid out: its lines, top to bottom. Positions are in layout
@@ -233,6 +269,8 @@ pub struct Line {
     pub hyphen: bool,
     /// Its glyphs, in runs from left to right.
     pub runs: Vec<GlyphRun>,
+    /// Its inline objects, from left to right, for the caller to draw.
+    pub objects: Vec<Placed>,
     /// Its graphemes from left to right, where the caret can stand.
     pub(crate) cells: Vec<Cell>,
 }
@@ -320,7 +358,20 @@ pub fn layout_with(fonts: &Fonts, paragraph: &Paragraph<'_>, setting: &Setting<'
     );
     let bidi = Bidi::new(text, paragraph.direction);
     let graphemes = locale::graphemes(text);
-    let items = shape::itemize(fonts, text, paragraph.spans, &bidi, &graphemes);
+    // The objects that stand for characters, in order, once each.
+    let mut objects: Vec<Inline> = setting
+        .objects
+        .iter()
+        .filter(|o| o.offset < text.len() && text.is_char_boundary(o.offset))
+        .map(|o| Inline {
+            width: o.width.max(0),
+            height: o.height.max(0),
+            ..*o
+        })
+        .collect();
+    objects.sort_by_key(|o| o.offset);
+    objects.dedup_by_key(|o| o.offset);
+    let items = shape::itemize(fonts, text, paragraph.spans, &bidi, &graphemes, &objects);
     let missing = items.iter().any(|item| item.missing);
 
     // Each cluster's advance, at the offset where it starts, and their
@@ -359,6 +410,7 @@ pub fn layout_with(fonts: &Fonts, paragraph: &Paragraph<'_>, setting: &Setting<'
             .map(|(i, _)| i)
             .collect(),
         glue,
+        objects,
     };
 
     let hard_breaks: Vec<usize> = text
@@ -451,6 +503,8 @@ struct Shaping<'a> {
     /// Where the text's tabs are.
     tab_offsets: Vec<usize>,
     glue: Glue,
+    /// The inline objects, by offset.
+    objects: Vec<Inline>,
 }
 
 impl Shaping<'_> {
@@ -587,6 +641,7 @@ impl Shaping<'_> {
             item.face,
             level,
             item.script,
+            &self.objects,
         )
     }
 
@@ -717,6 +772,7 @@ impl Shaping<'_> {
                 item.face,
                 item.level,
                 item.script,
+                &[],
             );
             glyphs.first().map(|g| Shaped {
                 advance: glyphs.iter().map(|g| g.advance).sum(),
@@ -736,7 +792,8 @@ struct Piece {
 }
 
 /// Makes `line` `per_mille` thousandths of its largest font size tall,
-/// the difference from its fonts' height split evenly above and below.
+/// the difference from its fonts' height split evenly above and below,
+/// but never shorter above its baseline than its objects.
 fn set_line_height(line: &mut Line, paragraph: &Paragraph<'_>, per_mille: i64) {
     let size = line.runs.iter().map(|r| r.size).max().unwrap_or_else(|| {
         paragraph.spans[span_at(paragraph.spans, line.range.start)]
@@ -749,7 +806,11 @@ fn set_line_height(line: &mut Line, paragraph: &Paragraph<'_>, per_mille: i64) {
     let above = extra.div_euclid(2);
     line.ascent += above;
     line.descent += extra - above;
-    line.height = height;
+    // Still as tall as its objects, which stand on the baseline.
+    for object in &line.objects {
+        line.ascent = line.ascent.max(object.height);
+    }
+    line.height = line.ascent + line.descent;
     line.baseline = line.top + line.ascent;
 }
 
@@ -792,6 +853,7 @@ fn build_line(
                         item.face,
                         level,
                         item.script,
+                        &shaping.objects,
                     )
                 } else if sub == part {
                     glyphs.clone()
@@ -870,13 +932,23 @@ fn build_line(
 
     let mut runs = Vec::new();
     let mut cells = Vec::new();
+    let mut objects = Vec::new();
     for &i in &order {
         let piece = &pieces[i];
         let item = &shaping.items[piece.item];
         let x = pen;
         let mut glyphs = Vec::with_capacity(piece.glyphs.len());
         for g in &piece.glyphs {
-            if !g.hidden {
+            if g.object {
+                // No font draws it: its caller does, here.
+                let height = shape::object_at(&shaping.objects, g.cluster).map_or(0, |o| o.height);
+                objects.push(Placed {
+                    offset: g.cluster,
+                    x: pen,
+                    width: g.advance,
+                    height,
+                });
+            } else if !g.hidden {
                 glyphs.push(Glyph {
                     id: g.id,
                     x: pen + g.x_offset,
@@ -920,6 +992,10 @@ fn build_line(
         ascent = ascent.max(scale(face.ascent, size, upem) + gap / 2);
         descent = descent.max(scale(face.descent, size, upem) + gap - gap / 2);
     }
+    // And as tall as its objects, which stand on the baseline.
+    for object in &objects {
+        ascent = ascent.max(object.height);
+    }
     Line {
         range,
         top,
@@ -931,6 +1007,7 @@ fn build_line(
         width,
         hyphen,
         runs,
+        objects,
         cells,
     }
 }

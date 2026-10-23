@@ -67,6 +67,8 @@ pub struct Resources {
     pub mac: bool,
     /// How large a picture may be.
     pub pictures: crate::picture::Limits,
+    /// How much of what a person does the session recorder keeps.
+    pub recorder: crate::recorder::Spec,
     /// The language new documents are in: the system's, as the shell
     /// reads it (project owner, 2026-10-22, review pysc65hp); none until
     /// it's set.
@@ -174,6 +176,7 @@ impl Resources {
         let dark: Colors = spec(&root.join("spec/themes/dark.ron"))?;
         let icons = read_icons(&root.join("icons/lucide"))?;
         let pictures = spec(&root.join("spec/pictures.ron"))?;
+        let recorder = spec(&root.join("spec/recorder.ron"))?;
         let patterns: PatternSpec = spec(&root.join("spec/text/hyphenation.ron"))?;
         Ok(Resources {
             fonts: Arc::new(fonts),
@@ -189,6 +192,7 @@ impl Resources {
             recent: Arc::new(Recent::default()),
             mac,
             pictures,
+            recorder,
             language: Language::und(),
             hyphenation: Arc::new(Patterns {
                 dir: root.join("hyphenation"),

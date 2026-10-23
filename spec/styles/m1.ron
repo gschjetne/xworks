@@ -92,5 +92,8 @@
         rule_color: (0, 0, 0),
         hairline_color: (200, 200, 200),
         link_color: (25, 80, 170),
+        // Where a picture the document shows can't be drawn, as when its file
+        // lacks it.
+        missing_picture: (230, 230, 226),
     ),
 )

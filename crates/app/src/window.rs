@@ -27,6 +27,8 @@ use toolkit::{
 use crate::editor::{Edge, PointerShape, View, WindowAction};
 use crate::{Choice, Editor, EditorError, Effect, Event, Resources};
 
+use crate::recorder::{self, Checkpoint, Recorder};
+use crate::session::{Chrome, Start};
 use menus::MenuState;
 
 /// The command palette, open: what's typed, what it finds, and which is
@@ -90,6 +92,8 @@ pub struct Window {
     drag: Option<Drag>,
     pointer: (i64, i64),
     shape: PointerShape,
+    /// What records what's done in the window, if anything does.
+    recorder: Option<Recorder>,
 }
 
 /// Layout units from the logical pixels events carry.
@@ -134,6 +138,83 @@ impl Window {
         Ok(Window::with(res, editor))
     }
 
+    /// A window on the named version of the document at `path` that
+    /// follows its log entry `seq`, read-only.
+    pub fn open_version(
+        res: Arc<Resources>,
+        path: &std::path::Path,
+        seq: i64,
+    ) -> Result<Window, EditorError> {
+        let editor = Editor::open_version(res.clone(), path, seq)?;
+        Ok(Window::with(res, editor))
+    }
+
+    /// A window taking up a recorded session where it starts, `size`
+    /// logical pixels: its document, made a new one in the documents
+    /// folder, and the window as it was ([`Editor::resume`]).
+    pub fn resume(
+        res: Arc<Resources>,
+        start: &Start,
+        size: (f64, f64),
+    ) -> Result<Window, EditorError> {
+        let editor = Editor::resume(res.clone(), start, size)?;
+        let mut window = Window::with(res, editor);
+        if let Some(chrome) = start.chrome {
+            window.inspector = chrome.inspector.is_some();
+            window.tab = chrome.inspector.unwrap_or(0);
+            window.ruler = chrome.ruler;
+            window.dark = chrome.dark;
+            window.theme = window.res.theme(chrome.dark);
+        }
+        Ok(window)
+    }
+
+    /// Records what's done in this window from now on, with `recorder`.
+    pub fn record(&mut self, recorder: Recorder) {
+        recorder.begin(self);
+        self.recorder = Some(recorder);
+    }
+
+    /// The window's state, if it's at rest, so a recorded session can
+    /// start there: no menu, list, panel, field or drag is open, and the
+    /// editor is at rest too.
+    pub(crate) fn checkpoint(&self) -> Option<Checkpoint> {
+        if self.menu.is_some()
+            || self.palette.is_some()
+            || self.choosing.is_some()
+            || self.editing.is_some()
+            || self.renaming.is_some()
+            || self.drag.is_some()
+        {
+            return None;
+        }
+        let mut checkpoint = self.editor.checkpoint()?;
+        let px = |v: i64| v as f64 / PIXEL as f64;
+        checkpoint.size = (px(self.width), px(self.height));
+        checkpoint.chrome = Some(Chrome {
+            draft: self.editor.view_mode() == View::Draft,
+            inspector: self.inspector.then_some(self.tab),
+            ruler: self.ruler,
+            dark: self.dark,
+        });
+        Some(checkpoint)
+    }
+
+    /// Writes what the recorder kept of this window to the sessions
+    /// folder, and says where.
+    fn save_session(&mut self) {
+        let Some(recorder) = &self.recorder else {
+            self.editor.say("Nothing is recorded in this window");
+            return;
+        };
+        let folder = recorder::folder(&self.res.documents);
+        let message = match recorder.write_to(&folder, "Saved by Save Recent Session.") {
+            Ok(path) => format!("Saved the last few minutes to {}", path.display()),
+            Err(e) => format!("Couldn't save the recent session: {e}"),
+        };
+        self.editor.say(&message);
+    }
+
     /// A window holding `editor`.
     pub fn with(res: Arc<Resources>, editor: Editor) -> Window {
         res.recent.add(editor.path());
@@ -160,6 +241,7 @@ impl Window {
             drag: None,
             pointer: (0, 0),
             shape: PointerShape::Arrow,
+            recorder: None,
         }
     }
 
@@ -425,6 +507,33 @@ impl Window {
         Some((popup, rows))
     }
 
+    /// The editor's panel, open, as a list under the title bar: its
+    /// title, a line, and its rows.
+    fn panel_popup(&self) -> Option<(Popup, Vec<PopupRow>)> {
+        let (title, names, _) = self.editor.panel()?;
+        let mut rows = vec![
+            PopupRow {
+                enabled: false,
+                ..PopupRow::choice(title, false)
+            },
+            PopupRow::choice("", false),
+        ];
+        rows.extend(names.iter().map(|n| PopupRow::choice(n, false)));
+        let width = self.res.sizes.palette.units().min(self.width);
+        let kit = self.kit();
+        let popup = Popup::new(
+            &kit,
+            &rows,
+            (
+                (self.width - width) / 2,
+                self.title_height() + self.res.sizes.palette_top.units(),
+            ),
+            width,
+            (self.width, self.height),
+        );
+        Some((popup, rows))
+    }
+
     // ---- commands
 
     /// Whether command `id` can run now, and whether it's on.
@@ -461,6 +570,7 @@ impl Window {
             "toggle-ruler" => self.ruler = !self.ruler,
             "command-palette" => self.open_palette(),
             "about" => self.editor_message("xWorks, M2: foundations for documents"),
+            "save-session" => self.save_session(),
             "close" => return vec![Effect::Window(WindowAction::Close)],
             "rename" => self.renaming = Some(Field::new(&self.editor.name())),
             "open-recent" => {
@@ -504,6 +614,7 @@ impl Window {
                 Request::Paste => Effect::Paste,
                 Request::Choose(choice) => Effect::Choose(choice),
                 Request::Open(path) => Effect::Open(path),
+                Request::OpenVersion(path, seq) => Effect::OpenVersion(path, seq),
                 Request::OpenExternally(path) => Effect::OpenExternally(path),
                 Request::Reveal(path) => Effect::Reveal(path),
                 Request::Quit => Effect::Quit,
@@ -677,8 +788,19 @@ impl Window {
 
     // ---- events
 
-    /// Handles `event`, returning what the shell should do.
+    /// Handles `event`, returning what the shell should do. A recorder,
+    /// if the window has one, notes it.
     pub fn update(&mut self, event: Event) -> Vec<Effect> {
+        let Some(recorder) = self.recorder.clone() else {
+            return self.handle(event);
+        };
+        recorder.before(self, &event);
+        let effects = self.handle(event);
+        recorder.after(self);
+        effects
+    }
+
+    fn handle(&mut self, event: Event) -> Vec<Effect> {
         match event {
             Event::Key { key, modifiers } => self.key(key, modifiers),
             Event::Text(text) => {
@@ -760,6 +882,9 @@ impl Window {
     fn key(&mut self, key: Key, modifiers: Modifiers) -> Vec<Effect> {
         if let Some(effects) = self.field_key(key, modifiers) {
             return effects;
+        }
+        if self.editor.panel().is_some() {
+            return self.editor.panel_key(key);
         }
         if self.palette.is_some() {
             return self.palette_key(key, modifiers);
@@ -893,6 +1018,14 @@ impl Window {
             }
         }
         // Lists over everything take the press first.
+        if let Some((popup, _)) = self.panel_popup() {
+            match popup.hit(x, y) {
+                Some(Some(row)) if row >= 2 => effects.extend(self.editor.choose_row(row - 2)),
+                Some(_) => {}
+                None => self.editor.close_panel(),
+            }
+            return effects;
+        }
         if self.choosing.is_some() {
             if let Some((popup, _)) = self.choice_popup(&model)
                 && let Some(row) = popup.hit(x, y)
@@ -1208,6 +1341,10 @@ impl Window {
         };
         page.items.extend(bar.draw(&kit, &model_title, hover));
         page.items.extend(self.draw_menus(&kit, &menus, &bar));
+        if let Some((popup, rows)) = self.panel_popup() {
+            let lit = self.editor.panel().map(|(_, _, selected)| selected + 2);
+            page.items.extend(popup.draw(&kit, &rows, lit, false));
+        }
         if let Some((popup, rows)) = self.choice_popup(&model) {
             let lit = self.choosing.and_then(|(_, l)| l);
             page.items.extend(popup.draw(&kit, &rows, lit, false));

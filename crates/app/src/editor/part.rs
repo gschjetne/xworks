@@ -66,6 +66,7 @@ impl Part for Editor {
                     Effect::Paste => Request::Paste,
                     Effect::Choose(choice) => Request::Choose(choice),
                     Effect::Open(path) => Request::Open(path),
+                    Effect::OpenVersion(path, seq) => Request::OpenVersion(path, seq),
                     Effect::OpenExternally(path) => Request::OpenExternally(path),
                     Effect::Reveal(path) => Request::Reveal(path),
                     Effect::Quit => Request::Quit,

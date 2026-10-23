@@ -1617,6 +1617,7 @@ version = "0.0.0"
 dependencies = [
  "app",
  "chrome",
+ "doc",
  "libfuzzer-sys",
  "locale",
  "ron",

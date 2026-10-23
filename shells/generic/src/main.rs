@@ -41,6 +41,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail};
+use app::recorder::{self, Recorder, Recordings};
 use app::{Choice, Effect, Event, Resources};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalPosition, LogicalSize};
@@ -130,6 +131,8 @@ struct Shell {
     /// When the start began, while measuring waits for the GPU renderer's
     /// first frame.
     settling: Option<Instant>,
+    /// Every window's recording, written when xWorks fails.
+    recordings: Recordings,
 }
 
 /// What the thread opening the GPU hands over.
@@ -300,6 +303,8 @@ fn main() -> anyhow::Result<()> {
     if let Some(config) = config_folder() {
         res.recent = Arc::new(app::Recent::load(config.join("recent.ron")));
     }
+    let recordings = Recordings::default();
+    write_when_failing(recordings.clone(), recorder::folder(&res.documents));
     mark(&mut measuring, "resources");
     let mut shell = Shell {
         res: Arc::new(res),
@@ -317,9 +322,27 @@ fn main() -> anyhow::Result<()> {
         proxy: event_loop.create_proxy(),
         measuring,
         settling: None,
+        recordings,
     };
     event_loop.run_app(&mut shell)?;
     Ok(())
+}
+
+/// When xWorks fails, writes what was done in each window over the last
+/// few minutes, as sessions for a bug report, to `folder`, which is in the
+/// documents folder, and says where (project owner, 2026-10-23, review
+/// a23vvez8). Nothing is sent anywhere.
+fn write_when_failing(recordings: Recordings, folder: PathBuf) {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        previous(info);
+        for path in recordings.write_all(&folder, &format!("xWorks failed: {info}")) {
+            eprintln!(
+                "xworks: what was done in the last few minutes is in {}",
+                path.display()
+            );
+        }
+    }));
 }
 
 /// The system's language, which new documents are in (project owner,
@@ -510,18 +533,49 @@ fn reveal(path: &Path) -> std::io::Result<()> {
         .map(drop)
 }
 
+/// Whether `a` and `b` name the same file.
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
 impl Shell {
-    /// Opens a window on a new document, or the one at `path`.
-    fn open(&mut self, event_loop: &ActiveEventLoop, path: Option<PathBuf>) -> anyhow::Result<()> {
-        let doc = match &path {
-            Some(path) => app::Window::open(self.res.clone(), path),
-            None => app::Window::create(self.res.clone()),
+    /// Opens a window on a new document, or the one at `path`, or its
+    /// named `version`. A document is never open twice (project owner,
+    /// 2026-10-23, review a23vvez8): if a window has it, or has that
+    /// version, that window comes forward instead.
+    fn open(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        path: Option<PathBuf>,
+        version: Option<i64>,
+    ) -> anyhow::Result<()> {
+        if let Some(path) = &path
+            && let Some(win) = self.windows.values().find(|w| {
+                let editor = w.doc.editor();
+                editor.version().map(|v| v.seq) == version && same_file(editor.path(), path)
+            })
+        {
+            win.window.focus_window();
+            return Ok(());
+        }
+        let mut doc = match (&path, version) {
+            (Some(path), Some(seq)) => app::Window::open_version(self.res.clone(), path, seq),
+            (Some(path), None) => app::Window::open(self.res.clone(), path),
+            (None, _) => app::Window::create(self.res.clone()),
         }
         .with_context(|| match &path {
             Some(path) => format!("opening {}", path.display()),
             None => "making a new document".to_string(),
         })?;
         mark(&mut self.measuring, "document");
+        // The last few minutes of what's done in it are kept, to be written
+        // when asked or when xWorks fails.
+        let recorder = Recorder::new(&self.res.recorder);
+        doc.record(recorder.clone());
+        self.recordings.add(&recorder);
         // xWorks draws its own title bar (review 3ce247c2).
         let attributes = Window::default_attributes()
             .with_title(doc.title())
@@ -780,7 +834,8 @@ impl Shell {
                         effects.extend(win.doc.update(Event::Pasted(text)));
                     }
                 }
-                Effect::Open(path) => opening.push(path),
+                Effect::Open(path) => opening.push((path, None)),
+                Effect::OpenVersion(path, seq) => opening.push((Some(path), Some(seq))),
                 Effect::OpenExternally(path) => {
                     if let Err(e) = open_externally(&path) {
                         eprintln!("xworks: opening {}: {e}", path.display());
@@ -855,8 +910,8 @@ impl Shell {
             }
             return;
         }
-        for path in opening {
-            if let Err(e) = self.open(event_loop, path) {
+        for (path, version) in opening {
+            if let Err(e) = self.open(event_loop, path, version) {
                 eprintln!("xworks: {e:#}");
             }
         }
@@ -877,7 +932,7 @@ impl Shell {
 impl ApplicationHandler<UserEvent> for Shell {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if let Some(start) = self.start.take()
-            && let Err(e) = self.open(event_loop, start)
+            && let Err(e) = self.open(event_loop, start, None)
         {
             eprintln!("xworks: {e:#}");
             event_loop.exit();

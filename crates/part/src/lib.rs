@@ -113,6 +113,9 @@ pub enum Request {
     Choose(Choice),
     /// Open a window: a new document, or the one at this path.
     Open(Option<PathBuf>),
+    /// Open a window on a named version of the document at this path, as
+    /// it was after this entry of its log, read-only.
+    OpenVersion(PathBuf, i64),
     /// Hand this file to the system to open, such as a PDF to print.
     OpenExternally(PathBuf),
     /// Show this file in the system's file manager, such as an export.

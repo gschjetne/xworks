@@ -7,7 +7,7 @@ use harfrust::{Buffer, BufferFlags, ShapeOptions, ShaperFont, Tag};
 use locale::{Bidi, Script};
 
 use crate::font::{Face, FaceId, Fonts};
-use crate::layout::Span;
+use crate::layout::{Inline, Span};
 use crate::units::scale;
 
 /// A stretch of a paragraph shaped in one go.
@@ -22,6 +22,9 @@ pub(crate) struct Item {
     pub script: Script,
     /// Whether a character in it has no face, so it shows as a box.
     pub missing: bool,
+    /// Whether it's an inline object's character, which is an item of its
+    /// own, so no glyph run holds both an object and text.
+    pub object: bool,
     /// Its glyphs, left to right.
     pub glyphs: Vec<Shaped>,
 }
@@ -44,16 +47,29 @@ pub(crate) struct Shaped {
     /// A hyphen layout added at a line's end, which shows no character
     /// of the text.
     pub inserted: bool,
+    /// An inline object, as wide as its advance, which no font draws.
+    pub object: bool,
+}
+
+/// The inline object at byte `offset`, if there's one: `objects` are
+/// sorted by offset.
+pub(crate) fn object_at(objects: &[Inline], offset: usize) -> Option<&Inline> {
+    objects
+        .binary_search_by_key(&offset, |o| o.offset)
+        .ok()
+        .map(|i| &objects[i])
 }
 
 /// `text` divided into items and shaped. `spans` cover the text; items
-/// start and end on grapheme boundaries (`graphemes`).
+/// start and end on grapheme boundaries (`graphemes`). Each grapheme that
+/// starts with one of `objects` is an item of its own.
 pub(crate) fn itemize(
     fonts: &Fonts,
     text: &str,
     spans: &[Span],
     bidi: &Bidi<'_>,
     graphemes: &[usize],
+    objects: &[Inline],
 ) -> Vec<Item> {
     let scripts = locale::script_runs(text);
     let candidates: Vec<Vec<FaceId>> = spans
@@ -77,7 +93,18 @@ pub(crate) fn itemize(
             .last()
             .filter(|item| item.span == span && item.range.end == start)
             .map(|item| item.face);
-        let (face, found) = choose(fonts, cluster, &candidates[span], previous);
+        let object = object_at(objects, start).is_some();
+        // An object needs no font: it takes the face of the text around
+        // it, which sets its line's least height.
+        let (face, found) = if object {
+            (
+                previous
+                    .unwrap_or_else(|| *candidates[span].first().expect("fonts to lay out with")),
+                true,
+            )
+        } else {
+            choose(fonts, cluster, &candidates[span], previous)
+        };
         let level = bidi.level(start);
         let script = scripts[script].1;
         match items.last_mut() {
@@ -85,7 +112,9 @@ pub(crate) fn itemize(
                 if item.span == span
                     && item.face == face
                     && item.level == level
-                    && item.script == script =>
+                    && item.script == script
+                    && !item.object
+                    && !object =>
             {
                 item.range.end = end;
                 item.missing |= !found;
@@ -97,6 +126,7 @@ pub(crate) fn itemize(
                 level,
                 script,
                 missing: !found,
+                object,
                 glyphs: Vec::new(),
             }),
         }
@@ -110,6 +140,7 @@ pub(crate) fn itemize(
             item.face,
             item.level,
             item.script,
+            objects,
         );
     }
     items
@@ -166,8 +197,81 @@ pub(crate) fn is_hard_break(c: char) -> bool {
 
 /// The glyphs of `range` of `text`, in `face` at `span`'s size, at bidi
 /// `level`, left to right. The text around the range is the shaper's
-/// context, so letters join across it.
+/// context, so letters join across it. Each of `objects` in the range is
+/// a glyph of its own, as wide as the object, which no font draws.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "what's shaped, and how, as itemizing found it"
+)]
 pub(crate) fn shape(
+    fonts: &Fonts,
+    text: &str,
+    range: Range<usize>,
+    span: &Span,
+    face: FaceId,
+    level: u8,
+    script: Script,
+    objects: &[Inline],
+) -> Vec<Shaped> {
+    let first = objects.partition_point(|o| o.offset < range.start);
+    let last = objects.partition_point(|o| o.offset < range.end);
+    let inside = &objects[first..last.max(first)];
+    if inside.is_empty() {
+        return shape_text(fonts, text, range, span, face, level, script);
+    }
+    // The text between the objects shaped as text, and each object a
+    // glyph; right to left, the pieces go the other way.
+    let mut pieces: Vec<Vec<Shaped>> = Vec::with_capacity(inside.len() * 2 + 1);
+    let mut from = range.start;
+    for object in inside {
+        if object.offset > from {
+            pieces.push(shape_text(
+                fonts,
+                text,
+                from..object.offset,
+                span,
+                face,
+                level,
+                script,
+            ));
+        }
+        pieces.push(vec![Shaped {
+            id: 0,
+            cluster: object.offset,
+            advance: object.width,
+            x_offset: 0,
+            y_offset: 0,
+            unsafe_to_break: false,
+            hidden: false,
+            inserted: false,
+            object: true,
+        }]);
+        from = object.offset
+            + text[object.offset..]
+                .chars()
+                .next()
+                .map_or(1, char::len_utf8);
+    }
+    if from < range.end {
+        pieces.push(shape_text(
+            fonts,
+            text,
+            from..range.end,
+            span,
+            face,
+            level,
+            script,
+        ));
+    }
+    if level % 2 == 1 {
+        pieces.reverse();
+    }
+    pieces.into_iter().flatten().collect()
+}
+
+/// The glyphs of `range` of `text`, which holds no objects, as [`shape`]
+/// gives them.
+fn shape_text(
     fonts: &Fonts,
     text: &str,
     range: Range<usize>,
@@ -240,6 +344,7 @@ pub(crate) fn shape(
                 unsafe_to_break: info.unsafe_to_break(),
                 hidden,
                 inserted: false,
+                object: false,
             }
         })
         .collect()

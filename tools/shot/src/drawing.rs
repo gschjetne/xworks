@@ -51,7 +51,7 @@ fn landscape(width: u32, height: u32) -> Vec<u8> {
 }
 
 /// The landscape as a PNG file, read by the app's decoder.
-fn photograph() -> &'static Image {
+pub(crate) fn photograph() -> &'static Image {
     static PHOTO: OnceLock<Image> = OnceLock::new();
     PHOTO.get_or_init(|| {
         let (width, height) = (1024, 640);
@@ -78,7 +78,7 @@ fn photograph() -> &'static Image {
 
 /// A heart, 9 by 8 pixels, its edge half transparent: drawn large, its
 /// pixels blend into each other, and its edges hold.
-fn icon() -> Image {
+pub(crate) fn icon() -> Image {
     const ROWS: [&str; 8] = [
         ".##...##.",
         "#oo#.#oo#",
