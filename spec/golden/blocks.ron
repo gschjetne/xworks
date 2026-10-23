@@ -2,6 +2,6 @@
 Golden(
     name: "blocks",
     size: (1660, 1171),
-    sha256: "3cbdca6516dfaf37941b69bb9330b2c69dc14164d32c80f237fd360baddc6902",
+    sha256: "10605331c2fe51e508cf40969ace5e07615b356b6e65b1fda974ebd69dfa9188",
     approved_by: "Grim Schjetne",
 )
