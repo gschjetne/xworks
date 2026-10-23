@@ -420,12 +420,37 @@ fn reveal(path: &Path) -> std::io::Result<()> {
         .map(drop)
 }
 
+/// Whether `a` and `b` name the same file.
+fn same_file(a: &Path, b: &Path) -> bool {
+    match (std::fs::canonicalize(a), std::fs::canonicalize(b)) {
+        (Ok(a), Ok(b)) => a == b,
+        _ => a == b,
+    }
+}
+
 impl Shell {
-    /// Opens a window on a new document, or the one at `path`.
-    fn open(&mut self, event_loop: &ActiveEventLoop, path: Option<PathBuf>) -> anyhow::Result<()> {
-        let editor = match &path {
-            Some(path) => Editor::open(self.res.clone(), path),
-            None => Editor::create(self.res.clone()),
+    /// Opens a window on a new document, or the one at `path`, or its
+    /// named `version`. A document is never open twice (project owner,
+    /// 2026-10-23, review a23vvez8): if a window has it, or has that
+    /// version, that window comes forward instead.
+    fn open(
+        &mut self,
+        event_loop: &ActiveEventLoop,
+        path: Option<PathBuf>,
+        version: Option<i64>,
+    ) -> anyhow::Result<()> {
+        if let Some(path) = &path
+            && let Some(win) = self.windows.values().find(|w| {
+                w.editor.version().map(|v| v.seq) == version && same_file(w.editor.path(), path)
+            })
+        {
+            win.window.focus_window();
+            return Ok(());
+        }
+        let editor = match (&path, version) {
+            (Some(path), Some(seq)) => Editor::open_version(self.res.clone(), path, seq),
+            (Some(path), None) => Editor::open(self.res.clone(), path),
+            (None, _) => Editor::create(self.res.clone()),
         }
         .with_context(|| match &path {
             Some(path) => format!("opening {}", path.display()),
@@ -671,7 +696,8 @@ impl Shell {
                         effects.extend(win.editor.update(Event::Pasted(text)));
                     }
                 }
-                Effect::Open(path) => opening.push(path),
+                Effect::Open(path) => opening.push((path, None)),
+                Effect::OpenVersion(path, seq) => opening.push((Some(path), Some(seq))),
                 Effect::OpenExternally(path) => {
                     if let Err(e) = open_externally(&path) {
                         eprintln!("xworks: opening {}: {e}", path.display());
@@ -697,8 +723,8 @@ impl Shell {
         let editor = &win.editor;
         win.access.update_if_active(|| tree(editor));
         win.window.request_redraw();
-        for path in opening {
-            if let Err(e) = self.open(event_loop, path) {
+        for (path, version) in opening {
+            if let Err(e) = self.open(event_loop, path, version) {
                 eprintln!("xworks: {e:#}");
             }
         }
@@ -708,7 +734,7 @@ impl Shell {
 impl ApplicationHandler<UserEvent> for Shell {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         if let Some(start) = self.start.take()
-            && let Err(e) = self.open(event_loop, start)
+            && let Err(e) = self.open(event_loop, start, None)
         {
             eprintln!("xworks: {e:#}");
             event_loop.exit();

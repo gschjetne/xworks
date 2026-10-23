@@ -20,6 +20,7 @@ use crate::{Resources, blocks};
 
 mod pictures;
 mod units;
+mod versions;
 
 use units::Unit;
 
@@ -113,6 +114,10 @@ pub enum Effect {
     Paste,
     /// Open a window: a new document, or the one at this path.
     Open(Option<PathBuf>),
+    /// Open a window on a named version of the document at this path, as
+    /// it was after this entry of its log, read-only
+    /// ([`Editor::open_version`]).
+    OpenVersion(PathBuf, i64),
     /// Hand this file to the system to open, such as a PDF to print.
     OpenExternally(PathBuf),
     /// Show this file in the system's file manager, such as an export.
@@ -168,9 +173,11 @@ struct Laid {
     words: Vec<usize>,
 }
 
-/// The Open panel: documents to choose from.
+/// A panel of things to choose from, such as documents to open: each
+/// row's name, and what choosing it does.
 struct Panel {
-    paths: Vec<PathBuf>,
+    title: &'static str,
+    rows: Vec<(String, Effect)>,
     selected: usize,
 }
 
@@ -204,6 +211,8 @@ pub struct Editor {
     message: String,
     /// The pictures the document shows, decoded, by ID.
     pictures: canvas::Pictures,
+    /// The named version shown, read-only, if this window shows one.
+    version: Option<store::Version>,
 }
 
 /// Sizes for Bigger and Smaller, in points.
@@ -337,6 +346,7 @@ impl Editor {
             dragged: None,
             message: String::new(),
             pictures: canvas::Pictures::new(),
+            version: None,
         };
         editor.relayout(true);
         editor
@@ -347,12 +357,17 @@ impl Editor {
         &self.path
     }
 
-    /// The window's title: the document's name.
+    /// The window's title: the document's name, and the version's if it
+    /// shows one: "Report (Version 2)".
     pub fn title(&self) -> String {
-        self.path.file_stem().map_or_else(
+        let name = self.path.file_stem().map_or_else(
             || "Untitled".to_string(),
             |s| s.to_string_lossy().into_owned(),
-        )
+        );
+        match &self.version {
+            Some(version) => format!("{name} ({})", version.name),
+            None => name,
+        }
     }
 
     /// The document.
@@ -1628,6 +1643,7 @@ impl Editor {
             "undo" => writable && self.history.undo_name().is_some(),
             "redo" => writable && self.history.redo_name().is_some(),
             "cut" | "copy" => !self.collapsed(),
+            "copy-out" => self.version.is_some(),
             "save-version" | "paste" | "bold" | "italic" | "code" | "list-bullets"
             | "list-numbers" | "quote" | "insert-table" | "insert-picture" => writable,
             _ if id.starts_with("language-") || id.starts_with("align-") => writable,
@@ -1713,6 +1729,8 @@ impl Editor {
             }
             "paste" => effects.push(Effect::Paste),
             "insert-picture" => effects.push(Effect::Choose(Choice::Picture)),
+            "versions" => self.versions_panel(),
+            "copy-out" => effects.extend(self.copy_out()),
             "select-all" => {
                 self.anchor = self.document_edge(false);
                 self.focus = self.document_edge(true);
@@ -1806,28 +1824,39 @@ impl Editor {
                 .unwrap_or_default();
         found.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
         self.panel = Some(Panel {
-            paths: found.into_iter().map(|(_, p)| p).collect(),
+            title: "Open a document",
+            rows: found
+                .into_iter()
+                .map(|(_, p)| {
+                    let name = p
+                        .file_stem()
+                        .map_or_else(String::new, |s| s.to_string_lossy().into_owned());
+                    (name, Effect::Open(Some(p)))
+                })
+                .collect(),
             selected: 0,
         });
     }
 
     fn list(&self) -> Option<List> {
         let panel = self.panel.as_ref()?;
-        let names = panel
-            .paths
-            .iter()
-            .map(|p| {
-                p.file_stem()
-                    .map_or_else(String::new, |s| s.to_string_lossy().into_owned())
-            })
-            .collect();
+        let names = panel.rows.iter().map(|(name, _)| name.clone()).collect();
         Some(List::new(
             &self.res.theme,
-            "Open a document",
+            panel.title,
             names,
             self.width,
             self.height,
         ))
+    }
+
+    /// What choosing row `row` of the panel does, which closes it.
+    fn choose_row(&mut self, row: usize) -> Vec<Effect> {
+        let chosen = self
+            .panel
+            .take()
+            .and_then(|mut p| (row < p.rows.len()).then(|| p.rows.swap_remove(row).1));
+        chosen.into_iter().collect()
     }
 
     fn panel_key(&mut self, key: Key) -> Vec<Effect> {
@@ -1837,14 +1866,11 @@ impl Editor {
         match key {
             Key::Up => panel.selected = panel.selected.saturating_sub(1),
             Key::Down => {
-                panel.selected = (panel.selected + 1).min(panel.paths.len().saturating_sub(1))
+                panel.selected = (panel.selected + 1).min(panel.rows.len().saturating_sub(1))
             }
             Key::Enter => {
-                let chosen = panel.paths.get(panel.selected).cloned();
-                self.panel = None;
-                if let Some(path) = chosen {
-                    return vec![Effect::Open(Some(path))];
-                }
+                let row = panel.selected;
+                return self.choose_row(row);
             }
             Key::Escape => self.panel = None,
             _ => {}
@@ -1914,13 +1940,7 @@ impl Editor {
         let theme = self.res.theme.clone();
         if let Some(list) = self.list() {
             match list.hit(&theme, x, y) {
-                Some(Some(row)) => {
-                    let chosen = self.panel.as_ref().and_then(|p| p.paths.get(row).cloned());
-                    self.panel = None;
-                    return chosen
-                        .map(|p| vec![Effect::Open(Some(p))])
-                        .unwrap_or_default();
-                }
+                Some(Some(row)) => return self.choose_row(row),
                 Some(None) => return Vec::new(),
                 None => {
                     self.panel = None;

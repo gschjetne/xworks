@@ -163,6 +163,7 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
                     Effect::Copy(text) => clipboard = text,
                     Effect::Paste => queue.extend(editor.update(Event::Pasted(clipboard.clone()))),
                     Effect::Open(_)
+                    | Effect::OpenVersion(..)
                     | Effect::OpenExternally(_)
                     | Effect::Reveal(_)
                     | Effect::Choose(_)

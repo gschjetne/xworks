@@ -89,6 +89,10 @@
         // chrome gives them some. A picture comes from a file chosen in
         // the system's dialog, and goes in the text at the caret.
         (id: "insert-picture", title: "Picture…", shortcut: None),
+        // The named versions, newest first; one chosen opens read-only in
+        // a window of its own, where Copy Out makes it a document.
+        (id: "versions", title: "Versions…", shortcut: None),
+        (id: "copy-out", title: "Copy Out as a Document", shortcut: None),
     ],
     menus: [
         (title: "File", items: ["new", "open", "-", "save-version", "-", "export-pdf", "print", "-", "quit"]),
