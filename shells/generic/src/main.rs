@@ -33,6 +33,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail};
+use app::recorder::{self, Recorder, Recordings};
 use app::{Editor, Effect, Event, Resources};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalPosition, LogicalSize};
@@ -112,6 +113,8 @@ struct Shell {
     /// When the start began, while measuring waits for the GPU renderer's
     /// first frame.
     settling: Option<Instant>,
+    /// Every window's recording, written when xWorks fails.
+    recordings: Recordings,
 }
 
 /// What the thread opening the GPU hands over.
@@ -279,6 +282,8 @@ fn main() -> anyhow::Result<()> {
     let mut res =
         Resources::load(&root, documents, mac).context("loading fonts, styles and commands")?;
     res.language = system_language();
+    let recordings = Recordings::default();
+    write_when_failing(recordings.clone(), recorder::folder(&res.documents));
     mark(&mut measuring, "resources");
     let mut shell = Shell {
         res: Arc::new(res),
@@ -295,9 +300,27 @@ fn main() -> anyhow::Result<()> {
         proxy: event_loop.create_proxy(),
         measuring,
         settling: None,
+        recordings,
     };
     event_loop.run_app(&mut shell)?;
     Ok(())
+}
+
+/// When xWorks fails, writes what was done in each window over the last
+/// few minutes, as sessions for a bug report, to `folder`, which is in the
+/// documents folder, and says where (project owner, 2026-10-23, review
+/// a23vvez8). Nothing is sent anywhere.
+fn write_when_failing(recordings: Recordings, folder: PathBuf) {
+    let previous = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        previous(info);
+        for path in recordings.write_all(&folder, &format!("xWorks failed: {info}")) {
+            eprintln!(
+                "xworks: what was done in the last few minutes is in {}",
+                path.display()
+            );
+        }
+    }));
 }
 
 /// The system's language, which new documents are in (project owner,
@@ -447,7 +470,7 @@ impl Shell {
             win.window.focus_window();
             return Ok(());
         }
-        let editor = match (&path, version) {
+        let mut editor = match (&path, version) {
             (Some(path), Some(seq)) => Editor::open_version(self.res.clone(), path, seq),
             (Some(path), None) => Editor::open(self.res.clone(), path),
             (None, _) => Editor::create(self.res.clone()),
@@ -457,6 +480,11 @@ impl Shell {
             None => "making a new document".to_string(),
         })?;
         mark(&mut self.measuring, "document");
+        // The last few minutes of what's done in it are kept, to be written
+        // when asked or when xWorks fails.
+        let recorder = Recorder::new(&self.res.recorder);
+        editor.record(recorder.clone());
+        self.recordings.add(&recorder);
         let attributes = Window::default_attributes()
             .with_title(format!("{} — xWorks", editor.title()))
             .with_inner_size(LogicalSize::new(1000.0, 820.0))

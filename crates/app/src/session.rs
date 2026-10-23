@@ -1,16 +1,18 @@
 //! Scripted sessions (`spec/sessions/`): input played into an editor, as a
-//! person would give it, for tests and for `shot`'s frames.
+//! person would give it, for tests and for `shot`'s frames, and as the
+//! session recorder writes what a person did ([`crate::recorder`]).
 
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use chrome::{Key, Modifiers, Shortcut};
 use doc::Value;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
-use crate::{Editor, EditorError, Effect, Event, Resources};
+use crate::{Choice, Editor, EditorError, Effect, Event, Resources};
 
 /// A session as `spec/sessions/` gives it.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Session {
     /// The window's size, in logical pixels.
     pub size: (f64, f64),
@@ -22,30 +24,65 @@ pub struct Session {
     /// The story's tree afterwards, if the session says, as
     /// `story::outline` gives it: a line an object, indented a level a
     /// container.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outline: Option<Vec<String>>,
     /// Stretches of text, each with the properties set on every character
     /// of it.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub marks: Vec<(String, Vec<String>)>,
     /// What the clipboard holds afterwards, if the session copies.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clipboard: Option<String>,
     /// What the status bar says afterwards.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub status: Option<String>,
     /// The system's language, which the new document is in, as a BCP 47
     /// tag; none if it's left out.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub language: Option<String>,
     /// Stretches of text, each with the language every character of it is
     /// in, as a BCP 47 tag: its own, or its paragraph's.
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub languages: Vec<(String, String)>,
+    /// Whether shortcuts read as on a Mac, as where it was recorded.
+    #[serde(default, skip_serializing_if = "std::ops::Not::not")]
+    pub mac: bool,
+    /// Where it starts, if not in a new, empty document: as the session
+    /// recorder found the window when what it kept begins.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<Start>,
+}
+
+/// Where a recorded session starts: the document, its history, and the
+/// window's state that what follows depends on, which a new window then
+/// takes up ([`Editor::resume`]).
+#[derive(Clone, Debug, Deserialize, Serialize)]
+pub struct Start {
+    /// The document.
+    pub document: doc::Snapshot,
+    /// What Undo takes back, oldest first.
+    pub undo: Vec<doc::Transaction>,
+    /// What Redo brings back, oldest first.
+    pub redo: Vec<doc::Transaction>,
+    /// Where the selection starts and ends, which is where the caret is:
+    /// each a paragraph's ID, an offset in characters, and whether it
+    /// belongs with the character before.
+    pub anchor: (u64, u32, bool),
+    /// The selection's end, as `anchor` gives its start.
+    pub focus: (u64, u32, bool),
+    /// How far the pages are scrolled, in layout units.
+    pub scroll: i64,
+    /// Where Up and Down aim across lines, if a run of them is going.
+    pub goal: Option<i64>,
+    /// Whether a run of typing is going, so what's typed next undoes with
+    /// it.
+    pub typing: bool,
+    /// Properties for the next text typed, set by Bold and the like.
+    pub pending: doc::Props,
 }
 
 /// One thing a person does.
-#[derive(Clone, Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub enum Step {
     /// Types text.
     Type(String),
@@ -80,6 +117,84 @@ pub enum Step {
     /// Checks the story's tree at this point, as `outline` does at the
     /// end.
     Outline(Vec<String>),
+    /// Presses the pointer at a point, in logical pixels, with Shift held
+    /// or not, as the given press of a run of quick presses in one place,
+    /// as the shell reports it.
+    Press(f64, f64, bool, u32),
+    /// Lets the pointer's button go.
+    Release,
+    /// The window takes a size, in logical pixels.
+    Resize(f64, f64),
+    /// What the clipboard holds from here on, which pasting gives.
+    Clipboard(String),
+    /// A file chosen in the system's dialog: for a picture ("picture"), a
+    /// document to open ("open") or where to move one ("move-to"), and the
+    /// file, if one was chosen.
+    Chosen(String, Option<String>),
+}
+
+impl Step {
+    /// The step that gives `event`, as the session recorder writes it;
+    /// none for what a step doesn't give, text pasted, which comes from
+    /// the clipboard ([`Step::Clipboard`]).
+    pub fn of(event: &Event) -> Option<Step> {
+        Some(match event {
+            Event::Key { key, modifiers } => Step::Key(key_name(*key, *modifiers)),
+            Event::Text(text) => Step::Type(text.clone()),
+            Event::Preedit(text) => Step::Preedit(text.clone()),
+            Event::Press { x, y, shift, count } => Step::Press(*x, *y, *shift, *count),
+            Event::Move { x, y } => Step::Hover(*x, *y),
+            Event::Release => Step::Release,
+            Event::Scroll(dy) => Step::Scroll(*dy),
+            Event::Resize { width, height } => Step::Resize(*width, *height),
+            Event::Command(id) => Step::Command(id.clone()),
+            Event::Pasted(_) => return None,
+            Event::Chosen(choice, path) => Step::Chosen(
+                choice_name(*choice).to_string(),
+                path.as_ref().map(|p| p.to_string_lossy().into_owned()),
+            ),
+        })
+    }
+}
+
+/// A choice as a session names it.
+fn choice_name(choice: Choice) -> &'static str {
+    match choice {
+        Choice::Open => "open",
+        Choice::MoveTo => "move-to",
+        Choice::Picture => "picture",
+    }
+}
+
+/// The choice a session names `name`.
+fn choice_of(name: &str) -> Option<Choice> {
+    match name {
+        "open" => Some(Choice::Open),
+        "move-to" => Some(Choice::MoveTo),
+        "picture" => Some(Choice::Picture),
+        _ => None,
+    }
+}
+
+/// A key and its modifiers, as a shortcut reads: "Primary+Shift+Left".
+/// The plus key is "Plus".
+fn key_name(key: Key, modifiers: Modifiers) -> String {
+    let mut out = String::new();
+    for (held, name) in [
+        (modifiers.primary, "Primary+"),
+        (modifiers.shift, "Shift+"),
+        (modifiers.alt, "Alt+"),
+    ] {
+        if held {
+            out.push_str(name);
+        }
+    }
+    match key {
+        Key::Char('+') => out.push_str("Plus"),
+        Key::Char(c) => out.push(c),
+        other => out.push_str(&format!("{other:?}")),
+    }
+    out
 }
 
 /// A session played: the editor as it ends, and the clipboard.
@@ -92,20 +207,26 @@ pub struct Played {
     pub problems: Vec<String>,
 }
 
-/// Plays `session` into a new document in `res`'s documents folder.
+/// Plays `session` into a new document in `res`'s documents folder: an
+/// empty one, or the one it starts from.
 pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorError> {
-    let res = match &session.language {
-        Some(tag) => {
-            let mut res = (*res).clone();
+    let res = if session.language.is_some() || session.mac != res.mac {
+        let mut res = (*res).clone();
+        if let Some(tag) = &session.language {
             res.language = text::Language::parse(tag).unwrap_or_default();
-            Arc::new(res)
         }
-        None => res,
+        res.mac = session.mac;
+        Arc::new(res)
+    } else {
+        res
     };
-    let mut editor = Editor::create(res.clone())?;
+    let mut editor = match &session.start {
+        Some(start) => Editor::resume(res.clone(), start, session.size)?,
+        None => Editor::create(res.clone())?,
+    };
     let mut clipboard = String::new();
     let mut problems = Vec::new();
-    let (width, height) = session.size;
+    let (mut width, mut height) = session.size;
     editor.update(Event::Resize { width, height });
     for (n, step) in session.events.iter().enumerate() {
         let events = match step {
@@ -155,6 +276,28 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
                 }
                 Vec::new()
             }
+            Step::Press(x, y, shift, count) => vec![Event::Press {
+                x: *x,
+                y: *y,
+                shift: *shift,
+                count: *count,
+            }],
+            Step::Release => vec![Event::Release],
+            Step::Resize(w, h) => {
+                (width, height) = (*w, *h);
+                vec![Event::Resize { width, height }]
+            }
+            Step::Clipboard(text) => {
+                clipboard = text.clone();
+                Vec::new()
+            }
+            Step::Chosen(choice, path) => match choice_of(choice) {
+                Some(choice) => vec![Event::Chosen(choice, path.as_ref().map(PathBuf::from))],
+                None => {
+                    problems.push(format!("at step {n}, nothing is chosen for {choice:?}"));
+                    Vec::new()
+                }
+            },
         };
         for event in events {
             let mut queue = editor.update(event);
@@ -197,9 +340,17 @@ fn clicks(x: f64, y: f64, shift: bool, count: u32) -> Vec<Event> {
         .collect()
 }
 
-/// The key event a shortcut-like string names.
+/// The key event a shortcut-like string names; "Plus" is the plus key.
 fn key(keys: &str) -> Event {
-    let shortcut = Shortcut::parse(keys).unwrap_or(Shortcut {
+    // The modifiers before "Plus" end in "+", if there are any.
+    let parsed = match keys.strip_suffix("Plus") {
+        Some(mods) => Shortcut::parse(&format!("{mods}x")).map(|s| Shortcut {
+            key: Key::Char('+'),
+            ..s
+        }),
+        None => Shortcut::parse(keys),
+    };
+    let shortcut = parsed.unwrap_or(Shortcut {
         modifiers: Modifiers::default(),
         key: Key::Escape,
     });
@@ -300,7 +451,7 @@ pub fn check(session: &Session, played: &Played) -> Vec<String> {
 }
 
 /// Each paragraph's style and text.
-fn paragraphs(document: &doc::Document) -> Vec<(String, String)> {
+pub(crate) fn paragraphs(document: &doc::Document) -> Vec<(String, String)> {
     document
         .paragraphs()
         .iter()
@@ -318,4 +469,10 @@ fn paragraphs(document: &doc::Document) -> Vec<(String, String)> {
 /// Reads a session from its RON.
 pub fn read(source: &str) -> Result<Session, String> {
     ron::from_str(source).map_err(|e| e.to_string())
+}
+
+/// `session` as RON, as [`read`] reads it back.
+pub fn write(session: &Session) -> Result<String, String> {
+    let config = ron::ser::PrettyConfig::default().struct_names(false);
+    ron::ser::to_string_pretty(session, config).map_err(|e| e.to_string())
 }

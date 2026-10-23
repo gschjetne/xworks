@@ -93,6 +93,10 @@
         // a window of its own, where Copy Out makes it a document.
         (id: "versions", title: "Versions…", shortcut: None),
         (id: "copy-out", title: "Copy Out as a Document", shortcut: None),
+        // The last few minutes of what was done in the window, written to
+        // "xWorks sessions" in the documents folder for a bug report; Help
+        // is its place.
+        (id: "save-session", title: "Save Recent Session", shortcut: None),
     ],
     menus: [
         (title: "File", items: ["new", "open", "-", "save-version", "-", "export-pdf", "print", "-", "quit"]),

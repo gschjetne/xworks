@@ -1,0 +1,10 @@
+// The session recorder (docs/ARCHITECTURE.md, section 8; project owner,
+// 2026-10-23, review a23vvez8): how much of what a person does xWorks keeps
+// in memory, to write out as a session when asked or when it fails.
+(
+    // At least this many minutes are kept; older steps go.
+    minutes: 5,
+    // How often, at most, the window's state is noted, when it's at rest,
+    // as where a session can start: what's kept is up to this much longer.
+    checkpoint_seconds: 30,
+)

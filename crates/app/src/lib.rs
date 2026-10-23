@@ -26,6 +26,7 @@
 mod blocks;
 mod editor;
 pub mod picture;
+pub mod recorder;
 mod resources;
 pub mod session;
 mod view;

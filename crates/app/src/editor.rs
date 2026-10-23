@@ -19,6 +19,7 @@ use toolkit::{List, MenuBar, MenuHit};
 use crate::{Resources, blocks};
 
 mod pictures;
+mod recording;
 mod units;
 mod versions;
 
@@ -213,6 +214,8 @@ pub struct Editor {
     pictures: canvas::Pictures,
     /// The named version shown, read-only, if this window shows one.
     version: Option<store::Version>,
+    /// What records what's done in the window, if anything does.
+    recorder: Option<crate::recorder::Recorder>,
 }
 
 /// Sizes for Bigger and Smaller, in points.
@@ -240,23 +243,7 @@ impl Editor {
     /// A new, empty document, made at once as "Untitled.xw" (or
     /// "Untitled 2.xw" and so on) in the documents folder.
     pub fn create(res: Arc<Resources>) -> Result<Editor, EditorError> {
-        std::fs::create_dir_all(&res.documents).map_err(|source| EditorError::Io {
-            path: res.documents.clone(),
-            source,
-        })?;
-        let mut n = 1;
-        let path = loop {
-            let name = if n == 1 {
-                "Untitled.xw".to_string()
-            } else {
-                format!("Untitled {n}.xw")
-            };
-            let path = res.documents.join(name);
-            if !path.exists() {
-                break path;
-            }
-            n += 1;
-        };
+        let path = Editor::untitled(&res)?;
         let mut document = Document::new();
         let first = document.paragraphs()[0];
         let mut ops = vec![Op::SetParaProp {
@@ -278,6 +265,28 @@ impl Editor {
             .map_err(|e| EditorError::Store(store::Error::Damaged(e.to_string())))?;
         let store = Store::create(&path, &document, "story")?;
         Ok(Editor::with(res, path, store, document, History::new()))
+    }
+
+    /// Where a new document goes: "Untitled.xw" in the documents folder,
+    /// or "Untitled 2.xw" and so on, the folder made if it isn't there.
+    fn untitled(res: &Resources) -> Result<PathBuf, EditorError> {
+        std::fs::create_dir_all(&res.documents).map_err(|source| EditorError::Io {
+            path: res.documents.clone(),
+            source,
+        })?;
+        let mut n = 1;
+        loop {
+            let name = if n == 1 {
+                "Untitled.xw".to_string()
+            } else {
+                format!("Untitled {n}.xw")
+            };
+            let path = res.documents.join(name);
+            if !path.exists() {
+                return Ok(path);
+            }
+            n += 1;
+        }
     }
 
     /// The document at `path`.
@@ -347,6 +356,7 @@ impl Editor {
             message: String::new(),
             pictures: canvas::Pictures::new(),
             version: None,
+            recorder: None,
         };
         editor.relayout(true);
         editor
@@ -1730,6 +1740,7 @@ impl Editor {
             "paste" => effects.push(Effect::Paste),
             "insert-picture" => effects.push(Effect::Choose(Choice::Picture)),
             "versions" => self.versions_panel(),
+            "save-session" => self.save_session(),
             "copy-out" => effects.extend(self.copy_out()),
             "select-all" => {
                 self.anchor = self.document_edge(false);
@@ -1880,8 +1891,19 @@ impl Editor {
 
     // ---- events
 
-    /// Handles `event`, returning what the shell should do.
+    /// Handles `event`, returning what the shell should do. A recorder,
+    /// if the window has one, notes it.
     pub fn update(&mut self, event: Event) -> Vec<Effect> {
+        let Some(recorder) = self.recorder.clone() else {
+            return self.handle(event);
+        };
+        recorder.before(self, &event);
+        let effects = self.handle(event);
+        recorder.after(self);
+        effects
+    }
+
+    fn handle(&mut self, event: Event) -> Vec<Effect> {
         let px = |v: f64| (v * PIXEL as f64).round() as i64;
         match event {
             Event::Key { key, modifiers } => return self.key(key, modifiers),
