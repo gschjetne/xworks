@@ -30,15 +30,16 @@ pub(crate) fn draw(editor: &Editor, look: &Look) -> Page {
             continue;
         }
         if !parts.draft {
-            // A soft shadow, as the mockups have it, and the page: only
-            // what shows of the shadow round the page is drawn, as the page
-            // covers the rest.
+            // A soft shadow, as the mockups have it, and the page. The
+            // page covers most of the shadow, which isn't drawn: only a
+            // rim reaching a little under the page's edge, so the page
+            // is anti-aliased over shadow there as over a whole one.
             let r = 2 * PIXEL;
-            let page = Rect::new(x, y, style.width, style.height);
+            let under = Rect::new(x, y, style.width, style.height).inset(r + PIXEL);
             for (dx, dy, dw) in [(-PIXEL, 0, 2 * PIXEL), (0, PIXEL, 0)] {
                 let shadow = Rect::new(x + dx, y + dy, style.width + dw, style.height);
                 out.items.push(Item::Fill {
-                    path: toolkit::ring(shadow, r, page),
+                    path: toolkit::ring(shadow, r, under),
                     color: look.shadow,
                 });
             }
