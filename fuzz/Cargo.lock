@@ -1591,11 +1591,13 @@ name = "xworks-fuzz"
 version = "0.0.0"
 dependencies = [
  "app",
+ "doc",
  "libfuzzer-sys",
  "locale",
  "ron",
  "scene",
  "store",
+ "story",
  "testkit",
  "text",
 ]

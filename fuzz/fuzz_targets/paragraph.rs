@@ -1,14 +1,17 @@
 //! Text as it's typed or pasted, in the bundled fonts: any UTF-8 lays out
 //! without a panic, its lines cover it and fit, and the caret can visit
 //! every place in it. The first bytes choose the width, direction and
-//! alignment; the rest is the text.
+//! alignment; the rest is the text. Each U+FFFC in it stands for an inline
+//! object, as a picture does, each its own size, and each is placed once.
 
 #![no_main]
 
 use std::sync::OnceLock;
 
 use libfuzzer_sys::fuzz_target;
-use text::{Affinity, Align, Cursor, Direction, Fonts, Paragraph, Span, Style, units};
+use text::{
+    Affinity, Align, Cursor, Direction, Fonts, Inline, Paragraph, Setting, Span, Style, units,
+};
 
 fn fonts() -> &'static Fonts {
     static FONTS: OnceLock<Fonts> = OnceLock::new();
@@ -61,7 +64,17 @@ fuzz_target!(|data: &[u8]| {
             ligatures: text::Ligatures::default(),
         },
     }];
-    let layout = text::layout(
+    // Objects from a point to a page wide, some taller than a line.
+    let objects: Vec<Inline> = text
+        .match_indices('\u{fffc}')
+        .enumerate()
+        .map(|(k, (offset, _))| Inline {
+            offset,
+            width: (k as i64 % 7) * 50 * units::POINT + units::POINT,
+            height: (k as i64 % 5) * 20 * units::POINT,
+        })
+        .collect();
+    let layout = text::layout_with(
         fonts(),
         &Paragraph {
             text,
@@ -70,7 +83,13 @@ fuzz_target!(|data: &[u8]| {
             align,
             width,
         },
+        &Setting {
+            objects: &objects,
+            ..Setting::default()
+        },
     );
+    let placed: usize = layout.lines.iter().map(|l| l.objects.len()).sum();
+    assert_eq!(placed, objects.len());
     let mut at = 0;
     for line in &layout.lines {
         assert_eq!(line.range.start, at);

@@ -18,11 +18,13 @@ cargo-fuzz = true
 
 [dependencies]
 app = { path = "../crates/app" }
+doc = { path = "../crates/doc" }
 libfuzzer-sys = "0.4.12"  # cargo-fuzz's harness
 locale = { path = "../crates/locale" }
 ron = "0.12.2"
 scene = { path = "../crates/scene" }
 store = { path = "../crates/store" }
+story = { path = "../crates/story" }
 testkit = { path = "../crates/testkit" }
 text = { path = "../crates/text" }
 
@@ -78,6 +80,13 @@ bench = false
 [[bin]]
 name = "picture_webp"
 path = "fuzz_targets/picture_webp.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "session_file"
+path = "fuzz_targets/session_file.rs"
 test = false
 doc = false
 bench = false
