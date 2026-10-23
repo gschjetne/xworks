@@ -461,8 +461,28 @@ goldens and chose xWorks' own title bar (review 3ce247c2). Along the way:
   brought Inter and, for stage 3, Source Serif 4 and JetBrains Mono;
 - `toolkit` reads and draws Lucide's icons.
 
-Stages 2 to 4 run in parallel, each by an agent in its own worktree, on
+Stages 2 to 4 ran in parallel, each by an agent in its own worktree, on
 plans the owner approved in review pysc65hp.
+
+**Stages 2 to 4 are done (2026-10-23).** The owner approved their renders
+and settled what they left open (review dcn5ejrd). ARCHITECTURE.md
+sections 5, 6, 9 and 10 say what each built.
+- **Stage 2:** a story is a tree of blocks (lists, quotes, code, Markdown's
+  tables), made, deleted and moved by operations that rebase with the
+  document. Schema 2 upgrades M1's files, kept as a fixture.
+- **Stage 3:** justified text breaks by Knuth and Plass, and words
+  hyphenate by TeX's patterns in ten languages. It also brought tab stops,
+  moving by word and sentence, a language for every document, and Source
+  Serif 4 and Inter as the defaults.
+- **Stage 4:** the display list has images, clips and transforms. Pictures
+  are decoded into sRGB, text has underlines and lines through it, and
+  windows draw only what changed. That made a keystroke three to four
+  times faster.
+- **Ligatures:** styles now set them class by class, and code has none
+  (review zym9j5k0).
+
+Stages 5 and 7 run in parallel now, on plans the owner approved in review
+a23vvez8.
 
 ### Exit criteria
 
