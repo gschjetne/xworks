@@ -10,8 +10,9 @@
 //! - [`Key`], [`Modifiers`], [`Shortcut`]: keys as shells report them, and
 //!   matching them to commands.
 //! - [`MenuBar`]: the menus as they stand, with each command enabled or
-//!   not, their access keys, and the submenus the app fills, such as
-//!   recent documents.
+//!   not, their access keys, and their submenus: those the spec gives,
+//!   such as View's Units, and those the app fills, such as recent
+//!   documents.
 //! - [`Arg`]: a command's typed arguments, such as a length typed into the
 //!   inspector or a document chosen from a menu.
 //! - [`Inspector`]: the selection's properties as typed fields, in tabs
@@ -53,6 +54,9 @@ pub struct Spec {
     pub commands: Vec<CommandSpec>,
     /// The menus, left to right.
     pub menus: Vec<MenuSpec>,
+    /// Menus within menus, which menus name by their IDs.
+    #[serde(default)]
+    pub submenus: Vec<SubmenuSpec>,
 }
 
 /// A command as a spec gives it.
@@ -85,7 +89,19 @@ pub struct MenuSpec {
     /// Its title in the menu bar, its access key marked with `&`.
     pub title: String,
     /// Its items: command IDs, "-" for separators, and ">" before the ID
-    /// of a command whose submenu the app fills, titled as the command.
+    /// of a submenu the spec gives, or of a command whose submenu the app
+    /// fills, titled as the command.
+    pub items: Vec<String>,
+}
+
+/// A menu within a menu, as a spec gives it.
+#[derive(Clone, Debug, Deserialize)]
+pub struct SubmenuSpec {
+    /// Its ID, which menus name it by, after ">".
+    pub id: String,
+    /// Its title, its access key marked with `&`.
+    pub title: String,
+    /// Its items: command IDs, and "-" for separators.
     pub items: Vec<String>,
 }
 
@@ -349,6 +365,7 @@ impl Command {
 pub struct Commands {
     commands: Vec<Command>,
     menus: Vec<MenuSpec>,
+    submenus: Vec<SubmenuSpec>,
 }
 
 /// Whether a command can run now, and whether it's on.
@@ -473,15 +490,25 @@ impl Commands {
                 return Err(Error::SameShortcut(other.id.clone(), c.id.clone()));
             }
             let (title, access) = access(&c.title);
+            // What the palette says it is: the title of the first menu,
+            // or else submenu, it's in.
             let kind = c.kind.clone().unwrap_or_else(|| {
+                let lists = |items: &[String]| {
+                    items
+                        .iter()
+                        .any(|i| i.trim_start_matches('>') == c.id.as_str())
+                };
                 spec.menus
                     .iter()
-                    .find(|m| {
-                        m.items
+                    .find(|m| lists(&m.items))
+                    .map(|m| &m.title)
+                    .or_else(|| {
+                        spec.submenus
                             .iter()
-                            .any(|i| i.trim_start_matches('>') == c.id.as_str())
+                            .find(|s| lists(&s.items))
+                            .map(|s| &s.title)
                     })
-                    .map_or_else(String::new, |m| self::access(&m.title).0)
+                    .map_or_else(String::new, |t| self::access(t).0)
             });
             commands.push(Command {
                 id: c.id.clone(),
@@ -492,6 +519,14 @@ impl Commands {
                 kind,
                 arg: c.arg,
             });
+        }
+        // Submenus' IDs are their own: no other submenu's, nor a command's.
+        for (i, s) in spec.submenus.iter().enumerate() {
+            if spec.submenus[..i].iter().any(|t| t.id == s.id)
+                || commands.iter().any(|c| c.id == s.id)
+            {
+                return Err(Error::Duplicate(s.id.clone()));
+            }
         }
         let mut titles = Vec::new();
         for menu in &spec.menus {
@@ -511,16 +546,25 @@ impl Commands {
                     Some(id) => (id, true),
                     None => (item.as_str(), false),
                 };
-                let Some(command) = commands.iter().find(|c| c.id == id) else {
-                    return Err(Error::Unknown {
-                        menu: title,
-                        item: item.clone(),
-                    });
+                let key = match spec.submenus.iter().find(|s| s.id == id) {
+                    Some(sub) if submenu => {
+                        check_submenu(sub, &commands)?;
+                        access(&sub.title).1
+                    }
+                    _ => {
+                        let Some(command) = commands.iter().find(|c| c.id == id) else {
+                            return Err(Error::Unknown {
+                                menu: title,
+                                item: item.clone(),
+                            });
+                        };
+                        if command.arg.is_some() && !submenu {
+                            return Err(Error::NeedsArgument(command.id.clone()));
+                        }
+                        command.access
+                    }
                 };
-                if command.arg.is_some() && !submenu {
-                    return Err(Error::NeedsArgument(command.id.clone()));
-                }
-                if let Some(key) = command.access {
+                if let Some(key) = key {
                     if keys.contains(&key) {
                         return Err(Error::SameAccessKey(title, key));
                     }
@@ -531,6 +575,7 @@ impl Commands {
         Ok(Commands {
             commands,
             menus: spec.menus.clone(),
+            submenus: spec.submenus.clone(),
         })
     }
 
@@ -568,6 +613,22 @@ impl Commands {
         fill: impl Fn(&str) -> Vec<MenuItem>,
     ) -> MenuBar {
         let keyed = |key: Option<char>| if mac { None } else { key };
+        // A command's item, or a separator for "-".
+        let plain = |item: &str| match self.get(item) {
+            None => MenuItem::Separator,
+            Some(c) => {
+                let s = state(&c.id);
+                MenuItem::Command {
+                    id: c.id.clone(),
+                    args: Vec::new(),
+                    title: c.title.clone(),
+                    access: keyed(c.access),
+                    shortcut: c.shortcut_on(mac).map(|s| s.label(mac)),
+                    enabled: s.enabled,
+                    checked: s.checked,
+                }
+            }
+        };
         MenuBar {
             menus: self
                 .menus
@@ -581,29 +642,24 @@ impl Commands {
                             .items
                             .iter()
                             .map(|item| {
-                                if let Some(id) = item.strip_prefix('>')
-                                    && let Some(c) = self.get(id)
-                                {
+                                let Some(id) = item.strip_prefix('>') else {
+                                    return plain(item);
+                                };
+                                if let Some(sub) = self.submenus.iter().find(|s| s.id == id) {
+                                    let (title, key) = access(&sub.title);
                                     return MenuItem::Submenu {
+                                        title,
+                                        access: keyed(key),
+                                        items: sub.items.iter().map(|i| plain(i)).collect(),
+                                    };
+                                }
+                                match self.get(id) {
+                                    Some(c) => MenuItem::Submenu {
                                         title: c.title.clone(),
                                         access: keyed(c.access),
                                         items: fill(id),
-                                    };
-                                }
-                                match self.get(item) {
+                                    },
                                     None => MenuItem::Separator,
-                                    Some(c) => {
-                                        let s = state(&c.id);
-                                        MenuItem::Command {
-                                            id: c.id.clone(),
-                                            args: Vec::new(),
-                                            title: c.title.clone(),
-                                            access: keyed(c.access),
-                                            shortcut: c.shortcut_on(mac).map(|s| s.label(mac)),
-                                            enabled: s.enabled,
-                                            checked: s.checked,
-                                        }
-                                    }
                                 }
                             })
                             .collect(),
@@ -640,6 +696,32 @@ impl Commands {
             })
             .collect()
     }
+}
+
+/// Checks that submenu `sub` holds together: each item is one of
+/// `commands` that runs without an argument, or a separator, and no two
+/// share an access key.
+fn check_submenu(sub: &SubmenuSpec, commands: &[Command]) -> Result<(), Error> {
+    let title = access(&sub.title).0;
+    let mut keys = Vec::new();
+    for item in sub.items.iter().filter(|i| *i != "-") {
+        let Some(command) = commands.iter().find(|c| c.id == *item) else {
+            return Err(Error::Unknown {
+                menu: title,
+                item: item.clone(),
+            });
+        };
+        if command.arg.is_some() {
+            return Err(Error::NeedsArgument(command.id.clone()));
+        }
+        if let Some(key) = command.access {
+            if keys.contains(&key) {
+                return Err(Error::SameAccessKey(title, key));
+            }
+            keys.push(key);
+        }
+    }
+    Ok(())
 }
 
 /// How well `title` matches `query`, both lower case: 0 if it starts with
@@ -709,6 +791,7 @@ mod tests {
                     items: items.iter().map(|s| s.to_string()).collect(),
                 })
                 .collect(),
+            submenus: Vec::new(),
         }
     }
 
@@ -910,6 +993,103 @@ mod tests {
         assert_eq!(
             Commands::from_spec(&keyed).unwrap_err(),
             Error::NeedsArgument("open-recent".to_string())
+        );
+    }
+
+    #[test]
+    fn submenus_can_be_given_by_the_spec() {
+        let mut spec = spec(
+            &[
+                ("toggle-ruler", None),
+                ("units-cm", None),
+                ("units-in", None),
+            ],
+            &[("&View", &["toggle-ruler", ">units"])],
+        );
+        let titles = ["&Ruler", "&Centimetres", "&Inches"];
+        for (c, t) in spec.commands.iter_mut().zip(titles) {
+            c.title = t.to_string();
+        }
+        spec.submenus = vec![SubmenuSpec {
+            id: "units".to_string(),
+            title: "&Units".to_string(),
+            items: vec![
+                "units-cm".to_string(),
+                "-".to_string(),
+                "units-in".to_string(),
+            ],
+        }];
+        let commands = Commands::from_spec(&spec).unwrap();
+        let bar = commands.menu_bar(
+            false,
+            |id| CommandState {
+                enabled: true,
+                checked: id == "units-in",
+            },
+            |_| panic!("the spec fills it"),
+        );
+        let item = |id: &str, title: &str, access, checked| MenuItem::Command {
+            id: id.to_string(),
+            args: Vec::new(),
+            title: title.to_string(),
+            access: Some(access),
+            shortcut: None,
+            enabled: true,
+            checked,
+        };
+        assert_eq!(
+            bar.menus[0].items[1],
+            MenuItem::Submenu {
+                title: "Units".to_string(),
+                access: Some('u'),
+                items: vec![
+                    item("units-cm", "Centimetres", 'c', false),
+                    MenuItem::Separator,
+                    item("units-in", "Inches", 'i', true),
+                ],
+            }
+        );
+        // The palette says a command in one is of the submenu's kind.
+        assert_eq!(commands.get("units-cm").unwrap().kind, "Units");
+        assert_eq!(commands.get("toggle-ruler").unwrap().kind, "View");
+
+        // Its items are commands that run without an argument, with
+        // access keys of their own; its ID is its own; and a menu names it
+        // after ">".
+        let refused = |change: &dyn Fn(&mut Spec)| {
+            let mut bad = spec.clone();
+            change(&mut bad);
+            Commands::from_spec(&bad).unwrap_err()
+        };
+        assert_eq!(
+            refused(&|s| s.submenus[0].items.push("units-pc".to_string())),
+            Error::Unknown {
+                menu: "Units".to_string(),
+                item: "units-pc".to_string()
+            }
+        );
+        assert_eq!(
+            refused(&|s| s.commands[1].arg = Some(ArgKind::Text)),
+            Error::NeedsArgument("units-cm".to_string())
+        );
+        assert_eq!(
+            refused(&|s| s.commands[2].title = "&Centimetres".to_string()),
+            Error::SameAccessKey("Units".to_string(), 'c')
+        );
+        assert_eq!(
+            refused(&|s| s.submenus[0].id = "units-cm".to_string()),
+            Error::Duplicate("units-cm".to_string())
+        );
+        assert_eq!(
+            refused(&|s| s.commands[0].title = "&Underline".to_string()),
+            Error::SameAccessKey("View".to_string(), 'u')
+        );
+        assert_eq!(
+            refused(&|s| s.menus[0].items[1] = "units".to_string()),
+            Error::Unknown {
+                menu: "View".to_string(),
+                item: "units".to_string()
+            }
         );
     }
 

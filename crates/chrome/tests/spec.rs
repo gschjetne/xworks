@@ -85,8 +85,16 @@ fn the_menus_hold_every_command() {
     let mut listed = Vec::new();
     for menu in &bar.menus {
         for item in &menu.items {
-            if let chrome::MenuItem::Command { id, .. } = item {
-                listed.push(id.clone());
+            match item {
+                chrome::MenuItem::Command { id, .. } => listed.push(id.clone()),
+                chrome::MenuItem::Submenu { items, .. } => {
+                    for item in items {
+                        if let chrome::MenuItem::Command { id, .. } = item {
+                            listed.push(id.clone());
+                        }
+                    }
+                }
+                chrome::MenuItem::Separator => {}
             }
         }
     }
