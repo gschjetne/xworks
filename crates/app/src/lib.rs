@@ -30,5 +30,5 @@ mod resources;
 pub mod session;
 mod view;
 
-pub use editor::{Editor, EditorError, Effect, Event, Position};
+pub use editor::{Choice, Editor, EditorError, Effect, Event, Position};
 pub use resources::{ResourceError, Resources};

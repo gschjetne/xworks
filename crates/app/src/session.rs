@@ -165,6 +165,7 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
                     Effect::Open(_)
                     | Effect::OpenExternally(_)
                     | Effect::Reveal(_)
+                    | Effect::Choose(_)
                     | Effect::Quit => {}
                 }
             }

@@ -85,6 +85,22 @@ pub enum Event {
     Command(String),
     /// Text from the clipboard, after [`Effect::Paste`].
     Pasted(String),
+    /// The file a person chose, after [`Effect::Choose`], or `None` if they
+    /// chose none.
+    Chosen(Choice, Option<PathBuf>),
+}
+
+/// What a file is chosen for, through the system's own dialog (ARCHITECTURE.md
+/// section 8): the shell shows the dialog [`Effect::Choose`] asks for and
+/// sends back [`Event::Chosen`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Choice {
+    /// A document to open.
+    Open,
+    /// Where to move the document, which renames it too.
+    MoveTo,
+    /// A picture to place in the document.
+    Picture,
 }
 
 /// Something the shell does for the editor.
@@ -100,6 +116,9 @@ pub enum Effect {
     OpenExternally(PathBuf),
     /// Show this file in the system's file manager, such as an export.
     Reveal(PathBuf),
+    /// Ask the person for a file, in the system's own dialog, and send it
+    /// back as [`Event::Chosen`].
+    Choose(Choice),
     /// Quit the app.
     Quit,
 }
@@ -1830,6 +1849,8 @@ impl Editor {
                 self.paste(&text);
                 self.reveal();
             }
+            // Nothing asks for a file yet: stages 5 and 7 of M2 do.
+            Event::Chosen(..) => {}
             Event::Resize { width, height } => {
                 self.width = px(width).max(PIXEL);
                 self.height = px(height).max(PIXEL);

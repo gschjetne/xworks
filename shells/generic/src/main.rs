@@ -682,6 +682,8 @@ impl Shell {
                         eprintln!("xworks: showing {}: {e}", path.display());
                     }
                 }
+                // The system's file dialogs come with M2's stage 5.
+                Effect::Choose(_) => {}
                 Effect::Quit => event_loop.exit(),
             }
         }
