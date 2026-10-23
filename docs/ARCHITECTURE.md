@@ -603,6 +603,63 @@ The owner approved mockups of all this as goldens (`mockup-pages`,
 `mockup-pages-dark`, `mockup-draft-dark` and `mockup-palette`, drawn by
 `shot`, review 3ce247c2); the chrome M2 builds matches them.
 
+**What M2's stage 5 built** (the designed chrome). The choices below are
+the stage's own, open to the owner's review unless marked settled.
+
+- **A window holds a part.** `app::Window` draws the chrome and gives the
+  document's area to the `app::Editor`, the first part behind the canvas
+  contract (`part`): a surface, input in its own coordinates, and back
+  frames, an AccessKit tree, its caret, the pointer's shape, requests for
+  the clipboard and files, its commands' state, the inspector's fields
+  and the ruler.
+- **The chrome model grew** (`chrome`): titles mark access keys with `&`;
+  commands take typed arguments (text and numbers), which the inspector,
+  the ruler, submenus the app fills (Open Recent) and scripts give them;
+  the inspector is tabs of sections of rows of controls (a choice from a
+  list, a length with its unit, a toggle, segments, a button); the ruler
+  is a column with a paragraph's indents and stops. The look is data:
+  `spec/themes/chrome.ron` for type and sizes, `light.ron` and `dark.ron`
+  for each look's colours by role, which the mockups read too.
+- **The menus** are File, Edit, View, Insert, Format and Help. Every
+  command that runs without an argument is in one, but for moving the
+  caret, which is keys, and languages and sizes, which the inspector sets;
+  the palette finds them all, by a title's start, a word's, the letters
+  anywhere, then in order from a word's start. Alt let go alone, or F10,
+  gives the menus the keyboard on Windows and Linux; Alt and a letter
+  opens one. New shortcuts avoid Ctrl+Alt, which is AltGr on Windows: the
+  palette is Ctrl+Shift+P, the inspector Ctrl+Shift+I and the ruler
+  Ctrl+Shift+R.
+- **The draft** is the story in a column at most 640 pixels wide on the
+  desk, in the look's ink; it prints on pages as ever.
+- **The ruler** measures in centimetres from the column's start, and a
+  paragraph's indents and stops from its own place, which a list or a
+  quote moves in. A click at its foot sets a stop, snapped to 2.5 mm; a
+  stop dragged off it goes.
+- **Paragraphs carry their own** spacing, line height (in thousandths of
+  the largest font size on a line: 1 200 is 1.2 times the font), start,
+  end and first-line indents, and tab stops, as properties (`story::keys`)
+  over their style's. A paragraph's own stops take the place of its
+  style's and the document's set ones; the document's default stops
+  follow them.
+- **Naming.** A document's name comes from its first heading, or with
+  none its first line, while its file is still called "Untitled" or after
+  that text; the title bar shows it as it's typed, and the file takes it
+  when the caret leaves that paragraph or the window closes. Clicking the
+  name renames the document in place; File, Move To moves it through the
+  system's dialog. Either way it's named by hand from then on. The file
+  moves in one place, `Editor::relocate`, which closes the database first
+  so SQLite folds its log into the file. The documents opened lately, ten,
+  are kept in the system's folder for settings.
+- **Screen readers** get the text as a multiline text input of
+  paragraphs and headings, each line a text run with its graphemes, where
+  each sits, where its words start, and the selection in them.
+
+Not yet: **a document's own page size and margins, and tab stops set for
+a style**, need documents to hold their style sheet and page style, which
+the file format doesn't (they come from `spec/styles/`); the inspector's
+Page tab shows them, unchangeable, until the owner decides where they
+live.
+
 ## 9. Text (`text`)
 
 Text is the hardest shared piece; every track depends on it. We write our own
@@ -672,6 +729,11 @@ a hard break sit at the start.
   then to default stops at the document's interval (12.5 mm), measured
   from the paragraph's start edge: start, end, centred, and decimal on a
   character the stop names. A justified line stretches after its last tab.
+- **Line heights and indents** (M2, stage 5): a line can be made a
+  multiple of its largest font size tall, the difference from its fonts'
+  own split evenly above and below, and a paragraph's first line indented
+  from its start edge, or hung out past it; both breakers measure the
+  first line in the room it has.
 - **Language** decides more than letterforms. Japanese and Chinese break
   lines by CSS's `normal` rules for their language, which let a line start
   with a small kana; other text by UAX #14's default, `strict`. Words and
@@ -966,6 +1028,7 @@ M1's measurements (project owner, 2026-10-19; section 10). This remains:
 | Text | skrifa, HarfRust; our own layout and editing; TeX hyphenation patterns |
 | Unicode and locale | ICU4X |
 | Accessibility | AccessKit |
+| File dialogs (generic shell) | rfd: portals on Linux, the common dialogs on Windows (review a23vvez8) |
 | Storage | SQLite through rusqlite (bundled) |
 | Decimal arithmetic | our own decimal128, `calc::decimal` (review h6nsn9xm) |
 | Persistent data | imbl, or our own chunked structures for tables |
