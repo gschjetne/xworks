@@ -20,8 +20,8 @@ use part::{Input, Part, Request, Surface};
 use scene::{Page, Point};
 use text::units::PIXEL;
 use toolkit::{
-    ControlRef, Field, FieldKey, InspectorHit, InspectorView, Kit, Labels, PaletteHit, PaletteView,
-    Popup, PopupRow, Rect, RulerHit, RulerView, Theme, TitleBar, TitleHit, TitleModel,
+    ControlRef, Field, FieldKey, InspectorHit, InspectorView, Kit, PaletteHit, PaletteView, Popup,
+    PopupRow, Rect, RulerHit, RulerView, Theme, TitleBar, TitleHit, TitleModel,
 };
 
 use crate::editor::{Edge, PointerShape, View, WindowAction};
@@ -71,7 +71,6 @@ pub struct Window {
     editor: Editor,
     theme: Theme,
     dark: bool,
-    labels: Labels,
     width: i64,
     height: i64,
     maximized: bool,
@@ -224,7 +223,6 @@ impl Window {
             editor,
             theme,
             dark: false,
-            labels: Labels::new(),
             width: 1000 * PIXEL,
             height: 800 * PIXEL,
             maximized: false,
@@ -278,7 +276,7 @@ impl Window {
             fonts: self.res.fonts(),
             theme: &self.theme,
             icons: &self.res.icons,
-            labels: &self.labels,
+            labels: &self.res.labels,
         }
     }
 
@@ -327,7 +325,9 @@ impl Window {
             self.res.mac,
             |id| self.state(id),
             |id| match id {
-                "open-recent" => self
+                // Read only while a menu is open: the list's file isn't
+                // touched until File, Open Recent can show it.
+                "open-recent" if self.menu.is_some_and(|m| m.open) => self
                     .res
                     .recent
                     .paths()

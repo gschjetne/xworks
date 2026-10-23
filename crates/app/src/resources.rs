@@ -10,7 +10,7 @@ use chrome::Commands;
 use serde::Deserialize;
 use story::StyleSheet;
 use text::{FontSpec, Fonts, Hyphenation, Hyphenator, Language};
-use toolkit::{Colors, Icons, Sizes};
+use toolkit::{Colors, Icons, Labels, Sizes};
 
 use crate::recent::Recent;
 
@@ -57,8 +57,10 @@ pub struct Resources {
     pub light: Colors,
     /// The dark look's colours.
     pub dark: Colors,
-    /// Lucide's icons, for the chrome.
+    /// Lucide's icons, for the chrome, built into the program.
     pub icons: Arc<Icons>,
+    /// The chrome's labels laid out, shared by every window.
+    pub labels: Arc<Labels>,
     /// Where new documents are made.
     pub documents: PathBuf,
     /// The documents opened lately, shared by every window.
@@ -174,7 +176,13 @@ impl Resources {
         let sizes: Sizes = spec(&root.join("spec/themes/chrome.ron"))?;
         let light: Colors = spec(&root.join("spec/themes/light.ron"))?;
         let dark: Colors = spec(&root.join("spec/themes/dark.ron"))?;
-        let icons = read_icons(&root.join("icons/lucide"))?;
+        let (icons, bad) = Icons::bundled();
+        if let Some((name, why)) = bad.first() {
+            return Err(Error::Spec {
+                path: root.join(format!("icons/lucide/{name}.svg")),
+                message: why.clone(),
+            });
+        }
         let pictures = spec(&root.join("spec/pictures.ron"))?;
         let recorder = spec(&root.join("spec/recorder.ron"))?;
         let patterns: PatternSpec = spec(&root.join("spec/text/hyphenation.ron"))?;
@@ -188,6 +196,7 @@ impl Resources {
             light,
             dark,
             icons: Arc::new(icons),
+            labels: Arc::new(Labels::new()),
             documents,
             recent: Arc::new(Recent::default()),
             mac,
@@ -282,31 +291,6 @@ impl Resources {
         // Only this call, holding `tried`, sets it.
         let _ = self.on_demand.loaded.set(Arc::new(all));
         Ok(true)
-    }
-}
-
-/// Lucide's icons in `dir`, by name.
-fn read_icons(dir: &Path) -> Result<Icons, Error> {
-    let entries = std::fs::read_dir(dir).map_err(|source| Error::Io {
-        path: dir.to_path_buf(),
-        source,
-    })?;
-    let mut svgs = Vec::new();
-    for entry in entries.filter_map(Result::ok) {
-        let path = entry.path();
-        if path.extension().is_some_and(|e| e == "svg")
-            && let Some(name) = path.file_stem()
-        {
-            svgs.push((name.to_string_lossy().into_owned(), read(&path)?));
-        }
-    }
-    let (icons, bad) = Icons::from_svgs(svgs);
-    match bad.first() {
-        Some((name, why)) => Err(Error::Spec {
-            path: dir.join(format!("{name}.svg")),
-            message: why.clone(),
-        }),
-        None => Ok(icons),
     }
 }
 
