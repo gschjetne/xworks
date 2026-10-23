@@ -516,6 +516,55 @@ fn images_are_figures_with_their_alternative_text() {
     assert_eq!(images, [(3, 2, false), (3, 2, true)]);
 }
 
+/// An sRGB JPEG passes through to the PDF unchanged (project owner,
+/// 2026-10-23, review dcn5ejrd): an image that keeps the file it was
+/// decoded from is written as that file, with DCTDecode, and any other as
+/// its pixels.
+#[test]
+fn a_kept_jpeg_is_written_as_it_is() {
+    let jpeg = include_bytes!("../../app/tests/pictures/gradient.jpg").to_vec();
+    // 32 by 24: the pixels stand for what its decoder would give.
+    let rgba = [90u8, 120, 200, 255].repeat(32 * 24);
+    let kept =
+        scene::Image::with_jpeg(32, 24, rgba, std::sync::Arc::new(jpeg.clone())).expect("an image");
+    let mut page = page_from(4 * INCH, 4 * INCH, &[("en", "A photograph.")], false, 0);
+    page.items.push(scene::Item::Image {
+        image: kept,
+        rect: scene::Rect::new(INCH, INCH, 2 * INCH, 3 * INCH / 2),
+        alt: Some("A gradient".to_string()),
+        source: None,
+    });
+    page.items.push(scene::Item::Image {
+        image: picture(),
+        rect: scene::Rect::new(INCH, 3 * INCH, INCH, INCH),
+        alt: None,
+        source: None,
+    });
+    let pdf = render_pdf::pdf(&[page], &paragraphs(1), None).expect("a PDF");
+    assert!(
+        pdf.windows(jpeg.len()).any(|w| w == jpeg.as_slice()),
+        "the JPEG's bytes aren't in the PDF"
+    );
+    let document = lopdf::Document::load_mem(&pdf).expect("the PDF reads");
+    let mut filters = Vec::new();
+    for object in document.objects.values() {
+        if let Ok(stream) = object.as_stream()
+            && stream.dict.get(b"Subtype").and_then(|s| s.as_name()).ok() == Some(b"Image")
+            && !stream.dict.has(b"SMask")
+            && stream.dict.get(b"Width").and_then(|w| w.as_i64()).ok() != Some(3)
+        {
+            let filter = stream
+                .dict
+                .get(b"Filter")
+                .and_then(|f| f.as_name())
+                .map(|n| String::from_utf8_lossy(n).into_owned())
+                .unwrap_or_default();
+            filters.push((filter, stream.content == jpeg));
+        }
+    }
+    assert_eq!(filters, [("DCTDecode".to_string(), true)]);
+}
+
 #[test]
 fn groups_are_clipped_and_transformed_in_the_pdf_too() {
     let line = page_from(4 * INCH, 4 * INCH, &[("en", "Turned text")], false, 0);

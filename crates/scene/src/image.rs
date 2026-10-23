@@ -43,9 +43,14 @@ pub enum ImageError {
 #[derive(Clone)]
 pub struct Image(Arc<Raster>);
 
+/// The bytes of a file an image was decoded from, shared.
+pub type FileData = Arc<dyn AsRef<[u8]> + Send + Sync>;
+
 struct Raster {
     levels: Vec<Level>,
     opaque: bool,
+    /// The sRGB JPEG file the pixels were decoded from, if it's kept.
+    jpeg: Option<FileData>,
 }
 
 /// One size of an [`Image`]: premultiplied RGBA, row by row.
@@ -64,6 +69,29 @@ impl Image {
     /// row by row: scaled down to fit [`MAX_SIDE`] if it's larger, keeping
     /// its proportions, and with its smaller copies made.
     pub fn new(width: u32, height: u32, rgba: Vec<u8>) -> Result<Image, ImageError> {
+        Image::make(width, height, rgba, None)
+    }
+
+    /// An image as [`Image::new`] makes it of the pixels decoded from
+    /// `jpeg`, an sRGB JPEG file shown as it's stored, which it keeps:
+    /// writers that can hold the file as it is, as PDF can, write it
+    /// rather than the pixels, keeping its size (project owner,
+    /// 2026-10-23, review dcn5ejrd). Screens draw the pixels.
+    pub fn with_jpeg(
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+        jpeg: FileData,
+    ) -> Result<Image, ImageError> {
+        Image::make(width, height, rgba, Some(jpeg))
+    }
+
+    fn make(
+        width: u32,
+        height: u32,
+        rgba: Vec<u8>,
+        jpeg: Option<FileData>,
+    ) -> Result<Image, ImageError> {
         if width == 0 || height == 0 {
             return Err(ImageError::Empty { width, height });
         }
@@ -104,7 +132,22 @@ impl Image {
             level = next;
         }
         levels.push(level);
-        Ok(Image(Arc::new(Raster { levels, opaque })))
+        Ok(Image(Arc::new(Raster {
+            levels,
+            opaque,
+            jpeg,
+        })))
+    }
+
+    /// The sRGB JPEG file the image was decoded from, if it keeps one
+    /// ([`Image::with_jpeg`]).
+    pub fn jpeg(&self) -> Option<&[u8]> {
+        self.0.jpeg.as_deref().map(|d| d.as_ref())
+    }
+
+    /// The same, shared, for writers that keep it.
+    pub fn jpeg_data(&self) -> Option<FileData> {
+        self.0.jpeg.clone()
     }
 
     /// Its width in pixels, at its largest.
@@ -181,6 +224,7 @@ impl std::fmt::Debug for Image {
             .field("height", &self.height())
             .field("levels", &self.0.levels.len())
             .field("opaque", &self.0.opaque)
+            .field("jpeg", &self.jpeg().map(<[u8]>::len))
             .finish()
     }
 }
@@ -368,6 +412,17 @@ mod tests {
         }
         let opaque = Image::new(1, 1, vec![1, 2, 3, 255]).unwrap();
         assert_eq!(opaque.straight(), (vec![1, 2, 3], None));
+    }
+
+    #[test]
+    fn a_jpeg_is_kept_only_where_its_given() {
+        let plain = Image::new(1, 1, vec![1, 2, 3, 255]).unwrap();
+        assert!(plain.jpeg().is_none());
+        let file: FileData = Arc::new(b"\xff\xd8\xff the file".to_vec());
+        let kept = Image::with_jpeg(1, 1, vec![1, 2, 3, 255], file).unwrap();
+        assert_eq!(kept.jpeg(), Some(b"\xff\xd8\xff the file".as_slice()));
+        assert_eq!(kept.levels(), plain.levels(), "the same pixels drawn");
+        assert!(kept.clone().jpeg_data().is_some(), "clones share it");
     }
 
     #[test]

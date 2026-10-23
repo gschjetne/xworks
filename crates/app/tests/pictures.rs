@@ -320,3 +320,60 @@ fn damaged_pictures_are_errors() {
     ));
     assert!(picture::decode_as(Format::Webp, b"RIFF\0\0\0\0WEBPVP8 ", &limits).is_err());
 }
+
+/// `jpeg` with the ICC profile `icc` in an APP2 segment after its JFIF
+/// header, as cameras and editors embed one.
+fn with_icc(jpeg: &[u8], icc: &[u8]) -> Vec<u8> {
+    // SOI, then APP0: its marker and its length, which counts itself.
+    let app0 = 4 + usize::from(u16::from_be_bytes([jpeg[4], jpeg[5]]));
+    let mut segment = vec![0xFF, 0xE2];
+    let len = (2 + 12 + 2 + icc.len()) as u16;
+    segment.extend_from_slice(&len.to_be_bytes());
+    segment.extend_from_slice(b"ICC_PROFILE\0");
+    segment.extend_from_slice(&[1, 1]);
+    segment.extend_from_slice(icc);
+    [&jpeg[..app0], &segment, &jpeg[app0..]].concat()
+}
+
+/// An sRGB JPEG shown as it's stored keeps its file, for PDF to hold
+/// unchanged (project owner, review dcn5ejrd); any other picture is its
+/// pixels alone.
+#[test]
+fn an_srgb_jpeg_keeps_its_file() {
+    let limits = limits();
+    let gradient = fixture("gradient.jpg");
+    let decoded = picture::decode(&gradient, &limits).expect("a JPEG");
+    assert_eq!(decoded.image.jpeg(), Some(gradient.as_slice()));
+    // Tagged sRGB, it's still sRGB.
+    let srgb = moxcms::ColorProfile::new_srgb()
+        .encode()
+        .expect("an sRGB profile");
+    let tagged = with_icc(&gradient, &srgb);
+    let decoded = picture::decode(&tagged, &limits).expect("a JPEG");
+    assert_eq!(decoded.image.jpeg(), Some(tagged.as_slice()));
+    // Tagged otherwise, it's converted, and drawn and printed from its
+    // pixels.
+    let p3 = moxcms::ColorProfile::new_display_p3()
+        .encode()
+        .expect("a P3 profile");
+    let decoded = picture::decode(&with_icc(&gradient, &p3), &limits).expect("a JPEG");
+    assert!(decoded.image.jpeg().is_none());
+    let decoded = picture::decode(&with_icc(&gradient, b"not a profile"), &limits).expect("a JPEG");
+    assert!(
+        decoded.image.jpeg().is_none(),
+        "a profile that can't be read"
+    );
+    // Turned by its EXIF, it isn't shown as it's stored; grey isn't sRGB.
+    for name in ["turned.jpg", "grey.jpg"] {
+        let decoded = picture::decode(&fixture(name), &limits).expect("a JPEG");
+        assert!(decoded.image.jpeg().is_none(), "{name}");
+    }
+    let png = png(4, 3, png::ColorType::Rgba, &colours(), None, None);
+    assert!(
+        picture::decode(&png, &limits)
+            .expect("a PNG")
+            .image
+            .jpeg()
+            .is_none()
+    );
+}
