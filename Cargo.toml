@@ -20,6 +20,7 @@ canvas = { path = "crates/canvas" }
 chrome = { path = "crates/chrome" }
 doc = { path = "crates/doc" }
 locale = { path = "crates/locale" }
+part = { path = "crates/part" }
 render-cpu = { path = "crates/render-cpu" }
 render-gpu = { path = "crates/render-gpu" }
 render-pdf = { path = "crates/render-pdf" }
