@@ -278,8 +278,8 @@ impl Editor {
             opened.document,
             opened.history,
         );
-        if let Some(schema) = editor.store.read_only() {
-            editor.message = format!("Read-only: made by a newer xWorks (schema {schema})");
+        if let Some(why) = editor.store.read_only() {
+            editor.message = format!("Read-only: {why}");
         }
         Ok(editor)
     }
@@ -1040,8 +1040,8 @@ impl Editor {
         if ops.is_empty() {
             return false;
         }
-        if let Some(schema) = self.store.read_only() {
-            self.message = format!("Read-only: made by a newer xWorks (schema {schema})");
+        if let Some(why) = self.store.read_only() {
+            self.message = format!("Read-only: {why}");
             return false;
         }
         let t = match self.document.transact(name, ops) {
@@ -1562,8 +1562,8 @@ impl Editor {
     }
 
     fn undo(&mut self, redo: bool) {
-        if let Some(schema) = self.store.read_only() {
-            self.message = format!("Read-only: made by a newer xWorks (schema {schema})");
+        if let Some(why) = self.store.read_only() {
+            self.message = format!("Read-only: {why}");
             return;
         }
         let done = if redo {
