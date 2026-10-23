@@ -2,6 +2,6 @@
 Golden(
     name: "exit-pages",
     size: (1239, 586),
-    sha256: "8d3808db2672694c4c2697d82d42a947de6b99a02a24276402bd77dae982a8e6",
+    sha256: "7e5ea2bec7265b9ef0d458fa5e9cf56154f28dcee70ff346bb6b173a6771ef30",
     approved_by: "Grim Schjetne",
 )

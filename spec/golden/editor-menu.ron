@@ -2,6 +2,6 @@
 Golden(
     name: "editor-menu",
     size: (900, 640),
-    sha256: "8cf60b21ca8cd6094f332622e2cdb63e660d9f63663728a919f7ea2130d90fcb",
+    sha256: "93048cb0c9b78515ea15b1e5bf104093a19cfbb09f57d8b494b07effcb0bd512",
     approved_by: "Grim Schjetne",
 )
