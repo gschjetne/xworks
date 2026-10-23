@@ -45,6 +45,14 @@ Every object but the root names the container it's in, and is listed by
 it exactly once; there is always a paragraph. M1's stories were flat:
 schema 1's story listed paragraphs only.
 
+A **picture** is in a paragraph's text: the character U+FFFC, whose run
+has the properties `picture`, the picture's ID in the `image` table
+(text), `picture-alt`, what it shows in words (text), and
+`picture-width` and `picture-height`, the size it's placed at in layout
+units (numbers). A paragraph of one picture alone is a figure. Pictures
+are kept for good, as undoing may bring back one taken out; one a file
+lacks is drawn as a tint.
+
 ## Encoding
 
 Operations and snapshots are binary (project owner, 2026-10-22, review
@@ -63,6 +71,8 @@ values.
 
 ## Opening
 
+0. Lock the document's lock file (below), or open it read-only if
+   another program holds it.
 1. Check the application ID and the schema version; upgrade an older
    schema.
 2. Read the latest snapshot.
@@ -101,3 +111,21 @@ one must open with the same text and history.
 - The database runs in write-ahead-log mode with `synchronous = NORMAL`.
   A crash of the program loses nothing committed; a power cut can lose
   the last few transactions, never the file.
+- A picture is written to `image` before the transaction that places it,
+  so a log entry never names a picture the file lacks.
+- A named version copied out is a new file of its own: the document as
+  the version was, as its snapshot 0, with no log, the fonts and the
+  pictures it shows.
+
+## One writer at a time
+
+A program writes to a document only while it holds the lock of the file
+beside it named as the document is, with `-lock` after (`Report.xw` and
+`Report.xw-lock`), taken with the system's own advisory lock on the
+whole file (`flock`, or `LockFileEx` on Windows). The holder writes a
+line saying who it is ("xWorks, process 4120 on studio"), deletes the
+file when it closes the document, and takes it along, still held, if it
+renames or moves the document. Another program finding it locked opens
+the document read-only. The system lets a lock go when its program ends,
+so a lock file left by a crash holds nothing. The lock file is not part
+of the document: copying a document leaves it behind.
