@@ -1,0 +1,32 @@
+// A Markdown file opens as itself, in the draft view, and is written back
+// as itself as it's edited (M2's stage 6): what wasn't edited byte for byte
+// as it was, the file's wrapping kept, and the edit in the line it's in.
+// Undo takes the file back to the bytes it had.
+(
+    size: (900, 700),
+    open: Some(("Notes.md", "# Notes\n\nSome *thoughts* on\nthe garden, wrapped.\n\n- one\n- two\n")),
+    events: [
+        Key("Down"),
+        Key("End"),
+        Type(" Mostly beans."),
+        Saved("Notes.md", "# Notes\n\nSome *thoughts* on\nthe garden, wrapped. Mostly beans.\n\n- one\n- two\n"),
+        Key("Primary+Z"),
+        Saved("Notes.md", "# Notes\n\nSome *thoughts* on\nthe garden, wrapped.\n\n- one\n- two\n"),
+        Key("Primary+Shift+Z"),
+        Key("Primary+End"),
+        Key("Enter"),
+        Type("three"),
+    ],
+    expect: [
+        ("Heading 1", "Notes"),
+        ("Body", "Some thoughts on the garden, wrapped. Mostly beans."),
+        ("Body", "one"),
+        ("Body", "two"),
+        ("Body", "three"),
+    ],
+    marks: [("thoughts", ["italic"])],
+    on: ["view-draft"],
+    files: [
+        ("Notes.md", Some("# Notes\n\nSome *thoughts* on\nthe garden, wrapped. Mostly beans.\n\n- one\n- two\n- three\n")),
+    ],
+)

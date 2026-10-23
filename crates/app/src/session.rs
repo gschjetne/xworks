@@ -72,6 +72,20 @@ pub struct Session {
     /// the property, and its value as text, or none for unset.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub props: Vec<(String, String, Option<String>)>,
+    /// A file the session opens, written into the documents folder first,
+    /// if it doesn't start in a new, empty document: its name and what it
+    /// holds, as a Markdown file's text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub open: Option<(String, String)>,
+    /// Files copied into the documents folder before it starts, such as
+    /// pictures to place: each from its path in the workspace to its name
+    /// there.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub copy: Vec<(String, String)>,
+    /// Files in the documents folder afterwards: each one's name, and what
+    /// it holds, where that's said.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub files: Vec<(String, Option<String>)>,
 }
 
 /// Where a recorded session starts: the document, its history, and the
@@ -185,6 +199,12 @@ pub enum Step {
     /// Checks the document's name, as the title bar shows it, at this
     /// point.
     Name(String),
+    /// Checks what a file in the documents folder holds at this point: its
+    /// name, and its text.
+    Saved(String, String),
+    /// Checks what the status bar says of the last thing done, at this
+    /// point.
+    Message(String),
 }
 
 /// A command's argument, as a session writes it.
@@ -303,9 +323,26 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
     res.mac = session.mac;
     res.settings = Arc::new(crate::Settings::default());
     let res = Arc::new(res);
-    let mut window = match &session.start {
-        Some(start) => Window::resume(res.clone(), start, session.size)?,
-        None => Window::create(res.clone())?,
+    let folder_error = |path: &std::path::Path, source| EditorError::Io {
+        path: path.to_path_buf(),
+        source,
+    };
+    for (from, to) in &session.copy {
+        let to = res.documents.join(to);
+        if let Some(folder) = to.parent() {
+            std::fs::create_dir_all(folder).map_err(|e| folder_error(folder, e))?;
+        }
+        std::fs::copy(res.root.join(from), &to).map_err(|e| folder_error(&to, e))?;
+    }
+    let mut window = match (&session.start, &session.open) {
+        (Some(start), _) => Window::resume(res.clone(), start, session.size)?,
+        (None, Some((name, text))) => {
+            let path = res.documents.join(name);
+            std::fs::create_dir_all(&res.documents).map_err(|e| folder_error(&res.documents, e))?;
+            std::fs::write(&path, text).map_err(|e| folder_error(&path, e))?;
+            Window::open(res.clone(), &path)?
+        }
+        (None, None) => Window::create(res.clone())?,
     };
     let mut clipboard = String::new();
     let mut problems = Vec::new();
@@ -410,6 +447,27 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
                 if &got != want {
                     problems.push(format!(
                         "at step {n}, the name is {got:?}, expected {want:?}"
+                    ));
+                }
+                Vec::new()
+            }
+            Step::Saved(name, want) => {
+                let got = std::fs::read(res.documents.join(name))
+                    .map(|b| String::from_utf8_lossy(&b).into_owned());
+                match got {
+                    Ok(got) if &got == want => {}
+                    Ok(got) => problems.push(format!(
+                        "at step {n}, {name} holds {got:?}, expected {want:?}"
+                    )),
+                    Err(e) => problems.push(format!("at step {n}, {name}: {e}")),
+                }
+                Vec::new()
+            }
+            Step::Message(want) => {
+                let got = window.editor().message();
+                if got != want {
+                    problems.push(format!(
+                        "at step {n}, the status bar says {got:?}, expected {want:?}"
                     ));
                 }
                 Vec::new()
@@ -597,6 +655,19 @@ pub fn check(session: &Session, played: &Played) -> Vec<String> {
     {
         if played.window.state(id).checked != on {
             problems.push(format!("{id} is {}, expected {}", !on, on));
+        }
+    }
+    for (name, want) in &session.files {
+        let path = editor.resources().documents.join(name);
+        match (std::fs::read(&path), want) {
+            (Err(e), _) => problems.push(format!("{name}: {e}")),
+            (Ok(got), Some(want)) if String::from_utf8_lossy(&got) != *want => {
+                problems.push(format!(
+                    "{name} holds {:?}, expected {want:?}",
+                    String::from_utf8_lossy(&got)
+                ))
+            }
+            _ => {}
         }
     }
     for (stretch, key, want) in &session.props {

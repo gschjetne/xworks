@@ -1,0 +1,15 @@
+// GitHub's strikethrough in a Markdown file (review ys9vyag1): a word
+// struck through is written between tildes.
+(
+    size: (900, 700),
+    open: Some(("Shopping.md", "Buy milk and bread.\n")),
+    events: [
+        Key("Primary+Right"),
+        Repeat("Shift+Right", 4),
+        Command("strikethrough"),
+    ],
+    expect: [("Body", "Buy milk and bread.")],
+    marks: [("milk", ["strikethrough"])],
+    on: ["strikethrough"],
+    files: [("Shopping.md", Some("Buy ~~milk~~ and bread.\n"))],
+)

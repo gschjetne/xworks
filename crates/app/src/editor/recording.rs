@@ -51,7 +51,7 @@ impl Editor {
         let path = Editor::untitled(&res)?;
         let store = Store::create(&path, &document, "story")?;
         let history = History::from_stacks(start.undo.clone(), start.redo.clone());
-        let mut editor = Editor::with(res, path, store, document, history);
+        let mut editor = Editor::with(res, path, Some(store), document, history);
         let px = |v: f64| ((v * PIXEL as f64).round() as i64).max(PIXEL);
         (editor.width, editor.height) = (px(size.0), px(size.1));
         // The view first, as the scroll is the view's.

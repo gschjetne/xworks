@@ -10,7 +10,7 @@ use std::sync::Arc;
 use doc::History;
 use store::Store;
 
-use super::{Editor, EditorError, Effect, Panel};
+use super::{Editor, EditorError, Effect, Panel, Pick};
 use crate::Resources;
 
 impl Editor {
@@ -18,6 +18,9 @@ impl Editor {
     /// entry `seq`, read-only, as it was: opened only to read, so whoever
     /// has the document open goes on writing to it.
     pub fn open_version(res: Arc<Resources>, path: &Path, seq: i64) -> Result<Editor, EditorError> {
+        if super::is_markdown(path) {
+            return Editor::open_markdown_version(res, path, seq);
+        }
         let opened = Store::open_to_read(path)?;
         let version = opened
             .store
@@ -32,7 +35,7 @@ impl Editor {
         let mut editor = Editor::with(
             res,
             path.to_path_buf(),
-            opened.store,
+            Some(opened.store),
             document,
             History::new(),
         );
@@ -50,14 +53,18 @@ impl Editor {
     /// Opens the panel of named versions, newest first; one chosen opens
     /// in a window of its own. With none named, says how to name one.
     pub(super) fn versions_panel(&mut self) {
-        let Some(store) = &self.store else {
-            return;
-        };
-        let versions = match store.versions() {
-            Ok(versions) => versions,
-            Err(e) => {
-                self.message = format!("Couldn't read the versions: {e}");
+        let versions = if self.is_markdown() {
+            self.markdown_versions()
+        } else {
+            let Some(store) = &self.store else {
                 return;
+            };
+            match store.versions() {
+                Ok(versions) => versions,
+                Err(e) => {
+                    self.message = format!("Couldn't read the versions: {e}");
+                    return;
+                }
             }
         };
         if versions.is_empty() {
@@ -67,10 +74,15 @@ impl Editor {
         let rows = versions
             .into_iter()
             .rev()
-            .map(|v| (v.name, Effect::OpenVersion(self.path.clone(), v.seq)))
+            .map(|v| {
+                (
+                    v.name,
+                    Pick::Effect(Effect::OpenVersion(self.path.clone(), v.seq)),
+                )
+            })
             .collect();
         self.panel = Some(Panel {
-            title: "Open a version",
+            title: "Open a version".to_string(),
             rows,
             selected: 0,
         });
@@ -83,7 +95,20 @@ impl Editor {
         let Some(version) = &self.version else {
             return Vec::new();
         };
-        let path = copy_path(&self.path, &version.name);
+        let path = copy_path(&self.path, &version.name, &self.extension());
+        if self.is_markdown() {
+            return match self.copy_out_markdown(&path) {
+                Ok(()) => {
+                    let name = path.file_name().unwrap_or_default().to_string_lossy();
+                    self.message = format!("Copied out as {name}");
+                    vec![Effect::Open(Some(path))]
+                }
+                Err(e) => {
+                    self.message = format!("Couldn't copy it out: {e}");
+                    Vec::new()
+                }
+            };
+        }
         let pictures = story::pictures(&self.document);
         let Some(store) = &self.store else {
             return Vec::new();
@@ -104,8 +129,8 @@ impl Editor {
 
 /// Where version `version` of the document at `path` is copied out to:
 /// beside it, "Report (Version 2).xw", or "Report (Version 2) 2.xw" and so
-/// on if that's taken.
-fn copy_path(path: &Path, version: &str) -> PathBuf {
+/// on if that's taken, with `extension`.
+fn copy_path(path: &Path, version: &str, extension: &str) -> PathBuf {
     let stem = path.file_stem().map_or_else(
         || "Untitled".to_string(),
         |s| s.to_string_lossy().into_owned(),
@@ -122,9 +147,9 @@ fn copy_path(path: &Path, version: &str) -> PathBuf {
     let mut n = 1;
     loop {
         let name = if n == 1 {
-            format!("{stem} ({version}).xw")
+            format!("{stem} ({version}).{extension}")
         } else {
-            format!("{stem} ({version}) {n}.xw")
+            format!("{stem} ({version}) {n}.{extension}")
         };
         let candidate = path.with_file_name(name);
         if !candidate.exists() {

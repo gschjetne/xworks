@@ -1,0 +1,37 @@
+// GitHub's task lists in a Markdown file (review ys9vyag1): Check Off
+// ticks the caret's task's box and back, and the file changes in the box
+// alone; Task List makes a paragraph a task of its own.
+(
+    size: (900, 700),
+    open: Some(("Tasks.md", "Today:\n\n- [ ] Sow the beans\n- [x] Dig the bed\n\nAnd mulch.\n")),
+    events: [
+        Key("Down"),
+        Command("task-toggle"),
+        Saved("Tasks.md", "Today:\n\n- [x] Sow the beans\n- [x] Dig the bed\n\nAnd mulch.\n"),
+        Key("Down"),
+        Command("task-toggle"),
+        Saved("Tasks.md", "Today:\n\n- [x] Sow the beans\n- [ ] Dig the bed\n\nAnd mulch.\n"),
+        Key("Down"),
+        Command("list-tasks"),
+    ],
+    expect: [
+        ("Body", "Today:"),
+        ("Body", "Sow the beans"),
+        ("Body", "Dig the bed"),
+        ("Body", "And mulch."),
+    ],
+    outline: Some([
+        "Body: Today:",
+        "list",
+        "  item task",
+        "    Body: Sow the beans",
+        "  item",
+        "    Body: Dig the bed",
+        "list",
+        "  item",
+        "    Body: And mulch.",
+    ]),
+    files: [
+        ("Tasks.md", Some("Today:\n\n- [x] Sow the beans\n- [ ] Dig the bed\n\n* [ ] And mulch.\n")),
+    ],
+)

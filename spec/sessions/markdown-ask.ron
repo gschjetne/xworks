@@ -1,0 +1,29 @@
+// What Markdown can't hold, such as a font, asks before the document
+// becomes an .xw file (M2's stage 6): Escape keeps it Markdown, without
+// the change; Enter makes it Plan.xw beside the file, which stays as it
+// was, and the change is made there, and undoes there.
+(
+    size: (900, 700),
+    open: Some(("Plan.md", "# Plan\n\nWater the beans.\n")),
+    events: [
+        Key("Down"),
+        Key("Shift+End"),
+        CommandWith("font", [Text("Inter")]),
+        Key("Escape"),
+        Saved("Plan.md", "# Plan\n\nWater the beans.\n"),
+        Type("Weed"),
+        Saved("Plan.md", "# Plan\n\nWeed\n"),
+        Key("Shift+Home"),
+        CommandWith("font", [Text("Inter")]),
+        Key("Enter"),
+        Key("Primary+Z"),
+        Key("Primary+Shift+Z"),
+    ],
+    expect: [("Heading 1", "Plan"), ("Body", "Weed")],
+    marks: [("Weed", ["font"])],
+    file: Some("Plan"),
+    files: [
+        ("Plan.md", Some("# Plan\n\nWeed\n")),
+        ("Plan.xw", None),
+    ],
+)

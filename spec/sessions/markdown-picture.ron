@@ -1,0 +1,20 @@
+// A picture placed in a Markdown file is linked where it is, by its path
+// relative to the file's folder, not copied (review ys9vyag1), and the
+// status bar says how; the file's other lines stay as they were.
+(
+    size: (900, 700),
+    copy: [("crates/app/tests/pictures/gradient.jpg", "images/gradient.jpg")],
+    open: Some(("Garden.md", "# Garden\n\nThe beds in spring:\n")),
+    events: [
+        Key("Primary+End"),
+        Type(" "),
+        Command("insert-picture"),
+        Choose(Some("images/gradient.jpg")),
+        Message("Placed gradient.jpg, linked as images/gradient.jpg"),
+    ],
+    expect: [("Heading 1", "Garden"), ("Body", "The beds in spring: \u{fffc}")],
+    files: [
+        ("Garden.md", Some("# Garden\n\nThe beds in spring: ![gradient](images/gradient.jpg)\n")),
+        ("images/gradient.jpg", None),
+    ],
+)

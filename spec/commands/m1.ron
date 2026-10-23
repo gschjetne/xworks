@@ -21,6 +21,9 @@
 (
     commands: [
         (id: "new", title: "&New", shortcut: Some("Primary+N")),
+        // A new, empty Markdown file in the documents folder (M2's stage
+        // 6), which opens as itself.
+        (id: "new-markdown", title: "New Mar&kdown Document", shortcut: Some("Primary+Shift+N")),
         (id: "open", title: "&Open…", shortcut: Some("Primary+O")),
         // The documents opened lately, newest first: the path of one.
         (id: "open-recent", title: "Open &Recent", arg: Some(Text)),
@@ -71,6 +74,9 @@
 
         (id: "bold", title: "&Bold", shortcut: Some("Primary+B")),
         (id: "italic", title: "&Italic", shortcut: Some("Primary+I")),
+        // GitHub's strikethrough (review ys9vyag1), Ctrl+Shift+X as Slack,
+        // Notion and Google Docs' Markdown have it.
+        (id: "strikethrough", title: "St&rikethrough", shortcut: Some("Primary+Shift+X")),
         // Code in runs is M, for monospace.
         (id: "code", title: "Co&de", shortcut: Some("Primary+Shift+M")),
         (id: "style-body", title: "Bod&y", kind: Some("Paragraph style"), shortcut: Some("Primary+0")),
@@ -80,6 +86,11 @@
         (id: "style-code", title: "Code Bloc&k", kind: Some("Paragraph style"), shortcut: Some("Primary+Shift+C")),
         (id: "list-bullets", title: "Bu&lleted List", shortcut: Some("Primary+Shift+8")),
         (id: "list-numbers", title: "&Numbered List", shortcut: Some("Primary+Shift+7")),
+        // GitHub's task lists (review ys9vyag1): the items selected made
+        // tasks, or items again; and the caret's task's box ticked or not,
+        // as clicking it does, Ctrl+Enter as Notion has it.
+        (id: "list-tasks", title: "&Task List"),
+        (id: "task-toggle", title: "Check &Off", shortcut: Some("Primary+Enter")),
         (id: "quote", title: "&Quote", shortcut: Some("Primary+Shift+9")),
         (id: "align-start", title: "Align to &Start", kind: Some("Alignment"), shortcut: Some("Primary+L")),
         (id: "align-center", title: "&Centre", kind: Some("Alignment"), shortcut: Some("Primary+E")),
@@ -158,7 +169,7 @@
     ],
     menus: [
         (title: "&File", items: [
-            "new", "open", ">open-recent", "-",
+            "new", "new-markdown", "open", ">open-recent", "-",
             "rename", "move-to", "-",
             "save-version", "versions", "copy-out", "-",
             "export-pdf", "print", "-",
@@ -172,9 +183,9 @@
         ]),
         (title: "&Insert", items: ["insert-picture", "insert-table"]),
         (title: "F&ormat", items: [
-            "bold", "italic", "code", "-",
+            "bold", "italic", "strikethrough", "code", "-",
             "style-body", "style-heading-1", "style-heading-2", "style-heading-3", "style-code", "-",
-            "list-bullets", "list-numbers", "quote", "-",
+            "list-bullets", "list-numbers", "list-tasks", "task-toggle", "quote", "-",
             "align-start", "align-center", "align-end", "align-justify", "-",
             "size-bigger", "size-smaller",
         ]),

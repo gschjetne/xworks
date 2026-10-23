@@ -248,6 +248,7 @@ dependencies = [
  "image-webp",
  "locale",
  "lopdf",
+ "markdown",
  "moxcms",
  "part",
  "pdf-extract",

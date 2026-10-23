@@ -3,6 +3,7 @@
 //!
 //! ```text
 //! xworks [FILE.xw]      open a document, or make a new one
+//! xworks FILE.md        open a Markdown file, which saves as itself
 //! ```
 //!
 //! Each window holds one [`app::Window`]: the shell turns winit's events into
@@ -459,13 +460,23 @@ fn choose(
     proxy: EventLoopProxy<UserEvent>,
     folder: &Path,
     name: &str,
+    markdown: bool,
 ) {
     let dialog = rfd::FileDialog::new().set_parent(&**window);
     let dialog = match choice {
+        // xWorks documents and Markdown files, which open as themselves
+        // (M2's stage 6).
         Choice::Open => dialog
             .set_title("Open")
+            .add_filter("Documents", &["xw", "md", "markdown"])
             .add_filter("xWorks documents", &["xw"])
+            .add_filter("Markdown", &["md", "markdown"])
             .set_directory(folder),
+        Choice::MoveTo if markdown => dialog
+            .set_title("Move To")
+            .add_filter("Markdown", &["md", "markdown"])
+            .set_directory(folder)
+            .set_file_name(format!("{name}.md")),
         Choice::MoveTo => dialog
             .set_title("Move To")
             .add_filter("xWorks documents", &["xw"])
@@ -917,7 +928,15 @@ impl Shell {
                             _ => self.res.documents.clone(),
                         };
                         let name = win.doc.editor().name();
-                        choose(&win.window, choice, self.proxy.clone(), &folder, &name);
+                        let markdown = win.doc.editor().is_markdown();
+                        choose(
+                            &win.window,
+                            choice,
+                            self.proxy.clone(),
+                            &folder,
+                            &name,
+                            markdown,
+                        );
                     }
                 }
                 Effect::Window(action) => match action {

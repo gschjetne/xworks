@@ -21,12 +21,14 @@ use text::{Affinity, Cursor};
 mod access;
 mod file;
 mod format;
+mod markdown;
 mod part;
 mod pictures;
 mod recording;
 mod units;
 mod versions;
 
+pub(crate) use markdown::is_markdown;
 pub(crate) use part::view_look;
 use units::Unit;
 
@@ -238,9 +240,21 @@ struct Laid {
 /// A panel of things to choose from, such as documents to open: each
 /// row's name, and what choosing it does.
 struct Panel {
-    title: &'static str,
-    rows: Vec<(String, Effect)>,
+    title: String,
+    rows: Vec<(String, Pick)>,
     selected: usize,
+}
+
+/// What choosing a row of a panel does.
+#[derive(Clone, Debug)]
+enum Pick {
+    /// Asks the shell for this.
+    Effect(Effect),
+    /// Makes the Markdown document an `.xw` file, to make an edit
+    /// Markdown can't hold.
+    Convert,
+    /// Leaves it Markdown, without the edit.
+    Keep,
 }
 
 /// One document in one window.
@@ -282,6 +296,9 @@ pub struct Editor {
     pictures: canvas::Pictures,
     /// The named version shown, read-only, if this window shows one.
     version: Option<store::Version>,
+    /// The Markdown file the document is, if it's one rather than an
+    /// `.xw` file's.
+    markdown: Option<Box<markdown::Markdown>>,
 }
 
 /// Sizes for Bigger and Smaller, in points.
@@ -339,7 +356,13 @@ impl Editor {
             .apply_all(&ops)
             .map_err(|e| EditorError::Store(store::Error::Damaged(e.to_string())))?;
         let store = Store::create(&path, &document, "story")?;
-        Ok(Editor::with(res, path, store, document, History::new()))
+        Ok(Editor::with(
+            res,
+            path,
+            Some(store),
+            document,
+            History::new(),
+        ))
     }
 
     /// Where a new document goes: "Untitled.xw" in the documents folder,
@@ -364,13 +387,17 @@ impl Editor {
         }
     }
 
-    /// The document at `path`.
+    /// The document at `path`: an `.xw` file, or a Markdown file, which
+    /// opens as itself.
     pub fn open(res: Arc<Resources>, path: &Path) -> Result<Editor, EditorError> {
+        if is_markdown(path) {
+            return Editor::open_markdown(res, path);
+        }
         let opened = Store::open(path)?;
         let mut editor = Editor::with(
             res,
             path.to_path_buf(),
-            opened.store,
+            Some(opened.store),
             opened.document,
             opened.history,
         );
@@ -382,7 +409,7 @@ impl Editor {
     fn with(
         res: Arc<Resources>,
         path: PathBuf,
-        store: Store,
+        store: Option<Store>,
         document: Document,
         history: History,
     ) -> Editor {
@@ -395,7 +422,7 @@ impl Editor {
         let mut editor = Editor {
             res,
             path,
-            store: Some(store),
+            store,
             laid: Laid {
                 document: Document::new(),
                 paragraphs: Vec::new(),
@@ -429,6 +456,7 @@ impl Editor {
             message: String::new(),
             pictures: canvas::Pictures::new(),
             version: None,
+            markdown: None,
         };
         editor.named = !editor.auto_named();
         editor.relayout(true);
@@ -476,11 +504,23 @@ impl Editor {
 
     /// Whether the document can be changed: its file is open to write.
     pub(crate) fn writable(&self) -> bool {
-        self.store.as_ref().is_some_and(|s| s.read_only().is_none())
+        match self.markdown_read_only() {
+            Some(why) => why.is_none(),
+            None => self.store.as_ref().is_some_and(|s| s.read_only().is_none()),
+        }
     }
 
     /// Whether the document can't be changed, saying why if so.
     pub(super) fn unwritable(&mut self) -> bool {
+        if let Some(why) = self.markdown_read_only() {
+            return match why {
+                Some(why) => {
+                    self.message = format!("Read-only: {why}");
+                    true
+                }
+                None => false,
+            };
+        }
         match &self.store {
             Some(store) => match store.read_only() {
                 Some(why) => {
@@ -1252,6 +1292,24 @@ impl Editor {
                 return false;
             }
         };
+        if self.is_markdown() {
+            // Written whole, if Markdown holds it; if not, not made, and
+            // the person asked.
+            self.message.clear();
+            let logged = if continuing {
+                markdown::Logged::Continue
+            } else {
+                markdown::Logged::Commit
+            };
+            if let Err(unheld) = self.save_markdown(logged, &t) {
+                self.document
+                    .apply_all(&t.inverse)
+                    .expect("an edit's inverse applies to what it made");
+                self.typing = None;
+                self.ask_to_convert(name, t.ops, unheld);
+                return false;
+            }
+        }
         let entry = if continuing {
             Entry::Continue(&t)
         } else {
@@ -1675,6 +1733,126 @@ impl Editor {
         }
     }
 
+    /// The list item the caret's in, if it's a task, and whether it's
+    /// done.
+    fn task_at_caret(&self) -> Option<(ObjectId, bool)> {
+        let item = self.document.parent(self.focus.paragraph)?;
+        let b = self.document.block(item)?;
+        match (b.kind, b.props.get(keys::TASK)) {
+            (doc::Kind::Item, Some(Value::Bool(done))) => Some((item, *done)),
+            _ => None,
+        }
+    }
+
+    /// Checks task `item` off, or back on: its box ticked, or not.
+    fn check(&mut self, item: ObjectId, done: bool) {
+        let name = if done { "Check Off" } else { "Uncheck" };
+        self.commit(
+            name,
+            vec![Op::SetBlockProp {
+                block: item,
+                key: keys::TASK.to_string(),
+                value: Some(Value::Bool(done)),
+            }],
+            false,
+        );
+    }
+
+    /// Checks the caret's task off, or back on.
+    fn check_off(&mut self) {
+        if let Some((item, done)) = self.task_at_caret() {
+            self.check(item, !done);
+        }
+    }
+
+    /// Makes the items the selection's paragraphs are in tasks, each with
+    /// its box unticked, or, if they all are, items again; paragraphs in
+    /// no list are made a bulleted list of tasks.
+    fn toggle_tasks(&mut self) {
+        let (start, end) = self.ordered();
+        let ids = self.ids().to_vec();
+        let (a, b) = (self.index_of(start.paragraph), self.index_of(end.paragraph));
+        let selected: Vec<ObjectId> = ids[a..=b].to_vec();
+        let items_in = |document: &Document| -> Vec<ObjectId> {
+            let mut items: Vec<ObjectId> = Vec::new();
+            for &p in &selected {
+                if let Some(item) = document.parent(p)
+                    && document
+                        .block(item)
+                        .is_some_and(|b| b.kind == doc::Kind::Item)
+                    && !items.contains(&item)
+                {
+                    items.push(item);
+                }
+            }
+            items
+        };
+        let mut scratch = self.document.clone();
+        let mut ops = Vec::new();
+        let mut caret = None;
+        if items_in(&scratch).is_empty()
+            && let Some(blocks::Outcome::Edit {
+                ops: made,
+                caret: at,
+                ..
+            }) = blocks::toggle_list(&self.document, &ids, start, end, false)
+        {
+            if scratch.apply_all(&made).is_err() {
+                return;
+            }
+            ops = made;
+            caret = Some(at);
+        }
+        let items = items_in(&scratch);
+        let task = |i: ObjectId| {
+            scratch
+                .block(i)
+                .and_then(|b| b.props.get(keys::TASK))
+                .is_some()
+        };
+        let all = !items.is_empty() && items.iter().all(|&i| task(i));
+        for &item in &items {
+            if all || !task(item) {
+                ops.push(Op::SetBlockProp {
+                    block: item,
+                    key: keys::TASK.to_string(),
+                    value: (!all).then_some(Value::Bool(false)),
+                });
+            }
+        }
+        if self.commit("Task List", ops, false)
+            && let Some(at) = caret
+        {
+            self.go(at, false);
+        }
+    }
+
+    /// The task whose box is at (`x`, `y`) in the window, if one is, and
+    /// whether it's done.
+    fn task_box_at(&self, x: i64, y: i64) -> Option<(ObjectId, bool)> {
+        let gap = self.res.sheet.blocks.marker_gap.units();
+        for (k, p) in self.laid.paragraphs.iter().enumerate() {
+            let (Some(done), Some(line)) = (p.place.task, p.layout.lines.first()) else {
+                continue;
+            };
+            if self.laid.places.get(k).is_none_or(|l| l.is_empty()) {
+                continue;
+            }
+            let (text_x, top) = self.line_origin(k, 0);
+            let side = (line.ascent * 7 / 10).max(PIXEL);
+            let right = text_x - p.x() + p.place.gutter - gap;
+            let baseline = top + line.baseline;
+            let slack = 3 * PIXEL;
+            if (right - side - slack..=right + slack).contains(&x)
+                && (baseline - side - slack..=baseline + slack).contains(&y)
+            {
+                let item = self.document.parent(p.id)?;
+                return Some((item, done));
+            }
+        }
+        None
+    }
+
     /// The font size at the selection's start, in layout units.
     fn size(&self) -> i64 {
         let at = self.ordered().0;
@@ -1795,6 +1973,14 @@ impl Editor {
         if let Some(Err(e)) = self.store.as_mut().map(|s| s.append(entry, &self.document)) {
             self.message = format!("Couldn't save: {e}");
         }
+        let logged = if redo {
+            markdown::Logged::Redo
+        } else {
+            markdown::Logged::Undo
+        };
+        if let Err(unheld) = self.save_markdown(logged, &t) {
+            self.message = format!("Couldn't save: {unheld}");
+        }
         self.relayout(false);
         let ops = if redo { &t.ops } else { &t.inverse };
         let caret = self.after(ops).unwrap_or_else(|| self.document_edge(false));
@@ -1813,14 +1999,19 @@ impl Editor {
             "redo" => writable && self.history.redo_name().is_some(),
             "cut" | "copy" => !self.collapsed(),
             "copy-out" => self.version.is_some(),
-            "save-version" | "paste" | "bold" | "italic" | "code" | "list-bullets"
-            | "list-numbers" | "quote" | "insert-table" | "insert-picture" => writable,
+            "save-version" | "paste" | "bold" | "italic" | "strikethrough" | "code"
+            | "list-bullets" | "list-numbers" | "list-tasks" | "quote" | "insert-table"
+            | "insert-picture" => writable,
+            "task-toggle" => writable && self.task_at_caret().is_some(),
             _ if id.starts_with("language-") || id.starts_with("align-") => writable,
             _ => true,
         };
         let checked = match id {
             "bold" => self.all(keys::BOLD),
             "italic" => self.all(keys::ITALIC),
+            "strikethrough" => self.all(keys::STRIKETHROUGH),
+            "list-tasks" => self.task_at_caret().is_some(),
+            "task-toggle" => self.task_at_caret().is_some_and(|(_, done)| done),
             "view-draft" => self.view == View::Draft,
             "view-pages" => self.view == View::Pages,
             _ => {
@@ -1859,6 +2050,10 @@ impl Editor {
         let mut effects = Vec::new();
         match id {
             "new" => effects.push(Effect::Open(None)),
+            "new-markdown" => match Editor::new_markdown(&self.res) {
+                Ok(path) => effects.push(Effect::Open(Some(path))),
+                Err(e) => self.message = format!("Couldn't make a Markdown document: {e}"),
+            },
             "open" => effects.push(Effect::Choose(Choice::Open)),
             "move-to" => effects.push(Effect::Choose(Choice::MoveTo)),
             "quit" => effects.push(Effect::Quit),
@@ -1870,6 +2065,7 @@ impl Editor {
                 };
                 self.set_view(view);
             }
+            "save-version" if self.is_markdown() => self.name_markdown_version(),
             "save-version" => {
                 if let Some(store) = &mut self.store {
                     let n = store.versions().map_or(0, |v| v.len()) + 1;
@@ -1919,7 +2115,10 @@ impl Editor {
             }
             "bold" => self.toggle("Bold", keys::BOLD),
             "italic" => self.toggle("Italic", keys::ITALIC),
+            "strikethrough" => self.toggle("Strikethrough", keys::STRIKETHROUGH),
             "code" => self.toggle("Code", keys::CODE),
+            "list-tasks" => self.toggle_tasks(),
+            "task-toggle" => self.check_off(),
             "list-bullets" | "list-numbers" | "quote" | "insert-table" => {
                 let (start, end) = self.ordered();
                 let ids = self.ids().to_vec();
@@ -2018,12 +2217,14 @@ impl Editor {
     pub(crate) fn panel(&self) -> Option<(&str, Vec<String>, usize)> {
         let panel = self.panel.as_ref()?;
         let names = panel.rows.iter().map(|(name, _)| name.clone()).collect();
-        Some((panel.title, names, panel.selected))
+        Some((panel.title.as_str(), names, panel.selected))
     }
 
-    /// Closes the panel, choosing nothing.
+    /// Closes the panel, choosing nothing: an edit Markdown can't hold,
+    /// asked about, isn't made.
     pub(crate) fn close_panel(&mut self) {
         self.panel = None;
+        self.keep_markdown();
     }
 
     /// What choosing row `row` of the panel does, which closes it.
@@ -2032,7 +2233,14 @@ impl Editor {
             .panel
             .take()
             .and_then(|mut p| (row < p.rows.len()).then(|| p.rows.swap_remove(row).1));
-        chosen.into_iter().collect()
+        match chosen {
+            Some(Pick::Effect(effect)) => vec![effect],
+            Some(Pick::Convert) => self.convert(),
+            Some(Pick::Keep) | None => {
+                self.keep_markdown();
+                Vec::new()
+            }
+        }
     }
 
     pub(crate) fn panel_key(&mut self, key: Key) -> Vec<Effect> {
@@ -2048,7 +2256,7 @@ impl Editor {
                 let row = panel.selected;
                 return self.choose_row(row);
             }
-            Key::Escape => self.panel = None,
+            Key::Escape => self.close_panel(),
             _ => {}
         }
         Vec::new()
@@ -2107,6 +2315,15 @@ impl Editor {
 
     fn press(&mut self, x: i64, y: i64, shift: bool, count: u32) -> Vec<Effect> {
         if y < self.top() || y >= self.top() + self.view_height() {
+            return Vec::new();
+        }
+        // A task's box, clicked, ticks or unticks it.
+        if count <= 1
+            && !shift
+            && self.writable()
+            && let Some((item, done)) = self.task_box_at(x, y)
+        {
+            self.check(item, !done);
             return Vec::new();
         }
         let target = self.hit(x, y);

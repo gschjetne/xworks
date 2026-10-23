@@ -14,6 +14,7 @@ doc.workspace = true
 gif.workspace = true
 image-webp.workspace = true
 locale.workspace = true
+markdown.workspace = true
 moxcms.workspace = true
 part.workspace = true
 png.workspace = true

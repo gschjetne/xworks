@@ -4,13 +4,17 @@
 //! character whose run names it (`story::keys::PICTURE`). The pictures a
 //! document shows are decoded when it opens, and when an edit, undo or
 //! redo brings back one not decoded yet.
+//!
+//! A Markdown file keeps none: a picture placed in one is linked where it
+//! is, by its path, relative to the file's folder where a relative path
+//! reaches it (review ys9vyag1), and its ID is its link; pictures a file
+//! links to are drawn from where they point.
 
 use std::path::Path;
 
 use doc::{Op, Props, Run, Value};
 use rayon::prelude::*;
 use story::{OBJECT, keys};
-use text::units::PIXEL;
 
 use super::{Choice, Editor, Position};
 use crate::picture::{self, Format};
@@ -51,15 +55,33 @@ impl Editor {
                 return;
             }
         };
-        let added = match &mut self.store {
-            Some(store) => store.add_image(format_name(decoded.format), &bytes),
-            None => return,
-        };
-        let id = match added {
-            Ok(id) => id,
-            Err(e) => {
-                self.message = format!("Couldn't place {name}: {e}");
-                return;
+        // In a Markdown file, linked; in an .xw file, kept, by its hash.
+        let mut linked = None;
+        let id = if self.is_markdown() {
+            let folder = self
+                .path
+                .parent()
+                .map(Path::to_path_buf)
+                .unwrap_or_default();
+            let full = std::path::absolute(path).unwrap_or_else(|_| path.to_path_buf());
+            let (link, absolute) = super::markdown::link_to(&folder, &full);
+            linked = Some(if absolute {
+                "by its full path, as no relative one reaches it".to_string()
+            } else {
+                format!("as {link}")
+            });
+            link
+        } else {
+            let added = match &mut self.store {
+                Some(store) => store.add_image(format_name(decoded.format), &bytes),
+                None => return,
+            };
+            match added {
+                Ok(id) => id,
+                Err(e) => {
+                    self.message = format!("Couldn't place {name}: {e}");
+                    return;
+                }
             }
         };
         self.pictures.insert(id.clone(), decoded.image);
@@ -68,6 +90,9 @@ impl Editor {
             .file_stem()
             .map_or_else(String::new, |s| s.to_string_lossy().into_owned());
         let mut props = Props::new();
+        if linked.is_some() {
+            props.insert(keys::PICTURE_SRC.to_string(), Value::Text(id.clone()));
+        }
         props.insert(keys::PICTURE.to_string(), Value::Text(id));
         props.insert(keys::PICTURE_ALT.to_string(), Value::Text(alt));
         props.insert(keys::PICTURE_WIDTH.to_string(), Value::Int(width));
@@ -86,26 +111,16 @@ impl Editor {
                 upstream: true,
             };
             self.go(after, false);
+            if let Some(linked) = linked {
+                self.message = format!("Placed {name}, linked {linked}");
+            }
         }
     }
 
     /// The size a picture `width` by `height` pixels is placed at: at 96
     /// pixels to the inch, scaled down to fit the page's body.
     fn placed_size(&self, width: u32, height: u32) -> (i64, i64) {
-        let (w, h) = (i64::from(width) * PIXEL, i64::from(height) * PIXEL);
-        let page = &self.res.page;
-        let (most_w, most_h) = (page.body_width().max(1), page.body_height().max(1));
-        // The smaller of the two scales, as a fraction, in i128.
-        let (num, den) = if w * most_h > h * most_w {
-            (most_w, w)
-        } else {
-            (most_h, h)
-        };
-        if num >= den {
-            return (w.max(1), h.max(1));
-        }
-        let scale = |side: i64| (i128::from(side) * i128::from(num) / i128::from(den)) as i64;
-        (scale(w).max(1), scale(h).max(1))
+        super::markdown::placed_size(&self.res.page, width, height)
     }
 
     /// Decodes the pictures `ids` names that aren't decoded yet, from the
@@ -119,13 +134,33 @@ impl Editor {
         if wanted.is_empty() {
             return;
         }
+        // From the document's file, or where a Markdown file's links
+        // point.
+        let folder = self
+            .path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default();
+        let markdown = self.is_markdown();
         let stored: Vec<(String, Option<store::Image>)> = wanted
             .into_iter()
             .map(|id| {
-                let image = self
-                    .store
-                    .as_ref()
-                    .and_then(|s| s.image(&id).ok().flatten());
+                let image = if markdown {
+                    super::markdown::resolve(&folder, &id)
+                        .and_then(|path| std::fs::read(path).ok())
+                        .and_then(|data| {
+                            let format = format_name(picture::format(&data)?).to_string();
+                            Some(store::Image {
+                                id: id.clone(),
+                                format,
+                                data,
+                            })
+                        })
+                } else {
+                    self.store
+                        .as_ref()
+                        .and_then(|s| s.image(&id).ok().flatten())
+                };
                 (id, image)
             })
             .collect();
@@ -194,7 +229,7 @@ impl Editor {
 }
 
 /// A format as the document's file names it.
-fn format_name(format: Format) -> &'static str {
+pub(super) fn format_name(format: Format) -> &'static str {
     match format {
         Format::Png => "png",
         Format::Jpeg => "jpeg",

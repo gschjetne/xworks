@@ -65,6 +65,9 @@ pub struct Resources {
     pub labels: Arc<Labels>,
     /// Where new documents are made.
     pub documents: PathBuf,
+    /// Where the program's own files are: `spec/`, the fonts and the
+    /// hyphenation patterns.
+    pub root: PathBuf,
     /// The documents opened lately, shared by every window.
     pub recent: Arc<Recent>,
     /// What the person chose that's kept between runs, such as the unit
@@ -81,7 +84,16 @@ pub struct Resources {
     /// it's set.
     pub language: Language,
     hyphenation: Arc<Patterns>,
+    /// The named versions of the Markdown documents open, which last as
+    /// long as each is (ARCHITECTURE.md section 6), by file, and what each
+    /// file said: shared by every window, so a version opens in one of
+    /// its own.
+    pub(crate) markdown_versions: Arc<Mutex<MarkdownVersions>>,
 }
+
+/// Markdown documents' named versions: each file's, and what it said.
+pub(crate) type MarkdownVersions =
+    std::collections::HashMap<PathBuf, (markdown::File, Vec<(store::Version, doc::Document)>)>;
 
 /// The hyphenation patterns, read from `hyphenation/` the first time text
 /// in their language is hyphenated, and shared by every clone of the
@@ -203,6 +215,7 @@ impl Resources {
             icons: Arc::new(icons),
             labels: Arc::new(Labels::new()),
             documents,
+            root: root.to_path_buf(),
             recent: Arc::new(Recent::default()),
             settings: Arc::new(Settings::default()),
             mac,
@@ -214,6 +227,7 @@ impl Resources {
                 languages: patterns.languages,
                 loaded: Mutex::default(),
             }),
+            markdown_versions: Arc::default(),
         })
     }
 

@@ -284,6 +284,7 @@ impl Window {
         let from = self.editor.path().to_path_buf();
         self.editor.settle_name();
         self.moved(&from);
+        self.editor.close_markdown();
     }
 
     fn kit(&self) -> Kit<'_> {

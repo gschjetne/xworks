@@ -63,14 +63,15 @@ fn is_numbered(stem: &str, name: &str) -> bool {
 }
 
 /// A path for a document called `name` in `folder` that nothing else has:
-/// "NAME.xw", or "NAME 2.xw" and so on; `own` counts as free.
-pub(crate) fn free_path(folder: &Path, name: &str, own: &Path) -> PathBuf {
+/// "NAME.xw", or "NAME 2.xw" and so on, with `extension`; `own` counts as
+/// free.
+pub(crate) fn free_path(folder: &Path, name: &str, own: &Path, extension: &str) -> PathBuf {
     let mut n = 1;
     loop {
         let file = if n == 1 {
-            format!("{name}.xw")
+            format!("{name}.{extension}")
         } else {
-            format!("{name} {n}.xw")
+            format!("{name} {n}.{extension}")
         };
         let path = folder.join(file);
         if path == own || !path.exists() {
@@ -96,6 +97,17 @@ impl Editor {
                 .find(|p| !file_name(&p.text).is_empty())
         })?;
         Some(file_name(&first.text))
+    }
+
+    /// The extension the document's file has: `xw`, or a Markdown file's
+    /// own, `md` or `markdown`.
+    pub(crate) fn extension(&self) -> String {
+        if !self.is_markdown() {
+            return "xw".to_string();
+        }
+        self.path
+            .extension()
+            .map_or_else(|| "md".to_string(), |e| e.to_string_lossy().into_owned())
     }
 
     /// The name of the document's file, without its folder or extension.
@@ -152,7 +164,7 @@ impl Editor {
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_default();
-        let to = free_path(&folder, &name, &self.path);
+        let to = free_path(&folder, &name, &self.path, &self.extension());
         if let Err(e) = self.relocate(&to) {
             self.message = format!("Couldn't rename it: {e}");
         }
@@ -169,7 +181,7 @@ impl Editor {
             .parent()
             .map(Path::to_path_buf)
             .unwrap_or_default();
-        let to = free_path(&folder, &name, &self.path);
+        let to = free_path(&folder, &name, &self.path, &self.extension());
         self.relocate(&to)?;
         self.named = true;
         Ok(())
@@ -179,8 +191,14 @@ impl Editor {
     /// which names it by hand.
     pub fn move_to(&mut self, path: &Path) -> Result<(), EditorError> {
         let mut to = path.to_path_buf();
-        if to.extension().is_none_or(|e| e != "xw") {
-            to.set_extension("xw");
+        let keeps = if self.is_markdown() {
+            super::is_markdown(&to)
+        } else {
+            to.extension().is_some_and(|e| e == "xw")
+        };
+        if !keeps {
+            let extension = self.extension();
+            to.set_extension(extension);
         }
         self.relocate(&to)?;
         self.named = true;
@@ -212,6 +230,19 @@ impl Editor {
                 path: folder.to_path_buf(),
                 source,
             })?;
+        }
+        if self.is_markdown() {
+            // A Markdown file moves as it is, its lock and versions along.
+            move_file(&self.path, to).map_err(|source| EditorError::Io {
+                path: to.to_path_buf(),
+                source,
+            })?;
+            if let Some(lock) = self.markdown_lock() {
+                let _ = lock.moved(to);
+            }
+            let from = std::mem::replace(&mut self.path, to.to_path_buf());
+            self.markdown_moved(&from);
+            return Ok(());
         }
         // Closed: SQLite checkpoints and removes the log and shared memory
         // as the last connection closes.

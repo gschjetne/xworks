@@ -21,7 +21,10 @@
 //!
 //! Every edit is a transaction, written to the document's file as it's
 //! committed; there's no saving and no "Save changes?". A run of typing
-//! undoes as one.
+//! undoes as one. A Markdown file opens as itself, in the draft view, and
+//! each edit writes it back whole, through a rename, as the `markdown`
+//! crate writes it; an edit Markdown can't hold asks first, and makes the
+//! document an `.xw` file beside it only if the person says so.
 //!
 //! app is an impure crate: it reads and writes documents.
 //!
