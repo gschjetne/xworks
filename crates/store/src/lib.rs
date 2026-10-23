@@ -11,7 +11,8 @@
 //! - [`Store::embed_font`] and [`Store::add_image`]: fonts and pictures the
 //!   document carries, each kept once by its hash.
 //! - [`lock_path`]: the file whose lock says a program has the document
-//!   open to write.
+//!   open to write; [`acquire`] takes it, for a document of any kind, as
+//!   a Markdown file is.
 //! - [`dump`]: a document file in canonical text form.
 //!
 //! store is an impure crate: it reads and writes files.
@@ -35,7 +36,7 @@ mod v1;
 
 use std::path::{Path, PathBuf};
 
-pub use lock::lock_path;
+pub use lock::{Acquired, Lock, acquire, lock_path};
 
 use doc::{Document, History, Op, Snapshot, Transaction};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
@@ -51,6 +52,12 @@ pub const APPLICATION_ID: i64 = 0x7857_6B73;
 pub const SNAPSHOT_EVERY: i64 = 100;
 
 const SCHEMA_SQL: &str = include_str!("../../../spec/format/schema-2.sql");
+
+/// The ID a picture of `data` is kept under: the SHA-256 of its bytes, in
+/// lowercase hexadecimal.
+pub fn image_id(data: &[u8]) -> String {
+    sha256(data)
+}
 
 /// Turns schema 1's tables into schema 2's.
 const UPGRADE_1_SQL: &str = include_str!("../../../spec/format/upgrade-1.sql");

@@ -34,14 +34,14 @@ pub fn lock_path(document: &Path) -> PathBuf {
 
 /// A document's lock, held: let go, and its file deleted, when dropped.
 #[derive(Debug)]
-pub(crate) struct Lock {
+pub struct Lock {
     file: File,
     path: PathBuf,
 }
 
 /// What trying to lock a document came to.
 #[derive(Debug)]
-pub(crate) enum Acquired {
+pub enum Acquired {
     /// The lock, held.
     Held(Lock),
     /// Another program holds it: who, as it says, if that can be read.
@@ -52,7 +52,7 @@ pub(crate) enum Acquired {
 }
 
 /// Tries to lock the document at `document`, without waiting.
-pub(crate) fn acquire(document: &Path) -> Acquired {
+pub fn acquire(document: &Path) -> Acquired {
     let path = lock_path(document);
     // An orphan, a file its holder deleted after this program opened it,
     // is tried again; three in a row means something else is at work.
@@ -88,7 +88,7 @@ pub(crate) fn acquire(document: &Path) -> Acquired {
 
 impl Lock {
     /// The lock file's path.
-    pub(crate) fn path(&self) -> &Path {
+    pub fn path(&self) -> &Path {
         &self.path
     }
 
@@ -96,7 +96,7 @@ impl Lock {
     /// the document has gone, still holding it: renaming an open file
     /// keeps its lock on Linux, macOS and Windows, where the standard
     /// library opens files so they can be renamed.
-    pub(crate) fn moved(&mut self, document: &Path) -> std::io::Result<()> {
+    pub fn moved(&mut self, document: &Path) -> std::io::Result<()> {
         let to = lock_path(document);
         std::fs::rename(&self.path, &to)?;
         self.path = to;
