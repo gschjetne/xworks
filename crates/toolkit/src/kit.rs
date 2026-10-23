@@ -226,6 +226,11 @@ impl Labels {
                 width: i64::MAX / 4,
             },
         ));
+        // One the fonts lack characters for is laid out again next time,
+        // when fonts loaded since, such as the CJK faces, may have them.
+        if layout.missing {
+            return layout;
+        }
         let mut laid = self.laid.lock().unwrap_or_else(PoisonError::into_inner);
         if laid.len() >= MOST_LABELS {
             laid.clear();
@@ -491,6 +496,24 @@ pub(crate) fn rounded_path(rect: Rect, r: i64) -> Path {
 mod tests {
     use super::*;
     use kurbo::Shape;
+
+    /// A label the fonts lack characters for isn't kept: every window
+    /// shares the labels, and fonts loaded later, such as the CJK faces,
+    /// would never show in it.
+    #[test]
+    fn a_label_missing_characters_is_laid_out_again() {
+        let labels = Labels::new();
+        let mut latin = Fonts::new();
+        for (name, bytes) in testkit::fonts::load().expect("the bundled fonts") {
+            if name == "Inter-Regular.ttf" {
+                latin.add(bytes).expect("Inter");
+            }
+        }
+        let label = labels.get(&latin, "Inter", "文件", 13 * PIXEL, 400);
+        assert!(label.missing);
+        let kept = labels.laid.lock().unwrap_or_else(PoisonError::into_inner);
+        assert!(kept.is_empty(), "kept: {:?}", kept.keys());
+    }
 
     #[test]
     fn a_ring_is_empty_where_its_hole_is() {
