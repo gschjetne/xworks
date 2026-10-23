@@ -279,3 +279,85 @@ fn nesting_past_the_deepest_lays_out_as_if_it_stopped() {
     assert_eq!(flow.len(), 1);
     assert_eq!(flow[0].place.path.len(), story::DEEPEST);
 }
+
+/// GitHub's task lists (review ys9vyag1): an item that's a task shows its
+/// box, checked or not, in its bullet's place; a numbered one keeps its
+/// number too. Only its first block has the box.
+#[test]
+fn tasks_have_boxes_in_their_bullets_place() {
+    let sheet = sheet();
+    let mut document = story::build(&[
+        BlockSpec::List(
+            false,
+            vec![
+                vec![p("to do"), p("more")],
+                vec![p("done")],
+                vec![p("plain")],
+            ],
+        ),
+        BlockSpec::List(true, vec![vec![p("numbered")]]),
+    ]);
+    let root = document.root();
+    let lists = document.children(root).to_vec();
+    let items: Vec<doc::ObjectId> = lists
+        .iter()
+        .flat_map(|&l| document.children(l).to_vec())
+        .collect();
+    for (item, done) in [(items[0], false), (items[1], true), (items[3], false)] {
+        document
+            .apply(&doc::Op::SetBlockProp {
+                block: item,
+                key: keys::TASK.to_string(),
+                value: Some(Value::Bool(done)),
+            })
+            .expect("it applies");
+    }
+    let flow = story::flow(&document, &sheet, WIDTH).entries;
+    let places: Vec<(Option<&str>, Option<bool>)> = flow
+        .iter()
+        .map(|e| (e.place.marker.as_deref(), e.place.task))
+        .collect();
+    assert_eq!(
+        places,
+        [
+            (None, Some(false)),
+            (None, None),
+            (None, Some(true)),
+            (Some("•"), None),
+            (Some("1."), Some(false)),
+        ]
+    );
+}
+
+/// Struck text has lines through it, and Markdown kept as it was written
+/// is shown as code is, in runs as in blocks.
+#[test]
+fn struck_text_and_kept_source_are_marked() {
+    let sheet = sheet();
+    let document = story::build(&[BlockSpec::Paragraph(
+        "Body".into(),
+        vec![
+            ("Plain ".into(), props(&[])),
+            (
+                "gone".into(),
+                props(&[(keys::STRIKETHROUGH, Value::Bool(true))]),
+            ),
+            (" and ".into(), props(&[])),
+            (
+                "<br>".into(),
+                props(&[(keys::SOURCE, Value::Text("html".into()))]),
+            ),
+        ],
+    )]);
+    let laid = story::lay_out(&document, &sheet, fonts(), WIDTH);
+    let struck: Vec<bool> = laid[0]
+        .decorations
+        .iter()
+        .map(|d| d.strikethrough && !d.underline)
+        .collect();
+    assert_eq!(struck, [false, true, false, false]);
+    assert_eq!(laid[0].inline_code, vec![15..19]);
+    let id = document.paragraphs()[0];
+    let spans = story::spans(document.paragraph(id).unwrap(), &sheet);
+    assert_eq!(spans[3].style.family, "JetBrains Mono");
+}

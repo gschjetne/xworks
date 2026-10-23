@@ -252,3 +252,73 @@ fn a_tables_row_pours_as_one_block() {
     // Everything else is a paragraph of its own.
     assert_eq!(units.len(), laid.len() - 5 * 2);
 }
+
+/// Struck text is drawn with a line through it, as long as its glyphs; a
+/// task's box is drawn in its bullet's place, with a tick if it's done.
+/// Both are strokes and fills outside the reading order.
+#[test]
+fn struck_text_and_tasks_draw_their_lines_and_boxes() {
+    use story::{BlockSpec, keys, props};
+    let (sheet, style) = styles();
+    let p = |text: &str| BlockSpec::Paragraph("Body".into(), vec![(text.into(), props(&[]))]);
+    let mut document = story::build(&[
+        BlockSpec::Paragraph(
+            "Body".into(),
+            vec![
+                ("Kept and ".into(), props(&[])),
+                (
+                    "struck".into(),
+                    props(&[(keys::STRIKETHROUGH, doc::Value::Bool(true))]),
+                ),
+            ],
+        ),
+        BlockSpec::List(false, vec![vec![p("to do")], vec![p("done")]]),
+    ]);
+    let list = document.children(document.root())[1];
+    for (item, done) in document
+        .children(list)
+        .to_vec()
+        .into_iter()
+        .zip([false, true])
+    {
+        document
+            .apply(&Op::SetBlockProp {
+                block: item,
+                key: keys::TASK.to_string(),
+                value: Some(doc::Value::Bool(done)),
+            })
+            .expect("it applies");
+    }
+    let plain = canvas::automatic(
+        &story::build(&[p("Kept and struck")]),
+        &sheet,
+        &style,
+        fonts(),
+    );
+    let pages = canvas::automatic(&document, &sheet, &style, fonts());
+    let fills = |pages: &canvas::Pages| {
+        pages.pages[0]
+            .items
+            .iter()
+            .filter(|i| matches!(i, Item::Fill { .. }))
+            .count()
+    };
+    assert_eq!(fills(&pages), fills(&plain) + 1, "a line through the text");
+    let strokes: Vec<usize> = pages.pages[0]
+        .items
+        .iter()
+        .filter_map(|i| match i {
+            Item::Stroke { path, .. } => Some(path.0.len()),
+            _ => None,
+        })
+        .collect();
+    // Two boxes, and a tick in the second.
+    assert_eq!(strokes, [5, 5, 3]);
+    // No bullets: the boxes take their place.
+    let bullets = pages.pages[0]
+        .items
+        .iter()
+        .filter(|i| matches!(i, Item::Glyphs(g) if g.text == "•"))
+        .count();
+    assert_eq!(bullets, 0);
+}

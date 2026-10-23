@@ -53,6 +53,39 @@
             space_after: Pt(3),
             keep_with_next: true,
         ),
+        // Markdown's other three levels (M2's stage 6), in the body's size
+        // and smaller.
+        (
+            name: "Heading 4",
+            heading: Some(4),
+            family: "Inter",
+            size: Pt(11),
+            bold: true,
+            space_before: Pt(8),
+            space_after: Pt(2),
+            keep_with_next: true,
+        ),
+        (
+            name: "Heading 5",
+            heading: Some(5),
+            family: "Inter",
+            size: Pt(10),
+            bold: true,
+            space_before: Pt(8),
+            space_after: Pt(2),
+            keep_with_next: true,
+        ),
+        (
+            name: "Heading 6",
+            heading: Some(6),
+            family: "Inter",
+            size: Pt(10),
+            bold: true,
+            italic: true,
+            space_before: Pt(8),
+            space_after: Pt(2),
+            keep_with_next: true,
+        ),
         // A code block (M2): its lines break at line separators, not at
         // paragraphs, and it's drawn on a tint.
         (

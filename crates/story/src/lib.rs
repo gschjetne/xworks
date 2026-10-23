@@ -20,6 +20,10 @@
 //!   at, laid out as an inline object scaled down to fit its paragraph
 //!   ([`ParagraphLayout::pictures`]). A paragraph of one picture alone is
 //!   a figure. [`pictures`] lists those a document shows.
+//! - GitHub's strikethrough, a line through text ([`decoration`]), and
+//!   task lists, items with a box in their bullet's place
+//!   ([`Place::task`]); and Markdown a story doesn't hold, kept as it was
+//!   written and shown as code ([`keys::SOURCE`]).
 //! - [`word_count`]: a paragraph's words, by its languages' rules.
 //! - [`keys`]: the properties a story reads.
 //! - [`document`] and [`build`]: documents made from styled text, through
@@ -116,10 +120,42 @@ pub mod keys {
     pub const PICTURE_WIDTH: &str = "picture-width";
     /// How tall a picture is placed, in layout units (a number).
     pub const PICTURE_HEIGHT: &str = "picture-height";
+    /// Where a linked picture is, as its document links it (text): a path
+    /// relative to the document's folder, an absolute path, or a URL, as
+    /// Markdown's `![alt](src)` writes it. A Markdown file's pictures are
+    /// linked, not kept in it, and each one's [`PICTURE`] is its link.
+    pub const PICTURE_SRC: &str = "picture-src";
+    /// A picture's title (text), as Markdown's `![alt](src "title")`
+    /// gives it.
+    pub const PICTURE_TITLE: &str = "picture-title";
 
     /// The keys that make a run a picture, which text typed after one
     /// doesn't take from it.
-    pub const PICTURES: [&str; 4] = [PICTURE, PICTURE_ALT, PICTURE_WIDTH, PICTURE_HEIGHT];
+    pub const PICTURES: [&str; 6] = [
+        PICTURE,
+        PICTURE_ALT,
+        PICTURE_WIDTH,
+        PICTURE_HEIGHT,
+        PICTURE_SRC,
+        PICTURE_TITLE,
+    ];
+
+    /// A line through the text (on or off): GitHub's `~~strikethrough~~`.
+    pub const STRIKETHROUGH: &str = "strikethrough";
+    /// Markdown kept as it was written (text, saying what it is: "html",
+    /// "rule", "definition", "footnote" or "metadata"): what a story
+    /// doesn't hold, such as HTML, a thematic break or a link reference
+    /// definition, as its source. On a code block it's a block of it, on a
+    /// run of text it's inline, as inline HTML is; either way it's shown as
+    /// code is, and written back as it is.
+    pub const SOURCE: &str = "source";
+    /// Whether a list item is a task, and done (on or off): its box,
+    /// checked or not, as GitHub's task lists' `- [ ]` and `- [x]`. Unset,
+    /// it's an item as any other.
+    pub const TASK: &str = "task";
+    /// A quote's kind (text), as GitHub's alerts give it: "NOTE", "TIP",
+    /// "IMPORTANT", "WARNING" or "CAUTION".
+    pub const ALERT: &str = "alert";
 }
 
 /// The most a paragraph's space above or below, or an indent, may be: ten
@@ -529,7 +565,10 @@ pub struct ParagraphLayout {
     pub code: bool,
     /// Which of its spans are links.
     pub links: Vec<bool>,
-    /// The byte ranges of its text that are code, in runs.
+    /// The lines drawn with each of its spans, such as through it.
+    pub decorations: Vec<text::Decoration>,
+    /// The byte ranges of its text that are code, in runs, or Markdown
+    /// kept as it was written.
     pub inline_code: Vec<Range<usize>>,
     /// The pictures in its text, in order; its layout's lines say where
     /// each went.
@@ -573,7 +612,7 @@ pub fn spans_at(paragraph: &Paragraph, sheet: &StyleSheet, place: Option<&Place>
             if let Some(Value::Bool(italic)) = run.props.get(keys::ITALIC) {
                 style.italic = *italic;
             }
-            if let Some(Value::Bool(true)) = run.props.get(keys::CODE) {
+            if is_code(&run.props) {
                 style.family = sheet.blocks.code_family.clone();
                 style.ligatures = sheet.blocks.code_ligatures;
             }
@@ -598,6 +637,22 @@ pub fn spans_at(paragraph: &Paragraph, sheet: &StyleSheet, place: Option<&Place>
         });
     }
     spans
+}
+
+/// Whether a run with `props` is shown as code: code, or Markdown kept as
+/// it was written ([`keys::SOURCE`]).
+fn is_code(props: &Props) -> bool {
+    matches!(props.get(keys::CODE), Some(Value::Bool(true)))
+        || matches!(props.get(keys::SOURCE), Some(Value::Text(_)))
+}
+
+/// The lines drawn with a run of text with `props`: through it, where it's
+/// struck through.
+pub fn decoration(props: &Props) -> text::Decoration {
+    text::Decoration {
+        underline: false,
+        strikethrough: matches!(props.get(keys::STRIKETHROUGH), Some(Value::Bool(true))),
+    }
 }
 
 /// The style of `paragraph`'s text before its runs' own properties: its
@@ -763,6 +818,7 @@ pub fn lay_out_at(
         )
     });
     let mut links = Vec::with_capacity(paragraph.runs.len());
+    let mut decorations = Vec::with_capacity(paragraph.runs.len());
     let mut inline_code: Vec<Range<usize>> = Vec::new();
     let mut at = 0;
     let mut chars = paragraph.text.chars();
@@ -773,7 +829,8 @@ pub fn lay_out_at(
             .map(char::len_utf8)
             .sum();
         links.push(matches!(run.props.get(keys::LINK), Some(Value::Text(_))));
-        if let Some(Value::Bool(true)) = run.props.get(keys::CODE) {
+        decorations.push(decoration(&run.props));
+        if is_code(&run.props) {
             match inline_code.last_mut() {
                 Some(last) if last.end == at => last.end = at + len,
                 _ => inline_code.push(at..at + len),
@@ -795,6 +852,7 @@ pub fn lay_out_at(
         marker,
         code: style.code,
         links,
+        decorations,
         inline_code,
         pictures,
         figure,

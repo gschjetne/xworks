@@ -8,9 +8,10 @@
 //!   between lines; [`blocks`] makes them of a story's paragraphs, a
 //!   table's row as one.
 //! - [`paint_page`] and [`draw`]: a page's pieces as display lists, with
-//!   list markers, quotes' bars, code on its tint and tables' rules, and
-//!   the pictures in the text ([`Pictures`]), each standing on its line's
-//!   baseline with its alternative text.
+//!   list markers and tasks' boxes, quotes' bars, code on its tint, lines
+//!   through struck text and tables' rules, and the pictures in the text
+//!   ([`Pictures`]), each standing on its line's baseline with its
+//!   alternative text.
 //! - [`structure`]: the story's blocks, nested, for tagged PDF; a
 //!   paragraph of one picture alone is a figure.
 //! - [`automatic`] and [`automatic_with`]: a document's story poured into
@@ -43,8 +44,8 @@ use doc::{Document, Kind, ObjectId};
 use scene::{Color, Item, Page, Point, Role, Structure};
 use serde::Deserialize;
 use story::{ParagraphLayout, StyleSheet};
-use text::Fonts;
 use text::units::Length;
+use text::{Decoration, Fonts};
 
 /// A page's size and margins, as `spec/styles/` gives them.
 #[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
@@ -377,6 +378,68 @@ fn paint_pictures(
     items
 }
 
+/// The lines through `lines` of `p`'s text where its spans are struck
+/// through, in their text's colour, with the first line's top left at
+/// `at`.
+fn decorations(
+    p: &ParagraphLayout,
+    lines: Range<usize>,
+    at: Point,
+    fonts: &Fonts,
+    look: &story::Blocks,
+) -> Vec<Item> {
+    if p.decorations.iter().all(|d| *d == Decoration::NONE) {
+        return Vec::new();
+    }
+    let link = rgb(look.link_color);
+    p.layout.decorations(
+        fonts,
+        lines,
+        at,
+        |span| p.decorations.get(span).copied().unwrap_or(Decoration::NONE),
+        |span| {
+            if p.links.get(span).copied().unwrap_or(false) {
+                link
+            } else {
+                Color::BLACK
+            }
+        },
+    )
+}
+
+/// How wide a task's box is, by a line `ascent` tall above its baseline.
+fn task_side(ascent: i64) -> i64 {
+    (ascent * 7 / 10).max(1)
+}
+
+/// A task's box, checked if it's `done`, its right edge and the baseline of
+/// a line `ascent` tall at `at`: a square outline sitting on the baseline,
+/// as tall as a small letter is and a little more, with a tick in it when
+/// it's done. Both are decoration, outside the reading order.
+fn task_box(at: Point, ascent: i64, done: bool) -> Vec<Item> {
+    use scene::Segment;
+    let side = task_side(ascent);
+    let (x, y) = (at.x - side, at.y - side + side / 10);
+    let mut items = vec![Item::Stroke {
+        path: scene::Path::rect(x, y, side, side),
+        width: (side / 10).max(1),
+        color: Color::BLACK,
+    }];
+    if done {
+        let p = |fx: i64, fy: i64| Point::new(x + side * fx / 100, y + side * fy / 100);
+        items.push(Item::Stroke {
+            path: scene::Path(vec![
+                Segment::MoveTo(p(22, 52)),
+                Segment::LineTo(p(42, 74)),
+                Segment::LineTo(p(78, 28)),
+            ]),
+            width: (side / 8).max(1),
+            color: Color::BLACK,
+        });
+    }
+    items
+}
+
 /// The pieces of one page, `pieces`, drawn with the page body's top left
 /// at `origin`: each paragraph's lines, with their list markers, the bars
 /// of quotes, the tints of code and the rules of tables, as `look` says.
@@ -457,6 +520,7 @@ pub fn paint_page(
                 let at = Point::new(origin.x + p.x(), origin.y + piece.y + pad);
                 let block = sources.map(|s| s.text[k]);
                 front.extend(p.layout.paint(fonts, at, block, color(p)));
+                front.extend(decorations(p, 0..p.layout.lines.len(), at, fonts, look));
                 front.extend(paint_pictures(
                     p,
                     0..p.layout.lines.len(),
@@ -507,11 +571,21 @@ pub fn paint_page(
                 ));
             }
         }
+        // A task's box, before its marker if it has one too.
+        let mut gutter = p.place.gutter - look.marker_gap.units();
+        if let Some(done) = p.place.task
+            && piece.lines.start == 0
+            && let Some(l) = lines.first()
+        {
+            let baseline = Point::new(origin.x + gutter, origin.y + piece.y + l.baseline);
+            front.extend(task_box(baseline, l.ascent, done));
+            gutter -= task_side(l.ascent) + look.marker_gap.units();
+        }
         if let Some(marker) = &p.marker
             && piece.lines.start == 0
             && let (Some(m), Some(l)) = (marker.lines.first(), lines.first())
         {
-            let x = p.place.gutter - look.marker_gap.units() - m.width;
+            let x = gutter - m.width;
             let y = piece.y + l.baseline - m.baseline;
             front.extend(marker.paint(
                 fonts,
@@ -526,6 +600,7 @@ pub fn paint_page(
             p.layout
                 .paint_lines(fonts, piece.lines.clone(), at, block, color(p)),
         );
+        front.extend(decorations(p, piece.lines.clone(), at, fonts, look));
         front.extend(paint_pictures(
             p,
             piece.lines.clone(),

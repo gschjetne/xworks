@@ -49,6 +49,9 @@ pub struct Place {
     /// The marker before its first line, if it starts a list item: a
     /// bullet, or the item's number.
     pub marker: Option<String>,
+    /// The box before its first line, if it starts a task's item, in place
+    /// of a bullet: whether it's checked.
+    pub task: Option<bool>,
     /// Where the marker ends, across from the body's start edge: where its
     /// item's blocks start.
     pub gutter: i64,
@@ -150,15 +153,26 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
                 inner.width = place.width - list_indent;
                 for (i, &item) in block.children.iter().enumerate() {
                     let mut p = inner.clone();
-                    p.marker = Some(if ordered {
-                        format!("{}.", start.saturating_add(i as i64))
+                    // A task's box takes a bullet's place, but not a
+                    // number's.
+                    let task = match document.block(item).and_then(|b| b.props.get(keys::TASK)) {
+                        Some(Value::Bool(done)) => Some(*done),
+                        _ => None,
+                    };
+                    p.task = task;
+                    p.marker = if ordered {
+                        Some(format!("{}.", start.saturating_add(i as i64)))
+                    } else if task.is_some() {
+                        None
                     } else {
-                        blocks
-                            .bullets
-                            .get(depth % blocks.bullets.len().max(1))
-                            .cloned()
-                            .unwrap_or_default()
-                    });
+                        Some(
+                            blocks
+                                .bullets
+                                .get(depth % blocks.bullets.len().max(1))
+                                .cloned()
+                                .unwrap_or_default(),
+                        )
+                    };
                     children.push((item, p));
                 }
             }
@@ -170,12 +184,14 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
                     let mut p = inner.clone();
                     if i > 0 {
                         p.marker = None;
+                        p.task = None;
                     }
                     children.push((c, p));
                 }
             }
             Kind::Table => {
                 inner.marker = None;
+                inner.task = None;
                 let rows = &block.children;
                 let columns = rows
                     .iter()
@@ -217,6 +233,7 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
                     let mut p = inner.clone();
                     if i > 0 {
                         p.marker = None;
+                        p.task = None;
                     }
                     children.push((c, p));
                 }
