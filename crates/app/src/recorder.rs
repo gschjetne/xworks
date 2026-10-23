@@ -12,9 +12,11 @@
 //!
 //! How: every event a window handles is a step. Now and then, when the
 //! window is at rest (no menu, list, panel, field, drag or composition
-//! open), the editor's state is noted as a checkpoint: its document and
-//! history, which share what's unchanged, where the caret is, and what
-//! the window showed around it. What's kept
+//! open), the editor's state is noted as a checkpoint: its document,
+//! which shares what's unchanged, where the caret is, and what the window
+//! showed around it. Not its undo history (project owner, 2026-10-23,
+//! review k07a0fw7): a recording never holds text deleted before it, and
+//! an Undo reaching back past its start takes back only what it recorded. What's kept
 //! starts at the newest checkpoint at least [`Spec::minutes`] old, so a
 //! session holds between that and a checkpoint's interval more; older
 //! steps go. A session starts from its checkpoint, written whole.
@@ -35,7 +37,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError, Weak};
 use std::time::{Duration, Instant};
 
-use doc::{Document, History, Props};
+use doc::{Document, Props};
 use serde::Deserialize;
 use story::StyleSheet;
 
@@ -75,7 +77,6 @@ impl std::fmt::Debug for Recorder {
 #[derive(Clone)]
 pub(crate) struct Checkpoint {
     pub(crate) document: Document,
-    pub(crate) history: History,
     pub(crate) anchor: (u64, u32, bool),
     pub(crate) focus: (u64, u32, bool),
     pub(crate) scroll: i64,
@@ -90,11 +91,10 @@ pub(crate) struct Checkpoint {
 
 impl Checkpoint {
     fn start(&self) -> Start {
-        let (undo, redo) = self.history.stacks();
         Start {
             document: self.document.to_snapshot(),
-            undo: undo.to_vec(),
-            redo: redo.to_vec(),
+            undo: Vec::new(),
+            redo: Vec::new(),
             anchor: self.anchor,
             focus: self.focus,
             scroll: self.scroll,

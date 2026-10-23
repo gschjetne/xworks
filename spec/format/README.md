@@ -120,8 +120,9 @@ one must open with the same text and history.
 ## One writer at a time
 
 A program writes to a document only while it holds the lock of the file
-beside it named as the document is, with `-lock` after (`Report.xw` and
-`Report.xw-lock`), taken with the system's own advisory lock on the
+beside it named as the document is, hidden, with a dot before and
+`-lock` after (`Report.xw` and `.Report.xw-lock`; on Windows the file is
+hidden too), taken with the system's own advisory lock on the
 whole file (`flock`, or `LockFileEx` on Windows). The holder writes a
 line saying who it is ("xWorks, process 4120 on studio"), deletes the
 file when it closes the document, and takes it along, still held, if it

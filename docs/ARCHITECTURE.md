@@ -474,9 +474,10 @@ own, open to the owner's review unless marked settled.
 
 - **A document is open to write in one program at a time** (settled:
   project owner, 2026-10-23, review a23vvez8). The program writing it
-  holds a lock on a file beside it, its name and `-lock`
-  (`Report.xw-lock`), as SQLite's own files beside it are its name and
-  `-wal` or `-shm`. The lock is the standard library's `File::try_lock`,
+  holds a lock on a hidden file beside it, a dot, its name and `-lock`
+  (`.Report.xw-lock`), as SQLite's own files beside it are its name and
+  `-wal` or `-shm`. The dot hides it on Linux and macOS, and on Windows
+  it's made hidden (project owner, 2026-10-23, review k07a0fw7). The lock is the standard library's `File::try_lock`,
   flock on Linux and macOS and LockFileEx on Windows, so it needs no
   dependency; locking the document's own file would fight SQLite's locks
   on Windows. The system lets a lock go when its program ends, however it
@@ -646,7 +647,9 @@ a23vvez8):
   says why.
 - **xWorks keeps the last few minutes of what a person does,** in memory,
   as a session, and writes it out when asked or when xWorks fails, for
-  bug reports. It holds the keys pressed, and so the document's text.
+  bug reports. It holds the keys pressed, and so the document's text,
+  but not the undo history from before it, so it never holds text deleted
+  before it (project owner, 2026-10-23, review k07a0fw7).
 
 The owner approved mockups of all this as goldens (`mockup-pages`,
 `mockup-pages-dark`, `mockup-draft-dark` and `mockup-palette`, drawn by
@@ -715,13 +718,14 @@ live.
 review but where settled above). Each window notes every event it
 handles as a step of a session (`app::recorder`), in the format of
 `spec/sessions/`, and now and then, when the window is at rest, a
-checkpoint: its document and history, which share what's unchanged, its
-selection, scroll and run of typing, and what its chrome showed (stage 5
+checkpoint: its document, which shares what's unchanged, its selection,
+scroll and run of typing, and what its chrome showed (stage 5
 moved the recorder from the editor to the window, so what's done in the
 chrome plays back too). What's kept starts at the newest
 checkpoint at least five minutes old (`spec/recorder.ron`), and a session
 starts there, its document written whole, so it plays back headless to
-the same document (`Window::resume`), which tests show. Text pasted is
+the same document (`Window::resume`), which tests show; only an Undo
+reaching back past its start takes back less than it did live. Text pasted is
 kept as what the clipboard held; a picture placed, as its file's path,
 so a session played on another machine lacks the picture. Save Recent
 Session writes it, and when xWorks fails the shell's panic hook writes

@@ -192,8 +192,12 @@ fn a_recorded_session_plays_back_to_the_same_document() {
     }
 }
 
+/// A recording starts from the document as it was, without its undo
+/// history (project owner, 2026-10-23, review k07a0fw7), so it never holds
+/// text deleted before it. An Undo that reaches back past its start takes
+/// back only what it recorded.
 #[test]
-fn a_run_of_typing_cut_by_what_was_kept_still_undoes_whole() {
+fn undoing_past_the_start_takes_back_only_what_was_recorded() {
     let res = resources("run");
     let recorder = Recorder::told(&Spec {
         minutes: 1,
@@ -219,11 +223,22 @@ fn a_run_of_typing_cut_by_what_was_kept_still_undoes_whole() {
     assert!(session.events.len() <= 72, "{} steps", session.events.len());
     let start = session.start.as_ref().expect("a start");
     assert!(start.typing, "it starts in the run");
-    let played = play_back(&session, "run-played");
-    assert_eq!(
-        played.editor().document().dump(),
-        window.window.editor().document().dump()
-    );
+    assert!(start.undo.is_empty() && start.redo.is_empty(), "no history");
+    // Live, Undo took the whole run back, to "Before. "; played back, it
+    // takes back what was typed since the start, to the start's document.
+    let text = |document: &doc::Document| -> Vec<String> {
+        document
+            .paragraphs()
+            .iter()
+            .map(|&id| document.paragraph(id).expect("a paragraph").text.clone())
+            .collect()
+    };
+    assert_eq!(text(window.window.editor().document()), ["Before. "]);
+    let started = doc::Document::from_snapshot(start.document.clone()).expect("a document");
+    // The session's own expectations are the live window's end, which it
+    // can't reach, so it's played without them.
+    let played = session::play(resources("run-played"), &session).expect("the session plays");
+    assert_eq!(text(played.editor().document()), text(&started));
 }
 
 #[test]

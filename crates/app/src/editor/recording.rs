@@ -24,7 +24,6 @@ impl Editor {
         let place = |p: Position| (p.paragraph.0, p.offset, p.upstream);
         Some(Checkpoint {
             document: self.document.clone(),
-            history: self.history.clone(),
             anchor: place(self.anchor),
             focus: place(self.focus),
             scroll: self.scroll,
