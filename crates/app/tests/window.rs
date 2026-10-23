@@ -146,3 +146,53 @@ fn the_editor_gets_what_falls_in_its_area() {
     let effects = window.update(Event::Move { x: 301.0, y: 191.0 });
     assert!(!effects.iter().any(|e| matches!(e, Effect::Pointer(_))));
 }
+
+/// File, Versions lists the named versions over the document, and one
+/// chosen from the keyboard asks for a window on it.
+#[test]
+fn versions_are_chosen_from_a_list_over_the_document() {
+    let mut window = window("app-versions");
+    window.update(Event::Text("Versioned".to_string()));
+    window.update(Event::Command("save-version".to_string()));
+    window.update(Event::Command("versions".to_string()));
+    let effects = window.update(key(Key::Enter, false));
+    let path = window.editor().path().to_path_buf();
+    assert!(
+        matches!(&effects[..], [Effect::OpenVersion(p, _)] if *p == path),
+        "{effects:?}"
+    );
+}
+
+/// Renaming an open document moves its file, and the lock that keeps it
+/// from being open twice goes with it (review a23vvez8): the database is
+/// closed first, so nothing of it is left beside the old name.
+#[test]
+fn a_document_renamed_keeps_its_lock() {
+    let mut window = window("app-rename");
+    window.update(Event::Text("Locked".to_string()));
+    let before = window.editor().path().to_path_buf();
+    assert!(store::lock_path(&before).exists(), "locked while open");
+    window.update(Event::Command("rename".to_string()));
+    window.update(Event::Text("Renamed".to_string()));
+    window.update(key(Key::Enter, false));
+    let after = window.editor().path().to_path_buf();
+    assert_eq!(after.file_stem().unwrap(), "Renamed");
+    assert!(!before.exists() && !store::lock_path(&before).exists());
+    for side in ["-wal", "-shm"] {
+        let mut name = before.file_name().unwrap().to_os_string();
+        name.push(side);
+        assert!(!before.with_file_name(name).exists(), "{side} left behind");
+    }
+    assert!(store::lock_path(&after).exists(), "locked where it went");
+    let other = store::Store::open(&after).expect("it opens");
+    assert!(
+        matches!(other.store.read_only(), Some(store::ReadOnly::InUse(_))),
+        "another opens it read-only"
+    );
+    // Typing goes on into the file where it is.
+    drop(other);
+    window.update(Event::Text(" on".to_string()));
+    let reopened = store::Store::open(&after).expect("it opens");
+    let p = reopened.document.paragraphs()[0];
+    assert_eq!(reopened.document.paragraph(p).unwrap().text, "Locked on");
+}
