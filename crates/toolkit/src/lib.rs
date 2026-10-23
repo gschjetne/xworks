@@ -58,6 +58,12 @@ pub fn rounded(rect: Rect, r: i64) -> scene::Path {
     kit::rounded_path(rect, r)
 }
 
+/// The path of `rect` with corners of radius `r`, less `hole`: the part
+/// of a shadow that shows round the page over it, as only that is drawn.
+pub fn ring(rect: Rect, r: i64, hole: Rect) -> scene::Path {
+    kit::ring_path(rect, r, hole)
+}
+
 /// The status bar along the foot of a window `width` wide with its bottom
 /// at `bottom`: `left` at its start, and `right` at its end.
 pub fn status_bar(kit: &Kit<'_>, left: &str, right: &str, width: i64, bottom: i64) -> Vec<Item> {

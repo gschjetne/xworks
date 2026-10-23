@@ -39,7 +39,7 @@ pub enum IconError {
 }
 
 /// An icon: the centre lines of its strokes, in a 24-unit square.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Icon {
     lines: BezPath,
 }

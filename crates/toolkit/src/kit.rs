@@ -76,7 +76,69 @@ pub struct Icons {
     icons: HashMap<String, Icon>,
 }
 
+/// Every icon in `icons/lucide/`, as Lucide's release has them, built into
+/// the program: so xWorks doesn't read a file for each as it starts.
+const BUNDLED: &[(&str, &str)] = &[
+    ("bold", include_str!("../../../icons/lucide/bold.svg")),
+    ("check", include_str!("../../../icons/lucide/check.svg")),
+    (
+        "chevron-down",
+        include_str!("../../../icons/lucide/chevron-down.svg"),
+    ),
+    (
+        "chevron-right",
+        include_str!("../../../icons/lucide/chevron-right.svg"),
+    ),
+    ("command", include_str!("../../../icons/lucide/command.svg")),
+    ("copy", include_str!("../../../icons/lucide/copy.svg")),
+    (
+        "file-text",
+        include_str!("../../../icons/lucide/file-text.svg"),
+    ),
+    ("italic", include_str!("../../../icons/lucide/italic.svg")),
+    ("minus", include_str!("../../../icons/lucide/minus.svg")),
+    (
+        "panel-right",
+        include_str!("../../../icons/lucide/panel-right.svg"),
+    ),
+    ("ruler", include_str!("../../../icons/lucide/ruler.svg")),
+    (
+        "scroll-text",
+        include_str!("../../../icons/lucide/scroll-text.svg"),
+    ),
+    ("search", include_str!("../../../icons/lucide/search.svg")),
+    ("square", include_str!("../../../icons/lucide/square.svg")),
+    (
+        "text-align-center",
+        include_str!("../../../icons/lucide/text-align-center.svg"),
+    ),
+    (
+        "text-align-end",
+        include_str!("../../../icons/lucide/text-align-end.svg"),
+    ),
+    (
+        "text-align-justify",
+        include_str!("../../../icons/lucide/text-align-justify.svg"),
+    ),
+    (
+        "text-align-start",
+        include_str!("../../../icons/lucide/text-align-start.svg"),
+    ),
+    ("x", include_str!("../../../icons/lucide/x.svg")),
+];
+
 impl Icons {
+    /// Every icon in `icons/lucide/`, built into the program; those that
+    /// can't be read are left out, with their names and why.
+    pub fn bundled() -> (Icons, Vec<(String, String)>) {
+        Icons::from_svgs(
+            BUNDLED
+                .iter()
+                .map(|(name, svg)| (name.to_string(), svg.to_string()))
+                .collect(),
+        )
+    }
+
     /// The icons `svgs` hold, by name; those that can't be read are left
     /// out, with their names and why.
     pub fn from_svgs(svgs: Vec<(String, String)>) -> (Icons, Vec<(String, String)>) {
@@ -96,6 +158,16 @@ impl Icons {
     /// The icon `name`, if there is one.
     pub fn get(&self, name: &str) -> Option<&Icon> {
         self.icons.get(name)
+    }
+
+    /// How many icons there are.
+    pub fn len(&self) -> usize {
+        self.icons.len()
+    }
+
+    /// Whether there are none.
+    pub fn is_empty(&self) -> bool {
+        self.icons.is_empty()
     }
 }
 
@@ -365,6 +437,43 @@ pub(crate) fn shadow(out: &mut Vec<Item>, colors: &crate::Colors, rect: Rect, r:
     );
 }
 
+/// The path of `rect` with corners of radius `r`, less `hole`: the part
+/// of a shadow that shows round what covers it, as only that is drawn.
+pub(crate) fn ring_path(rect: Rect, r: i64, hole: Rect) -> Path {
+    let f = |v: i64| v as f64 / PIXEL as f64;
+    let mut path = kurbo::RoundedRect::new(
+        f(rect.x),
+        f(rect.y),
+        f(rect.right()),
+        f(rect.bottom()),
+        f(r).max(0.0),
+    )
+    .to_path(0.01);
+    // The hole wound the other way, so the nonzero rule leaves it empty.
+    let inner = kurbo::Rect::new(f(hole.x), f(hole.y), f(hole.right()), f(hole.bottom()))
+        .to_path(0.01)
+        .reverse_subpaths();
+    path.extend(inner);
+    to_path(&path)
+}
+
+/// `path`, in layout units from pixels.
+fn to_path(path: &kurbo::BezPath) -> Path {
+    let at = |p: kurbo::Point| Point::new(px(p.x), px(p.y));
+    Path(
+        path.elements()
+            .iter()
+            .map(|el| match *el {
+                kurbo::PathEl::MoveTo(p) => Segment::MoveTo(at(p)),
+                kurbo::PathEl::LineTo(p) => Segment::LineTo(at(p)),
+                kurbo::PathEl::QuadTo(a, b) => Segment::QuadTo(at(a), at(b)),
+                kurbo::PathEl::CurveTo(a, b, c) => Segment::CubicTo(at(a), at(b), at(c)),
+                kurbo::PathEl::ClosePath => Segment::Close,
+            })
+            .collect(),
+    )
+}
+
 /// The path of `rect` with corners of radius `r`.
 pub(crate) fn rounded_path(rect: Rect, r: i64) -> Path {
     let f = |v: i64| v as f64 / PIXEL as f64;
@@ -375,17 +484,38 @@ pub(crate) fn rounded_path(rect: Rect, r: i64) -> Path {
         f(rect.bottom()),
         f(r).max(0.0),
     );
-    let at = |p: kurbo::Point| Point::new(px(p.x), px(p.y));
-    Path(
-        shape
-            .path_elements(0.01)
-            .map(|el| match el {
-                kurbo::PathEl::MoveTo(p) => Segment::MoveTo(at(p)),
-                kurbo::PathEl::LineTo(p) => Segment::LineTo(at(p)),
-                kurbo::PathEl::QuadTo(a, b) => Segment::QuadTo(at(a), at(b)),
-                kurbo::PathEl::CurveTo(a, b, c) => Segment::CubicTo(at(a), at(b), at(c)),
-                kurbo::PathEl::ClosePath => Segment::Close,
-            })
-            .collect(),
-    )
+    to_path(&shape.to_path(0.01))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use kurbo::Shape;
+
+    #[test]
+    fn a_ring_is_empty_where_its_hole_is() {
+        let px = |n: i64| n * PIXEL;
+        // A shadow a pixel wider than its page each side, from 9 to 102
+        // across, and the page from 10 to 101.
+        let ring = ring_path(
+            Rect::new(px(9), px(10), px(93), px(90)),
+            px(2),
+            Rect::new(px(10), px(10), px(91), px(90)),
+        );
+        let mut path = kurbo::BezPath::new();
+        let at = |p: Point| kurbo::Point::new(p.x as f64, p.y as f64);
+        for segment in &ring.0 {
+            match *segment {
+                Segment::MoveTo(p) => path.move_to(at(p)),
+                Segment::LineTo(p) => path.line_to(at(p)),
+                Segment::QuadTo(a, b) => path.quad_to(at(a), at(b)),
+                Segment::CubicTo(a, b, c) => path.curve_to(at(a), at(b), at(c)),
+                Segment::Close => path.close_path(),
+            }
+        }
+        let point = |x: f64, y: f64| kurbo::Point::new(x * PIXEL as f64, y * PIXEL as f64);
+        assert_eq!(path.winding(point(50.0, 50.0)), 0, "the hole");
+        assert_ne!(path.winding(point(9.5, 50.0)), 0, "the rim");
+        assert_ne!(path.winding(point(101.5, 50.0)), 0, "the rim");
+    }
 }

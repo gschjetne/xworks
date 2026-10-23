@@ -1,7 +1,7 @@
 //! Lucide's icons (`icons/lucide/`) read, and draw inside their square.
 
 use scene::{Color, Item, Segment};
-use toolkit::Icon;
+use toolkit::{Icon, Icons};
 
 #[test]
 fn every_icon_reads_and_draws_inside_its_square() {
@@ -30,4 +30,18 @@ fn every_icon_reads_and_draws_inside_its_square() {
             }
         }
     }
+}
+
+/// Every icon in `icons/lucide/` is built into the program, as it is in
+/// the file, and reads.
+#[test]
+fn every_icon_is_built_in() {
+    let (icons, bad) = Icons::bundled();
+    assert!(bad.is_empty(), "{bad:?}");
+    let files = testkit::icons().expect("icons/lucide");
+    let (from_files, _) = Icons::from_svgs(files.clone());
+    for (name, _) in &files {
+        assert_eq!(icons.get(name), from_files.get(name), "{name}");
+    }
+    assert_eq!(icons.len(), files.len(), "only what icons/lucide has");
 }
