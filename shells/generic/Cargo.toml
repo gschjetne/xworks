@@ -23,5 +23,8 @@ text.workspace = true
 wgpu.workspace = true
 winit.workspace = true
 
+[target.'cfg(windows)'.dependencies]
+windows-registry.workspace = true
+
 [lints]
 workspace = true

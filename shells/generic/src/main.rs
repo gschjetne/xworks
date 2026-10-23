@@ -13,7 +13,10 @@
 //! window. It also feeds the input method and screen readers, through
 //! AccessKit. Cut, Copy and Paste go through the system clipboard, as plain
 //! text, and files are chosen in the system's own dialogs (rfd: portals on
-//! Linux, the common dialogs on Windows; review a23vvez8).
+//! Linux, the common dialogs on Windows; review a23vvez8). The caret blinks
+//! at the system's rate (review ydqhfds0), read from its settings on a
+//! thread of its own while the window opens; the shell wakes for each
+//! blink, and a blink draws only the caret's pixels again.
 //!
 //! xWorks draws its own title bar (review 3ce247c2), so windows have no
 //! decorations: the app asks for the window to be moved, resized from its
@@ -34,6 +37,8 @@
 //! - `WGPU_BACKEND`: vulkan, dx12, metal or gl, to pick a GPU backend;
 //!   otherwise Vulkan, Metal or DirectX 12, whichever the system has.
 
+mod system;
+
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -46,7 +51,9 @@ use app::{Choice, Effect, Event, Resources};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::event::{ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent};
-use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy, OwnedDisplayHandle};
+use winit::event_loop::{
+    ActiveEventLoop, ControlFlow, EventLoop, EventLoopProxy, OwnedDisplayHandle,
+};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
 use winit::window::{CursorIcon, ResizeDirection, Theme, Window, WindowId};
@@ -61,6 +68,8 @@ enum UserEvent {
     Measured,
     /// A file chosen in the system's dialog for a window, or none.
     Chosen(WindowId, Choice, Option<PathBuf>),
+    /// How the system has the caret blink, read from its settings.
+    Blinking(app::Blinking),
 }
 
 impl From<accesskit_winit::Event> for UserEvent {
@@ -95,6 +104,10 @@ struct Win {
     pressed: Option<(Instant, (f64, f64), u32)>,
     /// Whether a file dialog is open for it, so another isn't.
     choosing: bool,
+    /// Its caret's blinking, which it does while it has the keyboard.
+    blink: app::Blink,
+    /// Whether it has the keyboard.
+    focused: bool,
 }
 
 /// How soon after a press another in the same place counts as the next of
@@ -136,6 +149,10 @@ struct Shell {
     /// How many times the person's settings had changed when every
     /// window last drew them.
     settings_seen: u64,
+    /// When the shell started, which blinks are timed from.
+    started: Instant,
+    /// How the system has the caret blink.
+    blinking: app::Blinking,
 }
 
 /// What the thread opening the GPU hands over.
@@ -307,7 +324,7 @@ fn main() -> anyhow::Result<()> {
         res.recent = Arc::new(app::Recent::load(config.join("recent.ron")));
         res.settings = Arc::new(app::Settings::load(
             config.join("settings.ron"),
-            system_units(),
+            system::units(),
         ));
     }
     let recordings = Recordings::default();
@@ -335,7 +352,16 @@ fn main() -> anyhow::Result<()> {
         settling: None,
         recordings,
         settings_seen: 0,
+        started,
+        blinking: app::Blinking::At(app::BlinkRate::DEFAULT),
     };
+    // The system's blink rate, read while the window opens: it may wait on
+    // a program, gsettings or defaults. The caret shows steadily for a
+    // pause at first, so it's there before the first blink.
+    let proxy = shell.proxy.clone();
+    std::thread::spawn(move || {
+        let _ = proxy.send_event(UserEvent::Blinking(system::blinking()));
+    });
     event_loop.run_app(&mut shell)?;
     // The documents opened lately, written to their file.
     shell.res.recent.flush();
@@ -369,26 +395,6 @@ fn system_language() -> text::Language {
         .filter(|tag| !matches!(tag.as_str(), "C" | "POSIX") && !tag.starts_with("C."))
         .find_map(|tag| text::Language::parse(&tag).ok())
         .unwrap_or_default()
-}
-
-/// The unit the person measures in until they choose one (review
-/// ydqhfds0): inches where the system's measurements are US customary,
-/// centimetres elsewhere, by the region of its locale. On Linux that's the
-/// locale measurements are in, LC_MEASUREMENT, which LC_ALL overrides and
-/// LANG stands in for; elsewhere the person's first language's.
-fn system_units() -> chrome::Unit {
-    let posix = if cfg!(target_os = "linux") {
-        ["LC_ALL", "LC_MEASUREMENT", "LANG"]
-            .into_iter()
-            .find_map(|name| std::env::var(name).ok().filter(|v| !v.is_empty()))
-    } else {
-        None
-    };
-    posix
-        .or_else(sys_locale::get_locale)
-        .map_or(chrome::Unit::Centimetre, |locale| {
-            app::units_of_locale(&locale)
-        })
 }
 
 /// Where `spec/` and `fonts/` are.
@@ -737,7 +743,11 @@ impl Shell {
             cpu: render_cpu::Renderer::new(),
             pressed: None,
             choosing: false,
+            blink: app::Blink::new(self.blinking),
+            focused: false,
         };
+        win.focused = win.window.has_focus();
+        win.blink.moved(self.started.elapsed());
         let logical = win
             .window
             .inner_size()
@@ -858,6 +868,18 @@ impl Shell {
         let Some(win) = self.windows.get_mut(&id) else {
             return;
         };
+        // Typing, or moving the caret, shows it steadily for a while.
+        if !matches!(
+            event,
+            Event::Move { .. }
+                | Event::Scroll(_)
+                | Event::Resize { .. }
+                | Event::Theme { .. }
+                | Event::Maximized(_)
+        ) {
+            win.blink.moved(self.started.elapsed());
+            win.doc.show_caret(true);
+        }
         let mut effects = win.doc.update(event);
         let mut opening = Vec::new();
         let mut closing = false;
@@ -996,6 +1018,13 @@ impl ApplicationHandler<UserEvent> for Shell {
                 return;
             }
             UserEvent::Measured => return event_loop.exit(),
+            UserEvent::Blinking(blinking) => {
+                self.blinking = blinking;
+                for win in self.windows.values_mut() {
+                    win.blink.set(blinking);
+                }
+                return;
+            }
             UserEvent::Chosen(id, choice, path) => {
                 if let Some(win) = self.windows.get_mut(&id) {
                     win.choosing = false;
@@ -1172,7 +1201,38 @@ impl ApplicationHandler<UserEvent> for Shell {
                 self.feed(event_loop, id, Event::Scroll(dy));
             }
             WindowEvent::ScaleFactorChanged { .. } => win.window.request_redraw(),
+            // The caret blinks only in the window with the keyboard, and
+            // shows steadily in the others; it comes back with the
+            // keyboard as it does after typing.
+            WindowEvent::Focused(focused) => {
+                win.focused = focused;
+                win.blink.moved(self.started.elapsed());
+            }
             _ => {}
         }
+    }
+
+    /// Before the loop waits: each window's caret shows or goes as its
+    /// blinking has it, drawn again where it changed, and the loop wakes
+    /// for the next blink, or waits for events if none is coming.
+    fn about_to_wait(&mut self, event_loop: &ActiveEventLoop) {
+        let now = self.started.elapsed();
+        let mut next: Option<Duration> = None;
+        for win in self.windows.values_mut() {
+            let shown = !win.focused || win.blink.shown(now);
+            if shown != win.doc.caret_shown() {
+                win.doc.show_caret(shown);
+                win.window.request_redraw();
+            }
+            if win.focused
+                && let Some(at) = win.blink.next(now)
+            {
+                next = Some(next.map_or(at, |n| n.min(at)));
+            }
+        }
+        event_loop.set_control_flow(match next {
+            Some(at) => ControlFlow::WaitUntil(self.started + at),
+            None => ControlFlow::Wait,
+        });
     }
 }
