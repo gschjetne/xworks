@@ -16,6 +16,7 @@ app.workspace = true
 chrome.workspace = true
 render-cpu.workspace = true
 render-gpu.workspace = true
+rfd.workspace = true
 scene.workspace = true
 sys-locale.workspace = true
 text.workspace = true

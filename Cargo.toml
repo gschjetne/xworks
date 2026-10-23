@@ -55,6 +55,7 @@ moxcms = { version = "0.8.1", default-features = false, features = ["lut"] }  # 
 pollster = "=0.4.0"     # waits for wgpu's device to open; wgpu's setup is async, and we have no runtime (CLAUDE.md, rule 3)
 postcard = { version = "1.1.3", default-features = false, features = ["use-std"] }  # the .xw file's compact binary encoding of operations and snapshots (review dfx97ttt); its wire format is specified and stable
 proptest = "1.11.0"     # property tests (docs/ARCHITECTURE.md, section 13)
+rfd = "0.17.2"          # the system's own file dialogs in the generic shell (review a23vvez8): portals on Linux, through libdbus loaded when it's there, the common dialogs on Windows; MIT, and no async runtime
 rayon = "1.12.0"        # the app's worker pool (docs/ARCHITECTURE.md, section 8): paragraphs laid out on every core
 ron = "0.12.2"          # specs and golden records are RON data
 serde = { version = "1.0.229", features = ["derive"] }

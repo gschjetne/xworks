@@ -5,19 +5,27 @@
 //! xworks [FILE.xw]      open a document, or make a new one
 //! ```
 //!
-//! Each window holds one [`app::Editor`]: the shell turns winit's events into
-//! the editor's, carries out the effects it returns, and draws its view with
+//! Each window holds one [`app::Window`]: the shell turns winit's events into
+//! the window's, carries out the effects it returns, and draws its view with
 //! render-gpu, or render-cpu on a software GPU and while vello_gpu compiles
 //! its shaders. A window keeps a canvas of its own, which each frame draws
 //! into only where the view's display list changed and copies whole to the
 //! window. It also feeds the input method and screen readers, through
 //! AccessKit. Cut, Copy and Paste go through the system clipboard, as plain
-//! text.
+//! text, and files are chosen in the system's own dialogs (rfd: portals on
+//! Linux, the common dialogs on Windows; review a23vvez8).
+//!
+//! xWorks draws its own title bar (review 3ce247c2), so windows have no
+//! decorations: the app asks for the window to be moved, resized from its
+//! edges, minimised, maximised and closed, and the shell asks winit. Its
+//! look is light or dark as the system's is.
 //!
 //! - `XWORKS_ROOT`: where `spec/` and `fonts/` are; otherwise the nearest
 //!   folder holding them, up from the program or the current folder.
-//! - `XWORKS_DOCUMENTS`: where new documents go and Open looks; otherwise
-//!   the Documents folder in the home folder.
+//! - `XWORKS_DOCUMENTS`: where new documents go and Open looks first;
+//!   otherwise the Documents folder in the home folder.
+//! - `XWORKS_THEME`: `dark` or `light`, where the system doesn't say, as
+//!   under X11.
 //! - `XWORKS_WAYLAND`: under WSL, use Wayland rather than X11.
 //! - `XWORKS_MEASURE_STARTUP`: for `tools/budgets`: once the first frame
 //!   is presented, print "ready", the microseconds since starting, and
@@ -33,14 +41,14 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail};
-use app::{Editor, Effect, Event, Resources};
+use app::{Choice, Effect, Event, Resources};
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::event::{ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent};
 use winit::event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy, OwnedDisplayHandle};
 use winit::keyboard::{Key, ModifiersState, NamedKey};
 use winit::platform::modifier_supplement::KeyEventExtModifierSupplement;
-use winit::window::{Window, WindowId};
+use winit::window::{CursorIcon, ResizeDirection, Theme, Window, WindowId};
 
 /// What arrives on the event loop from elsewhere.
 enum UserEvent {
@@ -50,6 +58,8 @@ enum UserEvent {
     Renderer(wgpu::TextureFormat, Box<render_gpu::Renderer>),
     /// Measuring is done: standard input closed.
     Measured,
+    /// A file chosen in the system's dialog for a window, or none.
+    Chosen(WindowId, Choice, Option<PathBuf>),
 }
 
 impl From<accesskit_winit::Event> for UserEvent {
@@ -63,7 +73,10 @@ struct Win {
     window: Arc<Window>,
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
-    editor: Editor,
+    /// The document and its chrome.
+    doc: app::Window,
+    /// The title the system shows, as last set.
+    title: String,
     access: accesskit_winit::Adapter,
     pointer: (f64, f64),
     /// The window's own picture, drawn where the view changed and copied
@@ -79,6 +92,8 @@ struct Win {
     /// run of quick presses in one place, for double and triple clicks,
     /// which winit doesn't count.
     pressed: Option<(Instant, (f64, f64), u32)>,
+    /// Whether a file dialog is open for it, so another isn't.
+    choosing: bool,
 }
 
 /// How soon after a press another in the same place counts as the next of
@@ -105,6 +120,9 @@ struct Shell {
     windows: HashMap<WindowId, Win>,
     clipboard: Clipboard,
     modifiers: ModifiersState,
+    /// Whether Alt is down with no other key pressed since: let go, it
+    /// goes to the menus on Windows and Linux.
+    alt_alone: bool,
     start: Option<Option<PathBuf>>,
     proxy: EventLoopProxy<UserEvent>,
     /// The start's phases, if it's measuring them.
@@ -279,6 +297,9 @@ fn main() -> anyhow::Result<()> {
     let mut res =
         Resources::load(&root, documents, mac).context("loading fonts, styles and commands")?;
     res.language = system_language();
+    if let Some(config) = config_folder() {
+        res.recent = Arc::new(app::Recent::load(config.join("recent.ron")));
+    }
     mark(&mut measuring, "resources");
     let mut shell = Shell {
         res: Arc::new(res),
@@ -291,6 +312,7 @@ fn main() -> anyhow::Result<()> {
         windows: HashMap::new(),
         clipboard: Clipboard::default(),
         modifiers: ModifiersState::empty(),
+        alt_alone: false,
         start: Some(start),
         proxy: event_loop.create_proxy(),
         measuring,
@@ -324,6 +346,80 @@ fn root() -> Option<PathBuf> {
         .find_map(|start| start.ancestors().find(|d| has(d)).map(Path::to_path_buf))
 }
 
+/// Where xWorks keeps what it remembers between runs, such as the
+/// documents opened lately: the system's place for programs' settings.
+fn config_folder() -> Option<PathBuf> {
+    let base = if cfg!(target_os = "windows") {
+        std::env::var_os("APPDATA").map(PathBuf::from)
+    } else if cfg!(target_os = "macos") {
+        std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support"))
+    } else {
+        std::env::var_os("XDG_CONFIG_HOME")
+            .map(PathBuf::from)
+            .or_else(|| std::env::var_os("HOME").map(|h| PathBuf::from(h).join(".config")))
+    };
+    base.map(|b| b.join("xworks"))
+}
+
+/// Whether the look is dark: as `XWORKS_THEME` says, or the window's
+/// system, or light where it doesn't say.
+fn dark(window: &Window) -> bool {
+    match std::env::var("XWORKS_THEME").as_deref() {
+        Ok("dark") => true,
+        Ok("light") => false,
+        _ => window.theme() == Some(Theme::Dark),
+    }
+}
+
+/// winit's direction for resizing from `edge`.
+fn direction(edge: app::Edge) -> ResizeDirection {
+    match edge {
+        app::Edge::North => ResizeDirection::North,
+        app::Edge::South => ResizeDirection::South,
+        app::Edge::East => ResizeDirection::East,
+        app::Edge::West => ResizeDirection::West,
+        app::Edge::NorthEast => ResizeDirection::NorthEast,
+        app::Edge::NorthWest => ResizeDirection::NorthWest,
+        app::Edge::SouthEast => ResizeDirection::SouthEast,
+        app::Edge::SouthWest => ResizeDirection::SouthWest,
+    }
+}
+
+/// Asks the person for a file for `choice`, in the system's own dialog
+/// over `window`, on a thread of its own so the window keeps drawing; the
+/// answer comes back to the event loop.
+fn choose(
+    window: &Arc<Window>,
+    choice: Choice,
+    proxy: EventLoopProxy<UserEvent>,
+    folder: &Path,
+    name: &str,
+) {
+    let dialog = rfd::FileDialog::new().set_parent(&**window);
+    let dialog = match choice {
+        Choice::Open => dialog
+            .set_title("Open")
+            .add_filter("xWorks documents", &["xw"])
+            .set_directory(folder),
+        Choice::MoveTo => dialog
+            .set_title("Move To")
+            .add_filter("xWorks documents", &["xw"])
+            .set_directory(folder)
+            .set_file_name(format!("{name}.xw")),
+        Choice::Picture => dialog
+            .set_title("Place a Picture")
+            .add_filter("Pictures", &["png", "jpg", "jpeg", "gif", "webp"]),
+    };
+    let id = window.id();
+    std::thread::spawn(move || {
+        let chosen = match choice {
+            Choice::MoveTo => dialog.save_file(),
+            Choice::Open | Choice::Picture => dialog.pick_file(),
+        };
+        let _ = proxy.send_event(UserEvent::Chosen(id, choice, chosen));
+    });
+}
+
 /// Where documents go.
 fn documents() -> PathBuf {
     if let Some(dir) = std::env::var_os("XWORKS_DOCUMENTS") {
@@ -351,27 +447,21 @@ fn named(key: &NamedKey) -> Option<chrome::Key> {
         NamedKey::End => chrome::Key::End,
         NamedKey::PageUp => chrome::Key::PageUp,
         NamedKey::PageDown => chrome::Key::PageDown,
+        NamedKey::F10 => chrome::Key::F10,
         _ => return None,
     })
 }
 
-/// The document as a screen reader sees it: a window holding the
-/// document's text.
-fn tree(editor: &Editor) -> accesskit::TreeUpdate {
-    use accesskit::{Node, NodeId, Role, TreeInfo, TreeUpdate};
-    let (text, _, _) = editor.text();
-    let mut window = Node::new(Role::Window);
-    window.set_label(format!("{} — xWorks", editor.title()));
-    window.set_children([NodeId(1)]);
-    let mut document = Node::new(Role::Document);
-    document.set_label(editor.title());
-    document.set_value(text);
-    TreeUpdate {
-        nodes: vec![(NodeId(0), window), (NodeId(1), document)],
-        tree: Some(TreeInfo::new(NodeId(0))),
-        tree_id: accesskit::TreeId::ROOT,
-        focus: NodeId(1),
+/// The window as a screen reader sees it, in physical pixels.
+fn tree(doc: &app::Window, scale: f64) -> accesskit::TreeUpdate {
+    let mut tree = doc.access();
+    let root = tree.tree.as_ref().map(|t| t.root);
+    for (id, node) in &mut tree.nodes {
+        if Some(*id) == root {
+            node.set_transform(accesskit::Affine::scale(scale));
+        }
     }
+    tree
 }
 
 /// Hands `path` to the system to open with whatever opens it.
@@ -423,19 +513,26 @@ fn reveal(path: &Path) -> std::io::Result<()> {
 impl Shell {
     /// Opens a window on a new document, or the one at `path`.
     fn open(&mut self, event_loop: &ActiveEventLoop, path: Option<PathBuf>) -> anyhow::Result<()> {
-        let editor = match &path {
-            Some(path) => Editor::open(self.res.clone(), path),
-            None => Editor::create(self.res.clone()),
+        let doc = match &path {
+            Some(path) => app::Window::open(self.res.clone(), path),
+            None => app::Window::create(self.res.clone()),
         }
         .with_context(|| match &path {
             Some(path) => format!("opening {}", path.display()),
             None => "making a new document".to_string(),
         })?;
         mark(&mut self.measuring, "document");
+        // xWorks draws its own title bar (review 3ce247c2).
         let attributes = Window::default_attributes()
-            .with_title(format!("{} — xWorks", editor.title()))
-            .with_inner_size(LogicalSize::new(1000.0, 820.0))
+            .with_title(doc.title())
+            .with_inner_size(LogicalSize::new(1280.0, 820.0))
+            .with_decorations(false)
             .with_visible(false);
+        #[cfg(target_os = "windows")]
+        let attributes = {
+            use winit::platform::windows::WindowAttributesExtWindows;
+            attributes.with_undecorated_shadow(true)
+        };
         let window = Arc::new(event_loop.create_window(attributes)?);
         let access = accesskit_winit::Adapter::with_event_loop_proxy(
             event_loop,
@@ -541,19 +638,24 @@ impl Shell {
             window,
             surface,
             config,
-            editor,
+            title: doc.title(),
+            doc,
             access,
             pointer: (0.0, 0.0),
             canvas: None,
             canvas_by_gpu: false,
             cpu: render_cpu::Renderer::new(),
             pressed: None,
+            choosing: false,
         };
         let logical = win
             .window
             .inner_size()
             .to_logical::<f64>(win.window.scale_factor());
-        win.editor.update(Event::Resize {
+        win.doc.update(Event::Theme {
+            dark: dark(&win.window),
+        });
+        win.doc.update(Event::Resize {
             width: logical.width,
             height: logical.height,
         });
@@ -575,7 +677,7 @@ impl Shell {
                 return;
             }
         };
-        let page = win.editor.view();
+        let page = win.doc.view();
         let ppi = 96.0 * win.window.scale_factor();
         let (w, h) = (
             win.config.width.min(65_535) as u16,
@@ -586,7 +688,11 @@ impl Shell {
             false => self.renderers.get_mut(&win.config.format),
         };
         let drawn_by_gpu = renderer.is_some();
-        let desk = self.res.theme.desk;
+        let desk = if win.doc.dark() {
+            self.res.dark.desk
+        } else {
+            self.res.light.desk
+        };
         let drawn = if win.config.usage.contains(wgpu::TextureUsages::COPY_DST) {
             // Drawn into the window's canvas where the view changed, and
             // the canvas copied whole to the frame.
@@ -656,19 +762,22 @@ impl Shell {
         }
     }
 
-    /// Feeds `event` to window `id`'s editor and carries out what it asks.
+    /// Feeds `event` to window `id`'s document and carries out what it
+    /// asks.
     fn feed(&mut self, event_loop: &ActiveEventLoop, id: WindowId, event: Event) {
         let Some(win) = self.windows.get_mut(&id) else {
             return;
         };
-        let mut effects = win.editor.update(event);
+        let mut effects = win.doc.update(event);
         let mut opening = Vec::new();
+        let mut closing = false;
+        let mut quitting = false;
         while let Some(effect) = effects.pop() {
             match effect {
                 Effect::Copy(text) => self.clipboard.copy(text),
                 Effect::Paste => {
                     if let Some(text) = self.clipboard.paste() {
-                        effects.extend(win.editor.update(Event::Pasted(text)));
+                        effects.extend(win.doc.update(Event::Pasted(text)));
                     }
                 }
                 Effect::Open(path) => opening.push(path),
@@ -682,25 +791,85 @@ impl Shell {
                         eprintln!("xworks: showing {}: {e}", path.display());
                     }
                 }
-                // The system's file dialogs come with M2's stage 5.
-                Effect::Choose(_) => {}
-                Effect::Quit => event_loop.exit(),
+                Effect::Choose(choice) => {
+                    if !win.choosing {
+                        win.choosing = true;
+                        let folder = match choice {
+                            Choice::MoveTo => win
+                                .doc
+                                .editor()
+                                .path()
+                                .parent()
+                                .map_or_else(|| self.res.documents.clone(), Path::to_path_buf),
+                            _ => self.res.documents.clone(),
+                        };
+                        let name = win.doc.editor().name();
+                        choose(&win.window, choice, self.proxy.clone(), &folder, &name);
+                    }
+                }
+                Effect::Window(action) => match action {
+                    app::WindowAction::Drag => {
+                        let _ = win.window.drag_window();
+                    }
+                    app::WindowAction::Resize(edge) => {
+                        let _ = win.window.drag_resize_window(direction(edge));
+                    }
+                    app::WindowAction::Minimize => win.window.set_minimized(true),
+                    app::WindowAction::ToggleMaximize => {
+                        let maximized = !win.window.is_maximized();
+                        win.window.set_maximized(maximized);
+                        effects.extend(win.doc.update(Event::Maximized(maximized)));
+                    }
+                    app::WindowAction::Close => closing = true,
+                },
+                Effect::Pointer(shape) => win.window.set_cursor(match shape {
+                    app::PointerShape::Arrow => CursorIcon::Default,
+                    app::PointerShape::Text => CursorIcon::Text,
+                    app::PointerShape::Resize(edge) => CursorIcon::from(direction(edge)),
+                }),
+                Effect::Quit => quitting = true,
             }
         }
-        // The input method's window goes below the caret, and screen
-        // readers see the text as it is.
-        let (x, y, w, h) = win.editor.ime_area();
+        // The input method's window goes below the caret, screen readers
+        // see the text as it is, and the system the document's name.
+        let (x, y, w, h) = win.doc.ime_area();
         win.window.set_ime_cursor_area(
             LogicalPosition::new(x, y),
             LogicalSize::new(w.max(1.0), h.max(1.0)),
         );
-        let editor = &win.editor;
-        win.access.update_if_active(|| tree(editor));
+        let (doc, scale) = (&win.doc, win.window.scale_factor());
+        win.access.update_if_active(|| tree(doc, scale));
+        let title = win.doc.title();
+        if title != win.title {
+            win.window.set_title(&title);
+            win.title = title;
+        }
         win.window.request_redraw();
+        if closing {
+            self.close(event_loop, id);
+        }
+        if quitting {
+            let ids: Vec<WindowId> = self.windows.keys().copied().collect();
+            for id in ids {
+                self.close(event_loop, id);
+            }
+            return;
+        }
         for path in opening {
             if let Err(e) = self.open(event_loop, path) {
                 eprintln!("xworks: {e:#}");
             }
+        }
+    }
+
+    /// Closes window `id`: its document takes its name, if it isn't named
+    /// by hand, and the app ends with its last window.
+    fn close(&mut self, event_loop: &ActiveEventLoop, id: WindowId) {
+        if let Some(mut win) = self.windows.remove(&id) {
+            win.doc.close();
+        }
+        if self.windows.is_empty() {
+            event_loop.exit();
         }
     }
 }
@@ -727,13 +896,20 @@ impl ApplicationHandler<UserEvent> for Shell {
                 return;
             }
             UserEvent::Measured => return event_loop.exit(),
+            UserEvent::Chosen(id, choice, path) => {
+                if let Some(win) = self.windows.get_mut(&id) {
+                    win.choosing = false;
+                }
+                self.feed(event_loop, id, Event::Chosen(choice, path));
+                return;
+            }
         };
         let Some(win) = self.windows.get_mut(&event.window_id) else {
             return;
         };
         if let accesskit_winit::WindowEvent::InitialTreeRequested = event.window_event {
-            let editor = &win.editor;
-            win.access.update_if_active(|| tree(editor));
+            let (doc, scale) = (&win.doc, win.window.scale_factor());
+            win.access.update_if_active(|| tree(doc, scale));
         }
     }
 
@@ -744,10 +920,16 @@ impl ApplicationHandler<UserEvent> for Shell {
         win.access.process_event(&win.window, &event);
         let scale = win.window.scale_factor();
         match event {
-            WindowEvent::CloseRequested => {
-                self.windows.remove(&id);
-                if self.windows.is_empty() {
-                    event_loop.exit();
+            WindowEvent::CloseRequested => self.close(event_loop, id),
+            WindowEvent::ThemeChanged(theme) => {
+                if std::env::var_os("XWORKS_THEME").is_none() {
+                    self.feed(
+                        event_loop,
+                        id,
+                        Event::Theme {
+                            dark: theme == Theme::Dark,
+                        },
+                    );
                 }
             }
             WindowEvent::Resized(size) => {
@@ -757,6 +939,8 @@ impl ApplicationHandler<UserEvent> for Shell {
                     win.surface.configure(&gpu.device, &win.config);
                 }
                 let logical = size.to_logical::<f64>(scale);
+                let maximized = win.window.is_maximized();
+                self.feed(event_loop, id, Event::Maximized(maximized));
                 self.feed(
                     event_loop,
                     id,
@@ -768,11 +952,30 @@ impl ApplicationHandler<UserEvent> for Shell {
             }
             WindowEvent::RedrawRequested => self.draw(id),
             WindowEvent::ModifiersChanged(modifiers) => self.modifiers = modifiers.state(),
+            // Alt pressed and let go with nothing between goes to the menus
+            // on Windows and Linux.
+            WindowEvent::KeyboardInput {
+                event,
+                is_synthetic: false,
+                ..
+            } if matches!(event.logical_key, Key::Named(NamedKey::Alt)) => match event.state {
+                ElementState::Pressed => self.alt_alone = !event.repeat,
+                ElementState::Released => {
+                    if std::mem::take(&mut self.alt_alone) && !cfg!(target_os = "macos") {
+                        let event = Event::Key {
+                            key: chrome::Key::Alt,
+                            modifiers: chrome::Modifiers::default(),
+                        };
+                        self.feed(event_loop, id, event);
+                    }
+                }
+            },
             WindowEvent::KeyboardInput {
                 event,
                 is_synthetic: false,
                 ..
             } if event.state == ElementState::Pressed => {
+                self.alt_alone = false;
                 let m = self.modifiers;
                 let modifiers = chrome::Modifiers {
                     primary: if cfg!(target_os = "macos") {
@@ -787,8 +990,12 @@ impl ApplicationHandler<UserEvent> for Shell {
                     Key::Named(key) => named(key).map(|key| Event::Key { key, modifiers }),
                     _ => None,
                 };
+                // Alt and a letter, without Ctrl (which with Alt is AltGr on
+                // Windows), is a menu's access key on Windows and Linux; on a
+                // Mac, Option types letters.
+                let access = modifiers.alt && !m.control_key() && !cfg!(target_os = "macos");
                 let typed = typed.or_else(|| {
-                    if modifiers.primary {
+                    if modifiers.primary || access {
                         // A shortcut: the key as it is without Shift, so
                         // shifted layouts don't change it.
                         match event.key_without_modifiers() {
@@ -824,6 +1031,7 @@ impl ApplicationHandler<UserEvent> for Shell {
                 button: MouseButton::Left,
                 ..
             } => {
+                self.alt_alone = false;
                 let (x, y) = win.pointer;
                 let event = match state {
                     ElementState::Pressed => {
