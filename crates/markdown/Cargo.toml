@@ -1,0 +1,23 @@
+[package]
+name = "markdown"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[dependencies]
+doc.workspace = true
+pulldown-cmark.workspace = true
+story.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+proptest.workspace = true
+ron.workspace = true
+serde.workspace = true
+testkit.workspace = true
+
+[lints]
+workspace = true

@@ -6,3 +6,7 @@ spec/format/fixtures/** -text
 # The schema's SQL is compiled into the program and written into every
 # file it makes, so it's LF on every platform, and files are the same.
 spec/format/*.sql text eol=lf
+
+# Markdown files kept byte for byte, which their tests write back exactly,
+# one with CRLF line endings and a byte order mark (crates/markdown/tests/files.rs).
+spec/markdown/files/** -text
