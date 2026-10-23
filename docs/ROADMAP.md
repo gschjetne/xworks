@@ -491,8 +491,26 @@ sections 5, 6, 9 and 10 say what each built.
 - **Ligatures:** styles now set them class by class, and code has none
   (review zym9j5k0).
 
-Stages 5 and 7 run in parallel now, on plans the owner approved in review
-a23vvez8.
+**Stages 5 and 7 are done (2026-10-24),** built in parallel on plans the
+owner approved in review a23vvez8.
+
+- **Stage 7 (review k07a0fw7):**
+  - pictures in documents' text, with sRGB JPEGs passed to PDF unchanged;
+  - named versions opened read-only and copied out;
+  - a document open to write in one program at a time, behind a hidden
+    lock file;
+  - the last minutes of input kept for bug reports, without undo
+    history;
+  - the fuzz targets run nightly in CI.
+- **Stage 5 (review ydqhfds0):** the chrome of the approved mockups, with
+  our own title bar, light and dark, the draft view, the ruler, the
+  inspector, the palette, menus holding every command, the system's file
+  dialogs, documents named by their first line, the `part` contract, and
+  text ranges for screen readers.
+- **Live use** asked for the ruler across the window with units in View,
+  and the system's caret rate, which a follow-up builds now.
+- **The owner added stage 9,** a document's own styles, which starts with
+  research.
 
 ### Exit criteria
 
