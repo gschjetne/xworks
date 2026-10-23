@@ -525,7 +525,7 @@ impl Shell {
         // xWorks draws its own title bar (review 3ce247c2).
         let attributes = Window::default_attributes()
             .with_title(doc.title())
-            .with_inner_size(LogicalSize::new(1280.0, 820.0))
+            .with_inner_size(LogicalSize::new(1000.0, 820.0))
             .with_decorations(false)
             .with_visible(false);
         #[cfg(target_os = "windows")]

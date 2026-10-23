@@ -13,7 +13,8 @@
 //!   presented, and reads its resident memory then. Run a release build.
 //! - **Opening a 500-page report**, **keystroke to glyph**, **scrolling**
 //!   and **saving after a small edit**: in this process, with the app's
-//!   editor, on a report it makes from the sample document. Frames are
+//!   window, its chrome and all, on a report it makes from the sample
+//!   document. Frames are
 //!   drawn as the shell draws them, in a window of the shell's size (times
 //!   `--scale`, for a display that scales): with render-gpu on a hardware
 //!   GPU, or render-cpu where the GPU is software or missing, into the
@@ -30,7 +31,7 @@ use std::sync::Arc;
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, bail};
-use app::{Editor, Event, Resources};
+use app::{Event, Resources, Window};
 use chrome::{Key, Modifiers};
 use doc::{Op, Props, Run};
 use serde::Deserialize;
@@ -460,11 +461,12 @@ impl Frames {
         self.cpu.1 = None;
     }
 
-    /// Draws `editor`'s window as the shell would, and waits for it to be
-    /// done. Returns how long making the display list took, and drawing it.
-    fn draw(&mut self, editor: &Editor) -> anyhow::Result<(f64, f64)> {
+    /// Draws `window` as the shell would, chrome and all, and waits for it
+    /// to be done. Returns how long making the display list took, and
+    /// drawing it.
+    fn draw(&mut self, window: &Window) -> anyhow::Result<(f64, f64)> {
         let began = Instant::now();
-        let page = editor.view();
+        let page = window.view();
         let viewed = began.elapsed();
         let (w, h) = self.size;
         match &mut self.gpu {
@@ -508,7 +510,7 @@ impl Frames {
 }
 /// Times `event` in `editor` and its frame: the whole, and its parts.
 fn frame(
-    editor: &mut Editor,
+    editor: &mut Window,
     frames: &mut Frames,
     event: Event,
     parts: &mut [Vec<f64>; 3],
@@ -552,7 +554,7 @@ fn in_editor(
         drop(Store::open(path)?);
         let read = millis(began.elapsed());
         let began = Instant::now();
-        let mut editor = Editor::open(res.clone(), path)?;
+        let mut editor = Window::open(res.clone(), path)?;
         editor.update(window());
         let opened = millis(began.elapsed());
         // A new window draws all of it.
@@ -577,13 +579,13 @@ fn in_editor(
         note: "",
     };
 
-    let mut editor = Editor::open(res.clone(), path)?;
+    let mut editor = Window::open(res.clone(), path)?;
     editor.update(window());
     // To the middle of the report, a page at a time.
-    let paragraphs = editor.document().paragraphs().to_vec();
+    let paragraphs = editor.editor().document().paragraphs().to_vec();
     let middle = paragraphs.len() / 2;
-    let at = |editor: &Editor| {
-        let caret = editor.selection().1.paragraph;
+    let at = |editor: &Window| {
+        let caret = editor.editor().selection().1.paragraph;
         paragraphs.iter().position(|&p| p == caret).unwrap_or(0)
     };
     while at(&editor) < middle {
