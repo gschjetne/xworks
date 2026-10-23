@@ -370,12 +370,13 @@ flowchart LR
   s5["5 The designed chrome"]
   s6["6 Markdown as itself"]
   s7["7 Storage and test infrastructure"]
+  s9["9 A document's own styles"]
   s8["8 Exit"]
 
   s1 --> s5
   s2 --> s6
   s3 & s4 & s5 --> s6
-  s6 & s7 --> s8
+  s6 & s7 & s9 --> s8
 ```
 
 1. **UX design** (F5; project owner, 2026-10-22, review v0qk8k5d). A
@@ -444,6 +445,15 @@ flowchart LR
    Linux, with budgets for opening and saving Markdown. The fuzz targets
    run on a schedule in CI. A recorder writes what a person does in the
    shell as a session, for bug reports.
+
+9. **A document's own styles** (added by the project owner, 2026-10-24,
+   review ydqhfds0; ARCHITECTURE.md section 6). Styles and the page
+   become the document's, edited by operations, from stylesheets that come
+   with xWorks and people's own. It starts with research into how word
+   processors and page layout programs build styles on each other, and
+   how they set columns, brought to the owner as a design to decide. Then
+   it's built: schema 2 changes, the inspector edits styles and the page,
+   and tab layouts become styles.
 
 8. **Exit.** Each foundation crate's contract is written down in its
    `lib.rs` and the architecture, and the budgets are measured again.

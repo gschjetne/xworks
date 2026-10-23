@@ -401,9 +401,26 @@ the document is open.
   it up to the next heading of its level or higher. Moving sections,
   folding and the outline view act on those runs of blocks (project owner,
   2026-10-22, review pysc65hp).
+- **Its stylesheet is a Markdown file's program's,** since Markdown can't
+  hold one; an `.xw` document carries its own (below).
 - **Its tables are Markdown's** in M2: a header row, rows of cells of one
   paragraph each, and column alignment. Fuller tables come with Write
   (project owner, 2026-10-22, review pysc65hp).
+
+**A document carries its own stylesheet and page style** (project owner,
+2026-10-24, review ydqhfds0), edited by operations like the rest of it, so
+it looks the same wherever it opens.
+- xWorks comes with about half a dozen stylesheets for different moods,
+  and people keep their own, in a configuration folder.
+- A new document gets a copy of the one chosen, so it never depends on
+  what's installed.
+- People change a document's stylesheet and define their own styles. A
+  layout of tab stops is a style of its own, to use again in a document.
+
+How styles build on each other (cascading, inheritance) is still open,
+to be researched across Word, Pages, InDesign, the Claris applications,
+Nisus Writer, WordPerfect and FrameMaker; CSS is the example of what not
+to do. So is the experience of setting text in columns.
 
 **Container: SQLite** (project owner, 2026-10-18). A document is an SQLite
 database with a fixed, versioned schema: objects, the transaction log, embedded
@@ -650,6 +667,17 @@ a23vvez8):
   bug reports. It holds the keys pressed, and so the document's text,
   but not the undo history from before it, so it never holds text deleted
   before it (project owner, 2026-10-23, review k07a0fw7).
+
+From trying the chrome live (project owner, 2026-10-24, review ydqhfds0):
+
+- **The ruler spans the window,** but its ticks and numbers stop at the
+  page's edges. Its origin is the text column's left edge, as word
+  processors have it (Word, Pages, Writer); page layout's rulers start at
+  the page's edge (InDesign, QuarkXPress, FrameMaker), which the canvas
+  can offer later.
+- **Its units are a choice** in a View submenu: centimetres, inches and
+  picas.
+- **The caret blinks at the system's rate.**
 
 The owner approved mockups of all this as goldens (`mockup-pages`,
 `mockup-pages-dark`, `mockup-draft-dark` and `mockup-palette`, drawn by
