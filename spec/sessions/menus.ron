@@ -5,8 +5,8 @@
     events: [
         Type("Bold by menu"),
         Key("Primary+A"),
-        Click(110, 13),
-        Click(130, 41),
+        Click(220, 13),
+        Click(225, 41),
     ],
     expect: [("Body", "Bold by menu")],
     marks: [("Bold by menu", ["bold"])],

@@ -290,7 +290,7 @@ impl MenuBar {
             for (k, item) in menu.items.iter().enumerate() {
                 let h = match item {
                     MenuItem::Separator => theme.item_height / 3,
-                    MenuItem::Command { .. } => theme.item_height,
+                    MenuItem::Command { .. } | MenuItem::Submenu { .. } => theme.item_height,
                 };
                 items.push((
                     Rect {
@@ -432,12 +432,14 @@ impl MenuBar {
                         ),
                         color: theme.line,
                     }),
+                    MenuItem::Submenu { .. } => {}
                     MenuItem::Command {
                         id,
                         title,
                         shortcut,
                         enabled,
                         checked,
+                        ..
                     } => {
                         let lit = *enabled && hover == Some(&MenuHit::Command(id.clone()));
                         if lit {

@@ -1007,7 +1007,7 @@ impl Editor {
                     self.insert_text("\t");
                 }
             }
-            Key::Tab | Key::Char(_) => {}
+            Key::Tab | Key::Char(_) | Key::Alt | Key::F10 => {}
         }
         self.reveal();
         Vec::new()
@@ -1871,7 +1871,7 @@ impl Editor {
         let bar = self
             .res
             .commands
-            .menu_bar(self.res.mac, |id| self.state(id));
+            .menu_bar(self.res.mac, |id| self.state(id), |_| Vec::new());
         MenuBar::new(
             self.res.fonts(),
             &self.res.theme,

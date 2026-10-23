@@ -413,5 +413,5 @@ pub fn editor_lists_page() -> Page {
 
 /// The editor after the tour, with the Format menu open.
 pub fn editor_menu_page() -> Page {
-    editor_after_tour(Some((110.0, 13.0)))
+    editor_after_tour(Some((220.0, 13.0)))
 }

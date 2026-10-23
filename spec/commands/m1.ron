@@ -1,105 +1,164 @@
-// M1's commands and menus (docs/ROADMAP.md, M1 stage 9), and M2's for text
-// (stage 3). Each command has an ID the app acts on, a title for menus, and
-// maybe a shortcut: keys joined by "+", where "Primary" is Ctrl, or Command
-// on a Mac. A shortcut that differs on a Mac in more than that is given for
-// the Mac as `mac`: moving by words is Ctrl and an arrow on Windows and
-// Linux, Option ("Alt") and an arrow on a Mac. Menus list command IDs in
-// order, "-" for a separator.
+// xWorks' commands and menus: M1's (docs/ROADMAP.md, M1 stage 9), M2's for
+// text (stages 2 and 3), and the designed chrome's (stage 5). Each command
+// has an ID the app acts on, a title for menus and the command palette,
+// and maybe a shortcut: keys joined by "+", where "Primary" is Ctrl, or
+// Command on a Mac. A shortcut that differs on a Mac in more than that is
+// given for the Mac as `mac`: moving by words is Ctrl and an arrow on
+// Windows and Linux, Option ("Alt") and an arrow on a Mac.
+//
+// A title marks its access key with "&" (Windows' and Linux's menus,
+// with Alt); `kind` is what the palette says a command is, where that
+// isn't the menu it's in. A command with an `arg` is run with one, from
+// the inspector, the ruler, a submenu the app fills, or a script: Text, a
+// whole number (Int, lengths in layout units), or a List of them.
+//
+// Menus list command IDs in order, "-" for a separator, and ">" before a
+// command whose submenu the app fills. Every command without an argument
+// is in a menu, but for moving the caret, which is keys, and languages
+// and sizes, which the inspector sets (review dcn5ejrd); the palette finds
+// them all.
 (
     commands: [
-        (id: "new", title: "New", shortcut: Some("Primary+N")),
-        (id: "open", title: "Open…", shortcut: Some("Primary+O")),
-        (id: "save-version", title: "Save a Version", shortcut: Some("Primary+S")),
-        (id: "export-pdf", title: "Export as PDF", shortcut: Some("Primary+Shift+E")),
-        (id: "print", title: "Print…", shortcut: Some("Primary+P")),
-        (id: "quit", title: "Quit", shortcut: Some("Primary+Q")),
+        (id: "new", title: "&New", shortcut: Some("Primary+N")),
+        (id: "open", title: "&Open…", shortcut: Some("Primary+O")),
+        // The documents opened lately, newest first: the path of one.
+        (id: "open-recent", title: "Open &Recent", arg: Some(Text)),
+        (id: "rename", title: "Ren&ame…"),
+        (id: "move-to", title: "&Move To…"),
+        (id: "save-version", title: "&Save a Version", shortcut: Some("Primary+S")),
+        (id: "export-pdf", title: "&Export as PDF", shortcut: Some("Primary+Shift+E")),
+        (id: "print", title: "&Print…", shortcut: Some("Primary+P")),
+        (id: "close", title: "&Close", shortcut: Some("Primary+W")),
+        (id: "quit", title: "&Quit", shortcut: Some("Primary+Q")),
 
-        (id: "undo", title: "Undo", shortcut: Some("Primary+Z")),
-        (id: "redo", title: "Redo", shortcut: Some("Primary+Shift+Z")),
-        (id: "cut", title: "Cut", shortcut: Some("Primary+X")),
-        (id: "copy", title: "Copy", shortcut: Some("Primary+C")),
-        (id: "paste", title: "Paste", shortcut: Some("Primary+V")),
-        (id: "select-all", title: "Select All", shortcut: Some("Primary+A")),
+        (id: "undo", title: "&Undo", shortcut: Some("Primary+Z")),
+        (id: "redo", title: "&Redo", shortcut: Some("Primary+Shift+Z")),
+        (id: "cut", title: "Cu&t", shortcut: Some("Primary+X")),
+        (id: "copy", title: "&Copy", shortcut: Some("Primary+C")),
+        (id: "paste", title: "&Paste", shortcut: Some("Primary+V")),
+        (id: "select-all", title: "Select &All", shortcut: Some("Primary+A")),
 
-        // Moving by words goes to a word's end going forward, and its start
-        // going back, on every platform. Sentences have no shortcut: no
-        // platform has one to follow, and the obvious keys are taken
-        // (Ctrl+Alt and an arrow switches workspaces on Linux); a triple
-        // click selects one.
-        (id: "word-left", title: "Word Left", shortcut: Some("Primary+Left"), mac: Some("Alt+Left")),
-        (id: "word-right", title: "Word Right", shortcut: Some("Primary+Right"), mac: Some("Alt+Right")),
-        (id: "select-word-left", title: "Select Word Left", shortcut: Some("Primary+Shift+Left"), mac: Some("Alt+Shift+Left")),
-        (id: "select-word-right", title: "Select Word Right", shortcut: Some("Primary+Shift+Right"), mac: Some("Alt+Shift+Right")),
-        (id: "sentence-left", title: "Sentence Left", shortcut: None),
-        (id: "sentence-right", title: "Sentence Right", shortcut: None),
-        (id: "select-sentence-left", title: "Select Sentence Left", shortcut: None),
-        (id: "select-sentence-right", title: "Select Sentence Right", shortcut: None),
+        // Moving by words goes back to a word's start everywhere, and
+        // forward as each platform does (project owner, 2026-10-23, review
+        // dcn5ejrd): to the next word's start on Windows and Linux, to the
+        // word's end on a Mac. Sentences have no shortcut: no platform has
+        // one to follow, and the obvious keys are taken (Ctrl+Alt and an
+        // arrow switches workspaces on Linux); a triple click selects one.
+        (id: "word-left", title: "Word Left", kind: Some("Moving"), shortcut: Some("Primary+Left"), mac: Some("Alt+Left")),
+        (id: "word-right", title: "Word Right", kind: Some("Moving"), shortcut: Some("Primary+Right"), mac: Some("Alt+Right")),
+        (id: "select-word-left", title: "Select Word Left", kind: Some("Moving"), shortcut: Some("Primary+Shift+Left"), mac: Some("Alt+Shift+Left")),
+        (id: "select-word-right", title: "Select Word Right", kind: Some("Moving"), shortcut: Some("Primary+Shift+Right"), mac: Some("Alt+Shift+Right")),
+        (id: "sentence-left", title: "Sentence Left", kind: Some("Moving")),
+        (id: "sentence-right", title: "Sentence Right", kind: Some("Moving")),
+        (id: "select-sentence-left", title: "Select Sentence Left", kind: Some("Moving")),
+        (id: "select-sentence-right", title: "Select Sentence Right", kind: Some("Moving")),
 
-        (id: "bold", title: "Bold", shortcut: Some("Primary+B")),
-        (id: "italic", title: "Italic", shortcut: Some("Primary+I")),
-        (id: "style-body", title: "Body", shortcut: Some("Primary+0")),
-        (id: "style-heading-1", title: "Heading 1", shortcut: Some("Primary+1")),
-        (id: "style-heading-2", title: "Heading 2", shortcut: Some("Primary+2")),
-        (id: "style-heading-3", title: "Heading 3", shortcut: Some("Primary+3")),
-        (id: "size-bigger", title: "Bigger", shortcut: Some("Primary+Shift+.")),
-        (id: "size-smaller", title: "Smaller", shortcut: Some("Primary+Shift+,")),
-        (id: "size-9", title: "9 pt", shortcut: None),
-        (id: "size-10", title: "10 pt", shortcut: None),
-        (id: "size-11", title: "11 pt", shortcut: None),
-        (id: "size-12", title: "12 pt", shortcut: None),
-        (id: "size-14", title: "14 pt", shortcut: None),
-        (id: "size-18", title: "18 pt", shortcut: None),
-        (id: "size-24", title: "24 pt", shortcut: None),
-        (id: "align-start", title: "Align to Start", shortcut: Some("Primary+L")),
-        (id: "align-center", title: "Centre", shortcut: Some("Primary+E")),
-        (id: "align-end", title: "Align to End", shortcut: Some("Primary+R")),
-        (id: "align-justify", title: "Justify", shortcut: Some("Primary+J")),
+        // The views a document is shown in (ARCHITECTURE.md section 8),
+        // and the chrome a person opens and closes. Ctrl+Alt is left alone:
+        // on Windows it's AltGr, which types letters on many layouts.
+        (id: "view-draft", title: "&Draft"),
+        (id: "view-pages", title: "&Pages"),
+        (id: "toggle-inspector", title: "&Inspector", shortcut: Some("Primary+Shift+I")),
+        (id: "toggle-ruler", title: "&Ruler", shortcut: Some("Primary+Shift+R")),
+        (id: "command-palette", title: "&Command Palette…", shortcut: Some("Primary+Shift+P")),
+
+        (id: "bold", title: "&Bold", shortcut: Some("Primary+B")),
+        (id: "italic", title: "&Italic", shortcut: Some("Primary+I")),
+        // Code in runs is M, for monospace.
+        (id: "code", title: "Co&de", shortcut: Some("Primary+Shift+M")),
+        (id: "style-body", title: "Bod&y", kind: Some("Paragraph style"), shortcut: Some("Primary+0")),
+        (id: "style-heading-1", title: "Heading &1", kind: Some("Paragraph style"), shortcut: Some("Primary+1")),
+        (id: "style-heading-2", title: "Heading &2", kind: Some("Paragraph style"), shortcut: Some("Primary+2")),
+        (id: "style-heading-3", title: "Heading &3", kind: Some("Paragraph style"), shortcut: Some("Primary+3")),
+        (id: "style-code", title: "Code Bloc&k", kind: Some("Paragraph style"), shortcut: Some("Primary+Shift+C")),
+        (id: "list-bullets", title: "Bu&lleted List", shortcut: Some("Primary+Shift+8")),
+        (id: "list-numbers", title: "&Numbered List", shortcut: Some("Primary+Shift+7")),
+        (id: "quote", title: "&Quote", shortcut: Some("Primary+Shift+9")),
+        (id: "align-start", title: "Align to &Start", kind: Some("Alignment"), shortcut: Some("Primary+L")),
+        (id: "align-center", title: "&Centre", kind: Some("Alignment"), shortcut: Some("Primary+E")),
+        (id: "align-end", title: "Align to &End", kind: Some("Alignment"), shortcut: Some("Primary+R")),
+        (id: "align-justify", title: "&Justify", kind: Some("Alignment"), shortcut: Some("Primary+J")),
+        (id: "size-bigger", title: "Bi&gger", shortcut: Some("Primary+Shift+.")),
+        (id: "size-smaller", title: "S&maller", shortcut: Some("Primary+Shift+,")),
+        (id: "size-9", title: "9 pt", kind: Some("Font size")),
+        (id: "size-10", title: "10 pt", kind: Some("Font size")),
+        (id: "size-11", title: "11 pt", kind: Some("Font size")),
+        (id: "size-12", title: "12 pt", kind: Some("Font size")),
+        (id: "size-14", title: "14 pt", kind: Some("Font size")),
+        (id: "size-18", title: "18 pt", kind: Some("Font size")),
+        (id: "size-24", title: "24 pt", kind: Some("Font size")),
+
+        (id: "insert-table", title: "&Table", shortcut: Some("Primary+Shift+T")),
 
         // The language of the selected text, or with none selected, of the
         // caret's paragraph: language-TAG, TAG a BCP 47 tag. A new document
-        // is in the system's language.
-        (id: "language-en-US", title: "English (US)", shortcut: None),
-        (id: "language-en-GB", title: "English (UK)", shortcut: None),
-        (id: "language-de", title: "German", shortcut: None),
-        (id: "language-fr", title: "French", shortcut: None),
-        (id: "language-es", title: "Spanish", shortcut: None),
-        (id: "language-nb", title: "Norwegian Bokmål", shortcut: None),
-        (id: "language-nn", title: "Norwegian Nynorsk", shortcut: None),
-        (id: "language-sv", title: "Swedish", shortcut: None),
-        (id: "language-ru", title: "Russian", shortcut: None),
-        (id: "language-el", title: "Greek", shortcut: None),
-        (id: "language-ar", title: "Arabic", shortcut: None),
-        (id: "language-he", title: "Hebrew", shortcut: None),
-        (id: "language-ja", title: "Japanese", shortcut: None),
-        (id: "language-ko", title: "Korean", shortcut: None),
-        (id: "language-zh-Hans", title: "Chinese (Simplified)", shortcut: None),
-        (id: "language-zh-Hant", title: "Chinese (Traditional)", shortcut: None),
+        // is in the system's language. The inspector sets them, by the
+        // `language` command.
+        (id: "language-en-US", title: "English (US)", kind: Some("Language")),
+        (id: "language-en-GB", title: "English (UK)", kind: Some("Language")),
+        (id: "language-de", title: "German", kind: Some("Language")),
+        (id: "language-fr", title: "French", kind: Some("Language")),
+        (id: "language-es", title: "Spanish", kind: Some("Language")),
+        (id: "language-nb", title: "Norwegian Bokmål", kind: Some("Language")),
+        (id: "language-nn", title: "Norwegian Nynorsk", kind: Some("Language")),
+        (id: "language-sv", title: "Swedish", kind: Some("Language")),
+        (id: "language-ru", title: "Russian", kind: Some("Language")),
+        (id: "language-el", title: "Greek", kind: Some("Language")),
+        (id: "language-ar", title: "Arabic", kind: Some("Language")),
+        (id: "language-he", title: "Hebrew", kind: Some("Language")),
+        (id: "language-ja", title: "Japanese", kind: Some("Language")),
+        (id: "language-ko", title: "Korean", kind: Some("Language")),
+        (id: "language-zh-Hans", title: "Chinese (Simplified)", kind: Some("Language")),
+        (id: "language-zh-Hant", title: "Chinese (Traditional)", kind: Some("Language")),
 
-        // M2's blocks and marks (docs/ROADMAP.md, M2 stage 2), by shortcut
-        // until the designed chrome gives them places in the menus. Code
-        // in runs is M, for monospace.
-        (id: "code", title: "Code", shortcut: Some("Primary+Shift+M")),
-        (id: "style-code", title: "Code Block", shortcut: Some("Primary+Shift+C")),
-        (id: "list-bullets", title: "Bulleted List", shortcut: Some("Primary+Shift+8")),
-        (id: "list-numbers", title: "Numbered List", shortcut: Some("Primary+Shift+7")),
-        (id: "quote", title: "Quote", shortcut: Some("Primary+Shift+9")),
-        (id: "insert-table", title: "Table", shortcut: Some("Primary+Shift+T")),
+        (id: "about", title: "&About xWorks"),
+
+        // What the inspector and the ruler set, each with its value: a
+        // style's name, a family, a BCP 47 tag, or a length or line height
+        // as a number. Tab stops are named by their position: one added
+        // at a position, of a kind ("start", "center", "end" or
+        // "decimal:" and its character); one moved from a position to
+        // another; one's kind set; one removed.
+        (id: "paragraph-style", title: "Paragraph Style", arg: Some(Text)),
+        (id: "font", title: "Font", arg: Some(Text)),
+        (id: "size", title: "Size", arg: Some(Int)),
+        (id: "language", title: "Language", arg: Some(Text)),
+        (id: "space-before", title: "Space Above", arg: Some(Int)),
+        (id: "space-after", title: "Space Below", arg: Some(Int)),
+        (id: "line-height", title: "Line Height", arg: Some(Int)),
+        (id: "indent-start", title: "Indent", arg: Some(Int)),
+        (id: "indent-end", title: "Indent from the End", arg: Some(Int)),
+        (id: "indent-first", title: "First Line's Indent", arg: Some(Int)),
+        (id: "tab-stop-add", title: "Add a Tab Stop", arg: Some(List)),
+        (id: "tab-stop-move", title: "Move a Tab Stop", arg: Some(List)),
+        (id: "tab-stop-kind", title: "Set a Tab Stop's Kind", arg: Some(List)),
+        (id: "tab-stop-remove", title: "Remove a Tab Stop", arg: Some(Int)),
+        // The page's size and margins, which documents can't hold yet.
+        (id: "page-size", title: "Page Size", arg: Some(Text)),
+        (id: "page-margin", title: "Page Margin", arg: Some(List)),
     ],
     menus: [
-        (title: "File", items: ["new", "open", "-", "save-version", "-", "export-pdf", "print", "-", "quit"]),
-        (title: "Edit", items: ["undo", "redo", "-", "cut", "copy", "paste", "-", "select-all"]),
-        (title: "Format", items: [
-            "bold", "italic", "-",
-            "style-body", "style-heading-1", "style-heading-2", "style-heading-3", "-",
+        (title: "&File", items: [
+            "new", "open", ">open-recent", "-",
+            "rename", "move-to", "-",
+            "save-version", "-",
+            "export-pdf", "print", "-",
+            "close", "quit",
+        ]),
+        (title: "&Edit", items: ["undo", "redo", "-", "cut", "copy", "paste", "-", "select-all"]),
+        (title: "&View", items: [
+            "view-draft", "view-pages", "-",
+            "toggle-inspector", "toggle-ruler", "-",
+            "command-palette",
+        ]),
+        (title: "&Insert", items: ["insert-table"]),
+        (title: "F&ormat", items: [
+            "bold", "italic", "code", "-",
+            "style-body", "style-heading-1", "style-heading-2", "style-heading-3", "style-code", "-",
+            "list-bullets", "list-numbers", "quote", "-",
             "align-start", "align-center", "align-end", "align-justify", "-",
-            "size-bigger", "size-smaller", "-",
-            "size-9", "size-10", "size-11", "size-12", "size-14", "size-18", "size-24",
+            "size-bigger", "size-smaller",
         ]),
-        (title: "Language", items: [
-            "language-en-US", "language-en-GB", "language-de", "language-fr", "language-es",
-            "language-nb", "language-nn", "language-sv", "language-ru", "language-el", "-",
-            "language-ar", "language-he", "-",
-            "language-ja", "language-ko", "language-zh-Hans", "language-zh-Hant",
-        ]),
+        (title: "&Help", items: ["about"]),
     ],
 )

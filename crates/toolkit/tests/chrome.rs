@@ -42,10 +42,14 @@ fn commands() -> Commands {
 #[test]
 fn menus_hit_what_they_draw() {
     let theme = theme();
-    let bar = commands().menu_bar(false, |id| CommandState {
-        enabled: id != "redo",
-        checked: id == "bold",
-    });
+    let bar = commands().menu_bar(
+        false,
+        |id| CommandState {
+            enabled: id != "redo",
+            checked: id == "bold",
+        },
+        |_| Vec::new(),
+    );
     let closed = MenuBar::new(fonts(), &theme, bar.clone(), 800 * PIXEL, None);
     let mid = theme.bar_height / 2;
     assert_eq!(closed.hit(&theme, 20 * PIXEL, mid), Some(MenuHit::Title(0)));
