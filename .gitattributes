@@ -2,3 +2,7 @@
 # byte: Git mustn't turn their line endings into CRLF on Windows, where
 # the fixtures' tests compare them exactly (crates/store/tests/fixtures.rs).
 spec/format/fixtures/** -text
+
+# The schema's SQL is compiled into the program and written into every
+# file it makes, so it's LF on every platform, and files are the same.
+spec/format/*.sql text eol=lf
