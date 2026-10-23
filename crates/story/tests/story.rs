@@ -270,3 +270,95 @@ fn words_are_counted_by_their_language() {
     // of "hello, world".
     assert_eq!(story::word_count(paragraph, &sheet()), 4);
 }
+
+/// A paragraph's own spacing, indents, line height and tab stops, set by
+/// the ruler and the inspector, take the place of its style's; values of
+/// the wrong kind, or past what makes sense, don't.
+#[test]
+fn paragraphs_set_their_own_spacing_indents_line_height_and_tabs() {
+    use text::units::MILLIMETRE;
+    let text = "Indented text that runs on long enough to need more than one line at this width.";
+    let mut document = story::document(&[("Body", vec![(text, props(&[]))])]);
+    let id = document.paragraphs()[0];
+    let set = |document: &mut doc::Document, key: &str, value: Value| {
+        document
+            .apply(&doc::Op::SetParaProp {
+                paragraph: id,
+                key: key.to_string(),
+                value: Some(value),
+            })
+            .expect("it applies");
+    };
+    let width = 200 * POINT;
+    let plain = story::lay_out(&document, &sheet(), fonts(), width)[0].x();
+    set(&mut document, keys::SPACE_BEFORE, Value::Int(12 * POINT));
+    set(&mut document, keys::SPACE_AFTER, Value::Int(0));
+    set(&mut document, keys::LINE_HEIGHT, Value::Int(2000));
+    set(&mut document, keys::INDENT_START, Value::Int(20 * POINT));
+    set(&mut document, keys::INDENT_END, Value::Int(10 * POINT));
+    set(&mut document, keys::INDENT_FIRST, Value::Int(15 * POINT));
+    set(
+        &mut document,
+        keys::TABS,
+        Value::Text("end 3600000; decimal:, 1800000".to_string()),
+    );
+    let laid = &story::lay_out(&document, &sheet(), fonts(), width)[0];
+    assert_eq!((laid.space_before, laid.space_after), (12 * POINT, 0));
+    // Its text starts at its start indent, and its first line its first
+    // indent further in.
+    assert_eq!(laid.x(), plain + 20 * POINT);
+    assert_eq!(laid.layout.width, width - 30 * POINT);
+    assert_eq!(laid.layout.lines[0].x, 15 * POINT);
+    assert_eq!(laid.layout.lines[1].x, 0);
+    // Twice its 11 points.
+    assert!(laid.layout.lines.iter().all(|l| l.height == 22 * POINT));
+    // Its own stops, in order, measured from where its place starts,
+    // whatever its indent.
+    let paragraph = document.paragraph(id).unwrap();
+    let tabs = story::paragraph_tabs(paragraph, &sheet());
+    assert_eq!(
+        tabs.stops
+            .iter()
+            .map(|s| (s.position, s.align))
+            .collect::<Vec<_>>(),
+        [
+            (50 * MILLIMETRE, text::TabAlign::Decimal(',')),
+            (100 * MILLIMETRE, text::TabAlign::End),
+        ]
+    );
+    assert_eq!(
+        story::format_tabs(&tabs.stops),
+        "decimal:, 1800000; end 3600000"
+    );
+    assert_eq!(
+        story::indents(paragraph),
+        story::Indents {
+            start: 20 * POINT,
+            end: 10 * POINT,
+            first: 15 * POINT
+        }
+    );
+
+    // Nonsense falls back to the style's.
+    for (key, value) in [
+        (keys::SPACE_BEFORE, Value::Int(-5)),
+        (keys::SPACE_AFTER, Value::Text("lots".to_string())),
+        (keys::LINE_HEIGHT, Value::Int(i64::MAX)),
+        (keys::INDENT_START, Value::Int(i64::MIN)),
+        (keys::INDENT_END, Value::Bool(true)),
+        (keys::INDENT_FIRST, Value::Int(i64::MAX)),
+        (keys::TABS, Value::Text("left 12; decimal:".to_string())),
+    ] {
+        set(&mut document, key, value);
+    }
+    let laid = &story::lay_out(&document, &sheet(), fonts(), width)[0];
+    assert_eq!((laid.space_before, laid.space_after), (0, 6 * POINT));
+    assert_eq!((laid.x(), laid.layout.width), (plain, width));
+    let paragraph = document.paragraph(id).unwrap();
+    assert_eq!(story::indents(paragraph), story::Indents::default());
+    let sheet = sheet();
+    assert_eq!(
+        story::paragraph_tabs(paragraph, &sheet),
+        sheet.tabs(&sheet.paragraph[0])
+    );
+}

@@ -76,6 +76,157 @@ pub mod keys {
     pub const ORDERED: &str = "ordered";
     /// The number a numbered list starts from (a number); 1 if unset.
     pub const START: &str = "start";
+    /// The space above a paragraph, in layout units (a number), over its
+    /// style's.
+    pub const SPACE_BEFORE: &str = "space-before";
+    /// The space below a paragraph, in layout units (a number), over its
+    /// style's.
+    pub const SPACE_AFTER: &str = "space-after";
+    /// How tall a paragraph's lines are, in thousandths of their largest
+    /// font size (a number): 1 200 is 1.2 times the font. Unset, lines are
+    /// as tall as their fonts.
+    pub const LINE_HEIGHT: &str = "line-height";
+    /// How far a paragraph's text is indented from its place's start
+    /// edge, in layout units (a number): the left in left-to-right text.
+    pub const INDENT_START: &str = "indent-start";
+    /// How far from its place's end edge, in layout units (a number).
+    pub const INDENT_END: &str = "indent-end";
+    /// How much further a paragraph's first line is indented than the
+    /// rest, in layout units (a number); negative hangs it out.
+    pub const INDENT_FIRST: &str = "indent-first";
+    /// A paragraph's own tab stops (text), in place of its style's and
+    /// the document's: [`crate::format_tabs`] writes them and
+    /// [`crate::parse_tabs`] reads them. The document's default stops
+    /// still follow them.
+    pub const TABS: &str = "tabs";
+}
+
+/// The most a paragraph's space above or below, or an indent, may be: ten
+/// inches. Larger values, as from a damaged file, are taken as unset.
+const MOST_SPACE: i64 = 10 * text::units::INCH;
+
+/// The most a tab stop's position may be: a hundred inches.
+const MOST_TAB: i64 = 100 * text::units::INCH;
+
+/// A paragraph's own indents, in layout units: from its place's start and
+/// end edges, and its first line's further in.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub struct Indents {
+    /// From the start edge: the left in left-to-right text.
+    pub start: i64,
+    /// From the end edge.
+    pub end: i64,
+    /// The first line's, further in than `start`; negative hangs it out.
+    pub first: i64,
+}
+
+/// `key`'s value on `paragraph` as a number within `range`, if it's one.
+fn number(paragraph: &Paragraph, key: &str, range: std::ops::RangeInclusive<i64>) -> Option<i64> {
+    match paragraph.props.get(key) {
+        Some(Value::Int(n)) if range.contains(n) => Some(*n),
+        _ => None,
+    }
+}
+
+/// `paragraph`'s own indents; those unset, or past what makes sense, are
+/// 0.
+pub fn indents(paragraph: &Paragraph) -> Indents {
+    let get = |key| number(paragraph, key, -MOST_SPACE..=MOST_SPACE).unwrap_or(0);
+    Indents {
+        start: get(keys::INDENT_START),
+        end: get(keys::INDENT_END),
+        first: get(keys::INDENT_FIRST),
+    }
+}
+
+/// How tall `paragraph`'s lines are, in thousandths of their font size,
+/// if it says: from a quarter of the font to ten times it.
+pub fn line_height(paragraph: &Paragraph) -> Option<i64> {
+    number(paragraph, keys::LINE_HEIGHT, 250..=10_000)
+}
+
+/// The space above and below `paragraph`: its own where it sets them,
+/// otherwise its style's.
+pub fn spacing(paragraph: &Paragraph, sheet: &StyleSheet) -> (i64, i64) {
+    let style = sheet.style_of(paragraph);
+    (
+        number(paragraph, keys::SPACE_BEFORE, 0..=MOST_SPACE)
+            .unwrap_or_else(|| style.space_before.units()),
+        number(paragraph, keys::SPACE_AFTER, 0..=MOST_SPACE)
+            .unwrap_or_else(|| style.space_after.units()),
+    )
+}
+
+/// The tab stops `paragraph`'s tabs go to, measured from its place's
+/// start edge: its own, where it sets them, or its style's and the
+/// document's; then the document's default ones.
+pub fn paragraph_tabs(paragraph: &Paragraph, sheet: &StyleSheet) -> Tabs {
+    let own = match paragraph.props.get(keys::TABS) {
+        Some(Value::Text(stops)) => parse_tabs(stops),
+        _ => None,
+    };
+    match own {
+        Some(stops) => Tabs {
+            stops,
+            interval: sheet.tabs.interval.units(),
+        },
+        None => sheet.tabs(sheet.style_of(paragraph)),
+    }
+}
+
+/// Tab stops as [`keys::TABS`] holds them: each its kind (`start`, `end`,
+/// `center`, or `decimal:` and the character it lines up on) and its
+/// position in layout units, separated by semicolons, in order of
+/// position: `"start 1260000; decimal:. 4950000"`.
+pub fn format_tabs(stops: &[TabStop]) -> String {
+    let mut stops = stops.to_vec();
+    stops.sort_by_key(|s| s.position);
+    stops
+        .iter()
+        .map(|s| {
+            let kind = match s.align {
+                TabAlign::Start => "start".to_string(),
+                TabAlign::End => "end".to_string(),
+                TabAlign::Center => "center".to_string(),
+                TabAlign::Decimal(c) => format!("decimal:{c}"),
+            };
+            format!("{kind} {}", s.position)
+        })
+        .collect::<Vec<_>>()
+        .join("; ")
+}
+
+/// The tab stops [`format_tabs`] wrote, in order of position, one at each
+/// place; `None` if any of them isn't one.
+pub fn parse_tabs(text: &str) -> Option<Vec<TabStop>> {
+    let mut stops = Vec::new();
+    for entry in text.split(';').map(str::trim).filter(|e| !e.is_empty()) {
+        let mut parts = entry.split_whitespace();
+        let (kind, position) = (parts.next()?, parts.next()?);
+        if parts.next().is_some() {
+            return None;
+        }
+        let align = match kind {
+            "start" => TabAlign::Start,
+            "end" => TabAlign::End,
+            "center" => TabAlign::Center,
+            _ => {
+                let mut c = kind.strip_prefix("decimal:")?.chars();
+                match (c.next(), c.next()) {
+                    (Some(c), None) => TabAlign::Decimal(c),
+                    _ => return None,
+                }
+            }
+        };
+        let position: i64 = position.parse().ok()?;
+        if !(0..=MOST_TAB).contains(&position) {
+            return None;
+        }
+        stops.push(TabStop { position, align });
+    }
+    stops.sort_by_key(|s| s.position);
+    stops.dedup_by_key(|s| s.position);
+    Some(stops)
 }
 
 /// A paragraph style, as `spec/styles/` gives it.
@@ -281,6 +432,10 @@ pub struct ParagraphLayout {
     /// How far its text sits in from its place on each side, as a code
     /// block's does on its tint.
     pub inset: i64,
+    /// How far its own indents move its text in from its place's left:
+    /// its start indent in left-to-right text, its end indent in
+    /// right-to-left text.
+    pub margin: i64,
     /// Its list item's marker, laid out in its first span's style, if it
     /// starts an item.
     pub marker: Option<text::Layout>,
@@ -295,7 +450,7 @@ pub struct ParagraphLayout {
 impl ParagraphLayout {
     /// Where its text's lines start, across from the body's start edge.
     pub fn x(&self) -> i64 {
-        self.place.indent + self.inset
+        self.place.indent + self.inset + self.margin
     }
 }
 
@@ -458,12 +613,21 @@ pub fn lay_out_at(
     let style = sheet.style_of(paragraph);
     let spans = spans_at(paragraph, sheet, Some(place));
     let align = align(paragraph, sheet);
-    let tabs = sheet.tabs(style);
     let inset = if style.code {
         sheet.blocks.code_padding.units()
     } else {
         0
     };
+    // Its own indents narrow it, but never to less than a quarter of its
+    // room; its tab stops stay where they are on the ruler, measured from
+    // its place's start edge.
+    let indents = indents(paragraph);
+    let room = (place.width - 2 * inset).max(1);
+    let width = (room - indents.start - indents.end).max(room / 4).max(1);
+    let mut tabs = paragraph_tabs(paragraph, sheet);
+    for stop in &mut tabs.stops {
+        stop.position -= indents.start;
+    }
     let layout = text::layout_with(
         fonts,
         &text::Paragraph {
@@ -471,15 +635,21 @@ pub fn lay_out_at(
             spans: &spans,
             direction: None,
             align,
-            width: (place.width - 2 * inset).max(1),
+            width,
         },
         &Setting {
             hyphenate: style.hyphenate.unwrap_or(align == Align::Justify),
             hyphenation: Some(hyphenation),
             tabs: Some(&tabs),
-            ..Setting::default()
+            line_height: line_height(paragraph),
+            indent: indents.first.clamp(-width, width),
         },
     );
+    let margin = if layout.direction() == text::Direction::Rtl {
+        room - width - indents.start
+    } else {
+        indents.start
+    };
     // The marker is in the paragraph's style, whatever its runs say.
     let marker = place.marker.as_ref().map(|marker| {
         let style = base_style(paragraph, sheet, Some(place));
@@ -516,15 +686,17 @@ pub fn lay_out_at(
         }
         at += len;
     }
+    let (space_before, space_after) = spacing(paragraph, sheet);
     ParagraphLayout {
         id,
         layout,
-        space_before: style.space_before.units(),
-        space_after: style.space_after.units(),
+        space_before,
+        space_after,
         keep_with_next: style.keep_with_next,
         heading: style.heading.filter(|level| (1..=6).contains(level)),
         place: place.clone(),
         inset,
+        margin,
         marker,
         code: style.code,
         links,
