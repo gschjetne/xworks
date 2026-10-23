@@ -1,0 +1,4 @@
+# Files older xWorks wrote, and what it made of them, are kept byte for
+# byte: Git mustn't turn their line endings into CRLF on Windows, where
+# the fixtures' tests compare them exactly (crates/store/tests/fixtures.rs).
+spec/format/fixtures/** -text
