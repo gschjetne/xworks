@@ -78,6 +78,7 @@ impl Column<'_> {
                 weight: self.weight,
                 italic: false,
                 language: Language::parse(self.language).expect("a language tag"),
+                ligatures: text::Ligatures::default(),
             },
         }];
         let layout = text::layout_with(
@@ -117,6 +118,7 @@ fn label(page: &mut Page, text: &str, x: i64, y: i64, width: i64) -> i64 {
             weight: 500,
             italic: false,
             language: Language::parse("en").expect("a tag"),
+            ligatures: text::Ligatures::default(),
         },
     }];
     let layout = text::layout(

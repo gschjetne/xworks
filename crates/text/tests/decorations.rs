@@ -17,6 +17,7 @@ fn style(family: &str) -> Style {
         weight: 400,
         italic: false,
         language: text::Language::und(),
+        ligatures: text::Ligatures::default(),
     }
 }
 

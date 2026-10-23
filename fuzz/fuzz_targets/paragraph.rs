@@ -58,6 +58,7 @@ fuzz_target!(|data: &[u8]| {
             weight: if settings & 0x40 == 0 { 400 } else { 700 },
             italic: settings & 0x20 != 0,
             language: text::Language::und(),
+            ligatures: text::Ligatures::default(),
         },
     }];
     let layout = text::layout(

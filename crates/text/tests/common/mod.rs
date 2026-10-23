@@ -82,6 +82,7 @@ impl StyleSpec {
             italic: self.italic.unwrap_or(false),
             language: locale::Language::parse(self.language.as_deref().unwrap_or("und"))
                 .expect("a language tag"),
+            ligatures: text::Ligatures::default(),
         }
     }
 }

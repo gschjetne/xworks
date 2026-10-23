@@ -15,6 +15,7 @@ fn style(bold: bool, language: &str) -> Style {
         weight: if bold { 700 } else { 400 },
         italic: false,
         language: Language::parse(language).expect("a tag"),
+        ligatures: text::Ligatures::default(),
     }
 }
 

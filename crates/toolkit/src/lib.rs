@@ -207,6 +207,7 @@ fn label(fonts: &Fonts, theme: &Theme, text: &str, bold: bool) -> text::Layout {
             weight: if bold { 700 } else { 400 },
             italic: false,
             language: Language::und(),
+            ligatures: text::Ligatures::default(),
         },
     }];
     text::layout(

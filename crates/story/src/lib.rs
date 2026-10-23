@@ -38,7 +38,9 @@ use std::ops::Range;
 use doc::{Block, Document, Kind, Object, ObjectId, Op, Paragraph, Props, Run, Value};
 use serde::Deserialize;
 use text::units::Length;
-use text::{Align, Fonts, Hyphenation, Language, Setting, Span, Style, TabAlign, TabStop, Tabs};
+use text::{
+    Align, Fonts, Hyphenation, Language, Ligatures, Setting, Span, Style, TabAlign, TabStop, Tabs,
+};
 
 /// The names of the properties a story reads, from paragraphs, from runs
 /// of text, and from containers.
@@ -118,6 +120,11 @@ pub struct ParagraphStyle {
     /// tint, and Enter breaks its lines rather than the paragraph.
     #[serde(default)]
     pub code: bool,
+    /// Which classes of ligature its text is set with (project owner,
+    /// 2026-10-23, review dcn5ejrd); OpenType's defaults where it doesn't
+    /// say.
+    #[serde(default)]
+    pub ligatures: Ligatures,
 }
 
 /// A tab stop, as `spec/styles/` gives it.
@@ -172,6 +179,9 @@ pub struct Blocks {
     pub quote_color: (u8, u8, u8),
     /// The family code is set in, in runs as in code blocks' styles.
     pub code_family: String,
+    /// The ligatures code in runs is set with: none, so it shows exactly
+    /// what was typed (project owner, 2026-10-23, review dcn5ejrd).
+    pub code_ligatures: Ligatures,
     /// The tint behind code.
     pub code_tint: (u8, u8, u8),
     /// How far a code block's tint reaches around its text.
@@ -318,6 +328,7 @@ pub fn spans_at(paragraph: &Paragraph, sheet: &StyleSheet, place: Option<&Place>
             }
             if let Some(Value::Bool(true)) = run.props.get(keys::CODE) {
                 style.family = sheet.blocks.code_family.clone();
+                style.ligatures = sheet.blocks.code_ligatures;
             }
             if let Some(Value::Text(family)) = run.props.get(keys::FONT) {
                 style.family = family.clone();
@@ -355,6 +366,7 @@ fn base_style(paragraph: &Paragraph, sheet: &StyleSheet, place: Option<&Place>) 
         weight: if style.bold || header { 700 } else { 400 },
         italic: style.italic,
         language: language(paragraph.props.get(keys::LANGUAGE)).unwrap_or_default(),
+        ligatures: style.ligatures,
     }
 }
 

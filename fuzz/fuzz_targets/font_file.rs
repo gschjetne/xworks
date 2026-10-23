@@ -23,6 +23,7 @@ fuzz_target!(|data: &[u8]| {
                 weight: face.weight(),
                 italic: face.italic(),
                 language: text::Language::und(),
+                ligatures: text::Ligatures::default(),
             },
         }];
         let layout = text::layout(

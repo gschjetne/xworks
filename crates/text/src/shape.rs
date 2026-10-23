@@ -206,7 +206,14 @@ pub(crate) fn shape(
         flags |= BufferFlags::END_OF_TEXT;
     }
     buffer.set_flags(flags);
-    if harfrust::shape(&shaper, &mut buffer, ShapeOptions::new()).is_err() {
+    let features = span.style.ligatures.features();
+    if harfrust::shape(
+        &shaper,
+        &mut buffer,
+        ShapeOptions::new().features(&features),
+    )
+    .is_err()
+    {
         // The buffer's direction and script are always set, so shaping
         // can't fail; if it ever does, the text takes no room.
         return Vec::new();

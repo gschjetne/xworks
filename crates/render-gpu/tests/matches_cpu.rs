@@ -45,6 +45,7 @@ fn page() -> Page {
             weight: 400,
             italic: true,
             language: Language::und(),
+            ligatures: text::Ligatures::default(),
         },
     }];
     let layout = text::layout(

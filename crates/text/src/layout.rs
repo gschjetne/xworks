@@ -30,6 +30,73 @@ pub struct Style {
     /// Its language, which picks the font's forms for it, where its lines
     /// may break, how its words are hyphenated, and what its words are.
     pub language: Language,
+    /// Which classes of ligature it's set with.
+    pub ligatures: Ligatures,
+}
+
+/// Which of OpenType's classes of ligature a stretch of text is set with
+/// (ARCHITECTURE.md section 9). A style says, class by class; code sets
+/// none, so it shows exactly what was typed. As specs write it, a class
+/// left out keeps its default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Deserialize)]
+#[serde(default)]
+pub struct Ligatures {
+    /// Standard ligatures, such as "fi" and "ffl" (`liga`, `clig`): on by
+    /// default.
+    pub standard: bool,
+    /// Contextual alternates (`calt`), with which code fonts draw "->" as
+    /// an arrow: on by default.
+    pub contextual: bool,
+    /// Discretionary ligatures (`dlig`): off by default.
+    pub discretionary: bool,
+    /// Historical ligatures (`hlig`): off by default.
+    pub historical: bool,
+}
+
+impl Ligatures {
+    /// None at all.
+    pub const NONE: Ligatures = Ligatures {
+        standard: false,
+        contextual: false,
+        discretionary: false,
+        historical: false,
+    };
+
+    /// The OpenType features that set these, where they differ from the
+    /// features' own defaults, so the defaults shape as with none asked
+    /// for.
+    pub(crate) fn features(self) -> Vec<harfrust::Feature> {
+        let default = Ligatures::default();
+        let mut out = Vec::new();
+        let mut set = |tags: &[&[u8; 4]], on: bool, was: bool| {
+            if on != was {
+                for tag in tags {
+                    out.push(harfrust::Feature::new(
+                        harfrust::Tag::new(tag),
+                        u32::from(on),
+                        ..,
+                    ));
+                }
+            }
+        };
+        set(&[b"liga", b"clig"], self.standard, default.standard);
+        set(&[b"calt"], self.contextual, default.contextual);
+        set(&[b"dlig"], self.discretionary, default.discretionary);
+        set(&[b"hlig"], self.historical, default.historical);
+        out
+    }
+}
+
+impl Default for Ligatures {
+    /// OpenType's defaults: standard and contextual on, the others off.
+    fn default() -> Ligatures {
+        Ligatures {
+            standard: true,
+            contextual: true,
+            discretionary: false,
+            historical: false,
+        }
+    }
 }
 
 /// A stretch of a paragraph's text in one style.

@@ -120,6 +120,7 @@ fn line(text: &str, family: &str, size: i64, at: Point, width: i64) -> Vec<Item>
             weight: 400,
             italic: false,
             language: Language::und(),
+            ligatures: text::Ligatures::default(),
         },
     }];
     let layout = text::layout(
@@ -415,6 +416,7 @@ pub(crate) fn decorations_page() -> Page {
                     weight: 400,
                     italic: para.italic,
                     language: Language::parse(para.language).expect("a language tag"),
+                    ligatures: text::Ligatures::default(),
                 },
             })
             .collect();

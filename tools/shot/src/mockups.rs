@@ -497,6 +497,7 @@ fn line(s: &str, size: i64, weight: u16) -> text::Layout {
             weight,
             italic: false,
             language: Language::und(),
+            ligatures: text::Ligatures::default(),
         },
     }];
     text::layout(

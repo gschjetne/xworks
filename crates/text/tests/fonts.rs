@@ -107,6 +107,7 @@ fn italic_without_an_italic_face_is_slanted() {
             weight: 400,
             italic: true,
             language: Language::und(),
+            ligatures: text::Ligatures::default(),
         },
     }];
     let layout = text::layout(
@@ -161,6 +162,7 @@ fn characters_no_face_has_are_reported() {
                 weight: 400,
                 italic: false,
                 language: Language::und(),
+                ligatures: text::Ligatures::default(),
             },
         }];
         text::layout(

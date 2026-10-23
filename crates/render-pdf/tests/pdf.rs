@@ -48,6 +48,7 @@ fn page_from(width: i64, height: i64, lines: &[(&str, &str)], italic: bool, firs
                 weight: 400,
                 italic,
                 language: Language::parse(language).expect("a tag"),
+                ligatures: text::Ligatures::default(),
             },
         }];
         let layout = text::layout(

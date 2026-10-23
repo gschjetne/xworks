@@ -39,6 +39,7 @@ fn style(family: &str, tenths_of_points: i64, weight: u16, italic: bool, languag
         weight,
         italic,
         language: Language::parse(language).expect("a tag"),
+        ligatures: text::Ligatures::default(),
     }
 }
 

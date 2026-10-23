@@ -89,6 +89,7 @@ fn lay_out(
         } else {
             text::Language::und()
         },
+        ligatures: text::Ligatures::default(),
     };
     let spans = [
         Span {

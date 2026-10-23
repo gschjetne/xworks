@@ -51,7 +51,8 @@ pub use caret::{Affinity, Caret, Cursor, Rect};
 pub use font::{Face, FaceId, FamilySpec, FontError, FontSpec, Fonts};
 pub use hyphen::{Hyphenation, Hyphenator};
 pub use layout::{
-    Align, Glyph, GlyphRun, Layout, Line, Paragraph, Setting, Span, Style, layout, layout_with,
+    Align, Glyph, GlyphRun, Layout, Ligatures, Line, Paragraph, Setting, Span, Style, layout,
+    layout_with,
 };
 pub use locale::{Direction, Language};
 pub use paint::Decoration;

@@ -33,6 +33,7 @@ fn paragraph(text: &str, family: &str, italic: bool, at: Point, width: i64) -> V
             weight: 400,
             italic,
             language: Language::und(),
+            ligatures: text::Ligatures::default(),
         },
     }];
     let layout = text::layout(

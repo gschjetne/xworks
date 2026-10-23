@@ -59,6 +59,9 @@
             name: "Code",
             code: true,
             family: "JetBrains Mono",
+            // No ligatures, so code shows exactly what was typed (project
+            // owner, 2026-10-23, review dcn5ejrd).
+            ligatures: (standard: false, contextual: false),
             size: Pt(9.5),
             space_before: Pt(10),
             space_after: Pt(12),
@@ -79,6 +82,7 @@
         quote_bar: Pt(2.5),
         quote_color: (196, 196, 196),
         code_family: "JetBrains Mono",
+        code_ligatures: (standard: false, contextual: false),
         code_tint: (243, 243, 240),
         code_padding: Pt(5),
         table_space: Pt(8),

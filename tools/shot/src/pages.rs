@@ -178,6 +178,7 @@ pub fn text_page() -> Page {
                     weight: if p.bold { 700 } else { 400 },
                     italic: p.italic,
                     language: Language::parse(para.language).expect("a language tag"),
+                    ligatures: text::Ligatures::default(),
                 },
             })
             .collect();
