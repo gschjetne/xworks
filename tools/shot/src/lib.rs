@@ -11,6 +11,7 @@
 //!   digits and `-`.
 //! - A scene renders the same pixels every time, on every platform.
 
+mod chrome;
 mod drawing;
 mod mockups;
 mod pages;
@@ -118,6 +119,34 @@ pub fn scenes() -> &'static [Scene] {
             description: "M2's chrome, mocked up: the command palette, open",
             ppi: 96.0,
             page: mockups::palette,
+            pages: None,
+        },
+        Scene {
+            name: "chrome-pages",
+            description: "M2's chrome, built: the sample on pages, with the ruler and the inspector, as mockup-pages shows it",
+            ppi: 96.0,
+            page: chrome::pages_light,
+            pages: None,
+        },
+        Scene {
+            name: "chrome-pages-dark",
+            description: "M2's chrome, built: the same, dark, as mockup-pages-dark shows it",
+            ppi: 96.0,
+            page: chrome::pages_dark,
+            pages: None,
+        },
+        Scene {
+            name: "chrome-draft-dark",
+            description: "M2's chrome, built: the sample as a draft, dark, as mockup-draft-dark shows it",
+            ppi: 96.0,
+            page: chrome::draft_dark,
+            pages: None,
+        },
+        Scene {
+            name: "chrome-palette",
+            description: "M2's chrome, built: the command palette, open, as mockup-palette shows it",
+            ppi: 96.0,
+            page: chrome::palette,
             pages: None,
         },
         Scene {

@@ -7,6 +7,9 @@
 //! shot --pdf [SCENE...]               write them as pages of target/shot/scenes.pdf,
 //!                                     a sheet of pages as its pages
 //! shot --hashes [SCENE...]            print their golden hashes, to compare platforms
+//! shot --diff SCENE OTHER             how two scenes of one size differ: how many
+//!                                     pixels, and target/shot/diff-SCENE-OTHER.png
+//!                                     showing them in red over a faded SCENE
 //! shot --list                         list the scenes
 //! ```
 //!
@@ -38,8 +41,15 @@ fn main() -> anyhow::Result<()> {
             }
             "--pdf" => pdf = true,
             "--hashes" => hashes = true,
+            "--diff" => {
+                let a = args.next().context("--diff needs two scenes")?;
+                let b = args.next().context("--diff needs two scenes")?;
+                return diff(&a, &b);
+            }
             "-h" | "--help" => {
-                println!("usage: shot [--list] [--pdf | --hashes] [--approve NAME] [SCENE...]");
+                println!(
+                    "usage: shot [--list] [--pdf | --hashes] [--approve NAME] [SCENE...]\n       shot --diff SCENE OTHER"
+                );
                 return Ok(());
             }
             _ if arg.starts_with('-') => bail!("unknown option {arg}; try --help"),
@@ -118,5 +128,55 @@ fn main() -> anyhow::Result<()> {
             );
         }
     }
+    Ok(())
+}
+
+/// Compares scenes `a` and `b`, which must be one size: prints how many
+/// pixels differ, more than a little and at all, and writes an image of
+/// `a`, faded, with those that differ more than a little in red.
+fn diff(a: &str, b: &str) -> anyhow::Result<()> {
+    let find =
+        |name: &str| shot::find(name).with_context(|| format!("no scene {name:?}; try --list"));
+    let (first, second) = (find(a)?.render(), find(b)?.render());
+    if (first.width(), first.height()) != (second.width(), second.height()) {
+        bail!("{a} and {b} aren't one size");
+    }
+    let (w, h) = (first.width(), first.height());
+    let mut out = testkit::Image::new(w, h);
+    let (mut any, mut more) = (0u64, 0u64);
+    for y in 0..h {
+        for x in 0..w {
+            let p = first.pixel(x, y).unwrap_or([0; 4]);
+            let q = second.pixel(x, y).unwrap_or([0; 4]);
+            let worst = p
+                .iter()
+                .zip(&q)
+                .map(|(a, b)| a.abs_diff(*b))
+                .max()
+                .unwrap_or(0);
+            any += u64::from(worst > 0);
+            let shown = if worst > 16 {
+                more += 1;
+                [220, 30, 30, 255]
+            } else {
+                let grey = ((u32::from(p[0]) + u32::from(p[1]) + u32::from(p[2])) / 3) as u8;
+                let faded = 160 + grey / 3;
+                [faded, faded, faded, 255]
+            };
+            out.fill_rect(x, y, 1, 1, shown);
+        }
+    }
+    let total = u64::from(w) * u64::from(h);
+    let path = testkit::workspace_root()
+        .join("target/shot")
+        .join(format!("diff-{a}-{b}.png"));
+    out.write_png(&path)?;
+    let share = |n: u64| 100.0 * n as f64 / total as f64;
+    println!(
+        "{a} and {b}: {more} pixels ({:.2}%) differ by more than 16 levels, {any} ({:.2}%) at all",
+        share(more),
+        share(any)
+    );
+    println!("{}", path.display());
     Ok(())
 }
