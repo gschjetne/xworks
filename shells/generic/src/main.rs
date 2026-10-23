@@ -133,6 +133,9 @@ struct Shell {
     settling: Option<Instant>,
     /// Every window's recording, written when xWorks fails.
     recordings: Recordings,
+    /// How many times the person's settings had changed when every
+    /// window last drew them.
+    settings_seen: u64,
 }
 
 /// What the thread opening the GPU hands over.
@@ -302,6 +305,10 @@ fn main() -> anyhow::Result<()> {
     res.language = system_language();
     if let Some(config) = config_folder() {
         res.recent = Arc::new(app::Recent::load(config.join("recent.ron")));
+        res.settings = Arc::new(app::Settings::load(
+            config.join("settings.ron"),
+            system_units(),
+        ));
     }
     let recordings = Recordings::default();
     write_when_failing(
@@ -327,6 +334,7 @@ fn main() -> anyhow::Result<()> {
         measuring,
         settling: None,
         recordings,
+        settings_seen: 0,
     };
     event_loop.run_app(&mut shell)?;
     // The documents opened lately, written to their file.
@@ -361,6 +369,26 @@ fn system_language() -> text::Language {
         .filter(|tag| !matches!(tag.as_str(), "C" | "POSIX") && !tag.starts_with("C."))
         .find_map(|tag| text::Language::parse(&tag).ok())
         .unwrap_or_default()
+}
+
+/// The unit the person measures in until they choose one (review
+/// ydqhfds0): inches where the system's measurements are US customary,
+/// centimetres elsewhere, by the region of its locale. On Linux that's the
+/// locale measurements are in, LC_MEASUREMENT, which LC_ALL overrides and
+/// LANG stands in for; elsewhere the person's first language's.
+fn system_units() -> chrome::Unit {
+    let posix = if cfg!(target_os = "linux") {
+        ["LC_ALL", "LC_MEASUREMENT", "LANG"]
+            .into_iter()
+            .find_map(|name| std::env::var(name).ok().filter(|v| !v.is_empty()))
+    } else {
+        None
+    };
+    posix
+        .or_else(sys_locale::get_locale)
+        .map_or(chrome::Unit::Centimetre, |locale| {
+            app::units_of_locale(&locale)
+        })
 }
 
 /// Where `spec/` and `fonts/` are.
@@ -908,6 +936,15 @@ impl Shell {
             win.title = title;
         }
         win.window.request_redraw();
+        // A setting changed, such as the ruler's unit, shows in every
+        // window.
+        let changes = self.res.settings.changes();
+        if changes != self.settings_seen {
+            self.settings_seen = changes;
+            for other in self.windows.values() {
+                other.window.request_redraw();
+            }
+        }
         if closing {
             self.close(event_loop, id);
         }

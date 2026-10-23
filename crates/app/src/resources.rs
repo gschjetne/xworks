@@ -1,6 +1,7 @@
 //! What every window shares: fonts, hyphenation patterns, styles,
 //! commands, the chrome's look and icons, where documents live, the
-//! documents opened lately, and the language they're made in.
+//! documents opened lately, the person's settings, and the language
+//! documents are made in.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
@@ -13,6 +14,7 @@ use text::{FontSpec, Fonts, Hyphenation, Hyphenator, Language};
 use toolkit::{Colors, Icons, Labels, Sizes};
 
 use crate::recent::Recent;
+use crate::settings::Settings;
 
 /// Why resources couldn't be loaded.
 #[derive(Debug, thiserror::Error)]
@@ -65,6 +67,9 @@ pub struct Resources {
     pub documents: PathBuf,
     /// The documents opened lately, shared by every window.
     pub recent: Arc<Recent>,
+    /// What the person chose that's kept between runs, such as the unit
+    /// the ruler measures in, shared by every window.
+    pub settings: Arc<Settings>,
     /// Whether shortcuts read as on a Mac.
     pub mac: bool,
     /// How large a picture may be.
@@ -199,6 +204,7 @@ impl Resources {
             labels: Arc::new(Labels::new()),
             documents,
             recent: Arc::new(Recent::default()),
+            settings: Arc::new(Settings::default()),
             mac,
             pictures,
             recorder,

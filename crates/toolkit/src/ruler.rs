@@ -64,6 +64,12 @@ impl RulerView {
         x - self.model.origin
     }
 
+    /// [`RulerView::position`], snapped to the finest ticks of its unit:
+    /// where a marker dragged to `x` goes.
+    pub fn snapped(&self, x: i64) -> i64 {
+        self.model.unit.marks().snapped(self.position(x))
+    }
+
     /// What (`x`, `y`) hits, if it's on the ruler.
     pub fn hit(&self, x: i64, y: i64) -> Option<RulerHit> {
         if !self.rect.contains(x, y) {

@@ -229,3 +229,102 @@ fn the_window_is_covered_everywhere() {
         }
     }
 }
+
+/// The ruler and the inspector measure the page and the paragraph in the
+/// unit the person chose from View, Units, and type sizes stay in points
+/// (review ydqhfds0); the choice is every window's. A length left as it
+/// shows changes nothing, though it reads back a hair off.
+#[test]
+fn lengths_show_in_the_unit_chosen() {
+    use chrome::{ControlKind, Length, Unit};
+    use part::Part;
+    let mut res = resources().clone();
+    res.documents = testkit::scratch_dir("app-units").expect("a folder");
+    res.settings = Arc::new(app::Settings::default());
+    let res = Arc::new(res);
+    let mut window = Window::create(res.clone()).expect("a document");
+    window.update(Event::Resize {
+        width: 1280.0,
+        height: 800.0,
+    });
+    window.update(Event::CommandWith(
+        "tab-stop-add".to_string(),
+        vec![Arg::Int(1_260_000)],
+    ));
+    // Every length the inspector shows, by its command.
+    let lengths = |window: &Window| -> Vec<(String, Length)> {
+        let mut out = Vec::new();
+        for tab in window.editor().inspector().tabs {
+            for row in tab.sections.into_iter().flat_map(|s| s.rows) {
+                for control in row.controls {
+                    if let ControlKind::Length { value: Some(v), .. } = control.kind {
+                        out.push((control.command.clone(), v));
+                    }
+                }
+            }
+        }
+        out
+    };
+    let units = |window: &Window| -> Vec<(String, Unit)> {
+        lengths(window)
+            .into_iter()
+            .map(|(c, l)| (c, l.unit))
+            .collect()
+    };
+    let expect = |unit| {
+        [
+            ("space-before", unit),
+            ("space-after", unit),
+            ("size", Unit::Point),
+            ("tab-stop-move", unit),
+            ("page-margin", unit),
+            ("page-margin", unit),
+            ("page-margin", unit),
+            ("page-margin", unit),
+        ]
+        .map(|(c, u)| (c.to_string(), u))
+        .to_vec()
+    };
+    assert!(window.state("units-centimetres").checked);
+    assert_eq!(units(&window), expect(Unit::Centimetre));
+    assert_eq!(window.editor().ruler().unwrap().unit, Unit::Centimetre);
+
+    window.update(Event::Command("units-picas".to_string()));
+    assert_eq!(units(&window), expect(Unit::Pica));
+    assert_eq!(window.editor().ruler().unwrap().unit, Unit::Pica);
+    let stop = lengths(&window)
+        .into_iter()
+        .find(|(c, _)| c == "tab-stop-move")
+        .unwrap()
+        .1;
+    assert_eq!(stop.to_string(), "8p3.21");
+    // Another window has the person's choice too.
+    let other = Window::create(res.clone()).expect("another");
+    assert!(other.state("units-picas").checked);
+    assert!(!other.state("units-centimetres").checked);
+    assert_eq!(res.settings.changes(), 1);
+
+    // The stop's length, opened and left as it shows: it stays at 3.5 cm.
+    window.update(Event::Command("toggle-inspector".to_string()));
+    let tabs_of = |window: &Window| {
+        let p = window.editor().document().paragraphs()[0];
+        window
+            .editor()
+            .document()
+            .paragraph(p)
+            .unwrap()
+            .props
+            .get("tabs")
+            .cloned()
+    };
+    let before = tabs_of(&window);
+    window.update(Event::Press {
+        x: 1010.0,
+        y: 452.0,
+        shift: false,
+        count: 1,
+    });
+    window.update(Event::Release);
+    window.update(key(Key::Enter, false));
+    assert_eq!(tabs_of(&window), before);
+}

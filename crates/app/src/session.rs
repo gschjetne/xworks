@@ -117,6 +117,10 @@ pub struct Chrome {
     pub ruler: bool,
     /// Whether the window was dark.
     pub dark: bool,
+    /// The unit the ruler measured in, which markers dragged on it snap
+    /// to; centimetres if it's left out.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub units: Option<chrome::Unit>,
 }
 
 /// One thing a person does.
@@ -288,18 +292,17 @@ impl Played {
 }
 
 /// Plays `session` into a new document in `res`'s documents folder: an
-/// empty one, or the one it starts from.
+/// empty one, or the one it starts from. It's played as by a person who
+/// hasn't chosen any settings, such as the ruler's unit, or as the
+/// recorded window had them where it starts.
 pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorError> {
-    let res = if session.language.is_some() || session.mac != res.mac {
-        let mut res = (*res).clone();
-        if let Some(tag) = &session.language {
-            res.language = text::Language::parse(tag).unwrap_or_default();
-        }
-        res.mac = session.mac;
-        Arc::new(res)
-    } else {
-        res
-    };
+    let mut res = (*res).clone();
+    if let Some(tag) = &session.language {
+        res.language = text::Language::parse(tag).unwrap_or_default();
+    }
+    res.mac = session.mac;
+    res.settings = Arc::new(crate::Settings::default());
+    let res = Arc::new(res);
     let mut window = match &session.start {
         Some(start) => Window::resume(res.clone(), start, session.size)?,
         None => Window::create(res.clone())?,

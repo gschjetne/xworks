@@ -29,6 +29,7 @@ use crate::{Choice, Editor, EditorError, Effect, Event, Resources};
 
 use crate::recorder::{self, Checkpoint, Recorder};
 use crate::session::{Chrome, Start};
+use crate::settings;
 use menus::MenuState;
 
 /// The command palette, open: what's typed, what it finds, and which is
@@ -117,12 +118,6 @@ fn clipboard(field: &mut Field, key: Key, modifiers: Modifiers) -> Option<Vec<Ef
     }
 }
 
-/// How far a ruler's marker snaps to: a quarter of its unit.
-fn snap(position: i64, unit: i64) -> i64 {
-    let step = (unit / 4).max(1);
-    (position + step / 2).div_euclid(step) * step
-}
-
 impl Window {
     /// A window on a new, empty document, made at once in the documents
     /// folder.
@@ -164,6 +159,9 @@ impl Window {
             window.ruler = chrome.ruler;
             window.dark = chrome.dark;
             window.theme = window.res.theme(chrome.dark);
+            if let Some(units) = chrome.units {
+                window.res.settings.set_units(units);
+            }
         }
         Ok(window)
     }
@@ -195,6 +193,7 @@ impl Window {
             inspector: self.inspector.then_some(self.tab),
             ruler: self.ruler,
             dark: self.dark,
+            units: Some(self.res.settings.units()),
         });
         Some(checkpoint)
     }
@@ -564,6 +563,7 @@ impl Window {
                 enabled: !self.res.recent.paths().is_empty(),
                 checked: false,
             },
+            _ if let Some(unit) = settings::unit_of(id) => on(self.res.settings.units() == unit),
             _ => Part::state(&self.editor, id),
         }
     }
@@ -588,6 +588,7 @@ impl Window {
                     return vec![Effect::Open(Some(PathBuf::from(path)))];
                 }
             }
+            _ if let Some(unit) = settings::unit_of(id) => self.res.settings.set_units(unit),
             _ => {
                 let takes = self.res.commands.get(id).is_some_and(|c| c.arg.is_some());
                 let input = if args.is_empty() && !takes {
@@ -782,6 +783,11 @@ impl Window {
         let ControlKind::Length { value, .. } = &control.kind else {
             return Vec::new();
         };
+        // A length left as it's shown stays as it is, not as it reads back:
+        // a stop at 3.5 cm shows in picas as 8p3.21, a hair short of it.
+        if value.is_some_and(|v| v.to_string() == field.text().trim()) {
+            return Vec::new();
+        }
         let unit = value.map_or(chrome::Unit::Point, |v| v.unit);
         match chrome::Length::parse(field.text(), unit) {
             Some(length) => {
@@ -1116,8 +1122,7 @@ impl Window {
         if let Some(ruler) = self.ruler_view()
             && let Some(hit) = ruler.hit(x, y)
         {
-            let unit = chrome::Unit::Centimetre.units();
-            let at = snap(ruler.position(x), unit);
+            let at = ruler.snapped(x);
             let model = Part::ruler(&self.editor);
             match hit {
                 RulerHit::Stop(i) => {
@@ -1209,8 +1214,7 @@ impl Window {
             }
             Some(drag) => {
                 if let Some(ruler) = self.ruler_view() {
-                    let unit = chrome::Unit::Centimetre.units();
-                    let at = snap(ruler.position(x), unit);
+                    let at = ruler.snapped(x);
                     let r = ruler.rect();
                     let off = y < r.y - 24 * PIXEL || y > r.bottom() + 24 * PIXEL;
                     self.drag = Some(match drag {

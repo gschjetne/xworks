@@ -56,6 +56,10 @@ fn the_commands_hold_together() {
         "toggle-inspector",
         "toggle-ruler",
         "command-palette",
+        // View, Units (review ydqhfds0).
+        "units-centimetres",
+        "units-inches",
+        "units-picas",
     ] {
         assert!(commands.get(id).is_some(), "{id}");
     }

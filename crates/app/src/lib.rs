@@ -12,6 +12,8 @@
 //! - [`Editor`]: the document's story, edited, on pages or as a draft: the
 //!   first part behind the canvas contract (`part`).
 //! - [`Recent`]: the documents opened lately.
+//! - [`Settings`]: what the person chose that's kept between runs, such as
+//!   the unit the ruler and the inspector measure in.
 //! - [`picture`]: PNG, JPEG, GIF and WebP files decoded, in sRGB, to
 //!   place in documents and draw.
 //!
@@ -35,6 +37,7 @@ mod recent;
 pub mod recorder;
 mod resources;
 pub mod session;
+mod settings;
 mod view;
 mod window;
 
@@ -43,4 +46,5 @@ pub use editor::{
 };
 pub use recent::Recent;
 pub use resources::{ResourceError, Resources};
+pub use settings::{Settings, UNITS, units_of_locale};
 pub use window::Window;

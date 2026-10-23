@@ -13,7 +13,8 @@
 // whole number (Int, lengths in layout units), or a List of them.
 //
 // Menus list command IDs in order, "-" for a separator, and ">" before a
-// command whose submenu the app fills. Every command without an argument
+// submenu's ID, from `submenus`, or before a command whose submenu the app
+// fills. Every command without an argument
 // is in a menu, but for moving the caret, which is keys, and languages
 // and sizes, which the inspector sets (review dcn5ejrd); the palette finds
 // them all.
@@ -61,6 +62,12 @@
         (id: "toggle-inspector", title: "&Inspector", shortcut: Some("Primary+Shift+I")),
         (id: "toggle-ruler", title: "&Ruler", shortcut: Some("Primary+Shift+R")),
         (id: "command-palette", title: "&Command Palette…", shortcut: Some("Primary+Shift+P")),
+        // The unit the ruler and the inspector measure in, the person's
+        // choice, kept between runs (project owner, 2026-10-24, review
+        // ydqhfds0); type sizes stay in points.
+        (id: "units-centimetres", title: "&Centimetres"),
+        (id: "units-inches", title: "&Inches"),
+        (id: "units-picas", title: "&Picas"),
 
         (id: "bold", title: "&Bold", shortcut: Some("Primary+B")),
         (id: "italic", title: "&Italic", shortcut: Some("Primary+I")),
@@ -160,7 +167,7 @@
         (title: "&Edit", items: ["undo", "redo", "-", "cut", "copy", "paste", "-", "select-all"]),
         (title: "&View", items: [
             "view-draft", "view-pages", "-",
-            "toggle-inspector", "toggle-ruler", "-",
+            "toggle-inspector", "toggle-ruler", ">units", "-",
             "command-palette",
         ]),
         (title: "&Insert", items: ["insert-picture", "insert-table"]),
@@ -172,5 +179,8 @@
             "size-bigger", "size-smaller",
         ]),
         (title: "&Help", items: ["save-session", "-", "about"]),
+    ],
+    submenus: [
+        (id: "units", title: "&Units", items: ["units-centimetres", "units-inches", "units-picas"]),
     ],
 )

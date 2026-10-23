@@ -1,0 +1,25 @@
+// The ruler's unit, chosen from View, Units (project owner, 2026-10-24,
+// review ydqhfds0), at 1280 by 800, the column starting at 337.6 pixels.
+// By the keyboard, Alt, V, U and I choose inches, and a click at the
+// ruler's foot 1.3 inches in sets a stop snapped to the nearest eighth,
+// 1.25 inches; by the pointer, View, Units and Picas, and a click 5.2
+// picas in sets one snapped to the nearest six points, 5 picas.
+(
+    size: (1280, 800),
+    events: [
+        Type("Tabbed\tText"),
+        Key("Alt"),
+        Type("v"),
+        Type("u"),
+        Type("i"),
+        Click(462, 60),
+        Click(109, 20),
+        Hover(130, 171),
+        Click(400, 223),
+        Click(421, 60),
+    ],
+    expect: [("Body", "Tabbed\tText")],
+    props: [("Tabbed", "tabs", Some("start 762000; start 1143000"))],
+    on: ["units-picas"],
+    off: ["units-centimetres", "units-inches"],
+)

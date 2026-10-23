@@ -1,6 +1,7 @@
 // The inspector, at 1280 by 800: a style chosen from its list, a space
-// and a size typed, the size in another unit, Bold toggled, a line height
-// chosen, and a tab stop added, all on the selection.
+// and a size typed, each in a unit other than it shows in (spacing shows
+// in the ruler's unit, centimetres, and sizes in points), Bold toggled, a
+// line height chosen, and a tab stop added, all on the selection.
 (
     size: (1280, 800),
     events: [
@@ -10,9 +11,9 @@
         // Style: Heading 2, from its list.
         Click(1150, 136),
         Click(1100, 222),
-        // Space above.
+        // Space above, in points.
         Click(1110, 204),
-        Type("12"),
+        Type("12 pt"),
         Key("Enter"),
         // Size, in centimetres.
         Click(1110, 346),

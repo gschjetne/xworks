@@ -254,7 +254,7 @@ impl Editor {
             width: style.body_width(),
             origin: start + laid.place.indent + laid.inset,
             extent: laid.place.width - 2 * laid.inset,
-            unit: Unit::Centimetre,
+            unit: self.res.settings.units(),
             indents: Some(Indents {
                 start: own.start,
                 end: own.end,
@@ -274,8 +274,11 @@ impl Editor {
 
     /// The inspector's fields for the selection: the Text tab, its
     /// paragraph's, its characters' and its tab stops; and the Page tab.
+    /// Lengths of the page and the paragraph are in the person's unit;
+    /// type sizes are in points.
     pub(super) fn inspector_model(&self) -> Inspector {
         let writable = self.writable();
+        let unit = self.res.settings.units();
         let at = self.focus;
         let paragraph = self.paragraph(at.paragraph);
         let sheet = &self.res.sheet;
@@ -344,7 +347,7 @@ impl Editor {
                     Vec::new(),
                     writable,
                     ControlKind::Length {
-                        value: length(before, Unit::Point),
+                        value: length(before, unit),
                         prefix: "↑".to_string(),
                         plain: false,
                     },
@@ -354,7 +357,7 @@ impl Editor {
                     Vec::new(),
                     writable,
                     ControlKind::Length {
-                        value: length(after, Unit::Point),
+                        value: length(after, unit),
                         prefix: "↓".to_string(),
                         plain: false,
                     },
@@ -516,7 +519,7 @@ impl Editor {
                             vec![Arg::Int(stop.position)],
                             writable,
                             ControlKind::Length {
-                                value: length(stop.position, Unit::Centimetre),
+                                value: length(stop.position, unit),
                                 prefix: String::new(),
                                 plain: true,
                             },
@@ -586,7 +589,7 @@ impl Editor {
                 vec![Arg::Text(side.to_string())],
                 false,
                 ControlKind::Length {
-                    value: length(value, Unit::Millimetre),
+                    value: length(value, unit),
                     prefix: label.to_string(),
                     plain: false,
                 },
