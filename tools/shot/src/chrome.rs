@@ -130,3 +130,37 @@ pub(crate) fn palette() -> Page {
     window.update(Event::Text("head".to_string()));
     window.view()
 }
+
+/// A window on the sample Markdown file, `spec/documents/m2-markdown.md`,
+/// with every block and mark Markdown holds, as it opens: in the draft
+/// view (review frhewnk0), its picture linked beside it, at 1280 by 800.
+fn markdown(dark: bool) -> Page {
+    let root = testkit::workspace_root();
+    let documents = folder();
+    let res = Arc::new(app::Resources::load(&root, documents.clone(), false).expect("resources"));
+    std::fs::create_dir_all(documents.join("images")).expect("a folder");
+    std::fs::copy(
+        root.join("crates/app/tests/pictures/gradient.jpg"),
+        documents.join("images/gradient.jpg"),
+    )
+    .expect("the picture");
+    let path = documents.join("The garden in spring.md");
+    std::fs::copy(root.join("spec/documents/m2-markdown.md"), &path).expect("the file");
+    let mut window = Window::open(res, &path).expect("it opens");
+    window.update(Event::Theme { dark });
+    window.update(Event::Resize {
+        width: SIZE.0,
+        height: SIZE.1,
+    });
+    window.view()
+}
+
+/// The sample Markdown file as it opens, light.
+pub(crate) fn markdown_light() -> Page {
+    markdown(false)
+}
+
+/// The same, dark.
+pub(crate) fn markdown_dark() -> Page {
+    markdown(true)
+}

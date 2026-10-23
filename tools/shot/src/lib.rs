@@ -172,6 +172,20 @@ pub fn scenes() -> &'static [Scene] {
             pages: None,
         },
         Scene {
+            name: "markdown-draft",
+            description: "a Markdown file as it opens, in the draft view: every block and mark Markdown holds, a picture it links to, and what it keeps as written",
+            ppi: 96.0,
+            page: chrome::markdown_light,
+            pages: None,
+        },
+        Scene {
+            name: "markdown-draft-dark",
+            description: "the same, dark",
+            ppi: 96.0,
+            page: chrome::markdown_dark,
+            pages: None,
+        },
+        Scene {
             name: "blocks",
             description: "a document with every kind of block, lists, quotes, code and a table, and Markdown's marks, in automatic A4 pages, at 96 pixels per inch",
             ppi: 96.0,
