@@ -1,0 +1,65 @@
+// The chrome's type and sizes, the same in light and dark: what M2's UX
+// design settled (docs/ARCHITECTURE.md section 8, reviews frhewnk0 and
+// 3ce247c2) and its approved mockups show. Inter for the interface, and
+// compact rows of 24 to 28 pixels, for mouse and keyboard. Lengths are
+// Px(...), pixels at 96 to the inch, or Pt(...); each look's colours are in
+// light.ron and dark.ron.
+(
+    family: "Inter",
+    // Text, in pixels: menus' titles and the document's name; labels such
+    // as the status bar's and the inspector's names; values in fields;
+    // the inspector's section headings; the ruler's numbers; what's typed
+    // into the palette, and its commands and their kinds.
+    text: Px(13),
+    label: Px(12),
+    value: Px(12.5),
+    heading: Px(11),
+    tiny: Px(9),
+    palette_text: Px(15),
+    palette_item: Px(13.5),
+    // The title bar xWorks draws (review 3ce247c2): its height, where the
+    // menus start and the room between their titles, the window's own
+    // buttons' width, the contextual buttons' size and the room around
+    // them, and Draft and Pages' width and height.
+    title_bar: Px(40),
+    menu_left: Px(14),
+    menu_gap: Px(18),
+    window_button: Px(46),
+    button: Px(28),
+    contextual_gap: Px(12),
+    segmented: (Px(128), Px(26)),
+    // A menu open from the bar: an item's height, a separator's, and the
+    // room at its sides.
+    menu_item: Px(26),
+    menu_separator: Px(9),
+    menu_padding: Px(12),
+    // How far from a window's edge a drag resizes it.
+    resize_edge: Px(5),
+    // The ruler's and the status bar's height.
+    ruler: Px(26),
+    status_bar: Px(26),
+    // The inspector: its width, the room at its sides, its labels' width,
+    // a row's height, a field's height, and the room under its tabs and
+    // between its sections.
+    inspector: Px(300),
+    inspector_padding: Px(16),
+    inspector_label: Px(74),
+    inspector_row: Px(34),
+    field: Px(28),
+    section_gap: Px(14),
+    // Corners.
+    radius: Px(6),
+    // The command palette: its width, the height of what's typed and of
+    // each command found, and how far below the title bar it opens.
+    palette: Px(560),
+    palette_field: Px(52),
+    palette_row: Px(34),
+    palette_top: Px(36),
+    // The views: the room above the first page, between pages, and around
+    // them; and the draft's column, at most this wide, and the room above
+    // it.
+    page_top: Px(22),
+    page_gap: Px(16),
+    draft_column: Px(640),
+    draft_top: Px(36),
+)

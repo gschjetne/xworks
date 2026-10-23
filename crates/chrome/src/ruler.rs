@@ -3,15 +3,20 @@
 
 use crate::Unit;
 
-/// A ruler over a text column. Positions are in layout units across the
-/// ruler: the column's from the ruler's left, and indents and stops from
-/// the column's start.
+/// A ruler over a text column, measured from the column's start. Its
+/// paragraph's indents and tab stops are measured from the start of the
+/// paragraph's own place in it, which a list or a quote moves in.
+/// Positions are in layout units across the ruler.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ruler {
     /// Where the column starts, from the ruler's left.
     pub start: i64,
     /// How wide the column is.
     pub width: i64,
+    /// Where the paragraph's place starts, from the ruler's left.
+    pub origin: i64,
+    /// How wide the paragraph's place is.
+    pub extent: i64,
     /// The unit it's measured in.
     pub unit: Unit,
     /// The paragraph's indents, if there's a paragraph to set them on.

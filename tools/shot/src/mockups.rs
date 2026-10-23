@@ -36,7 +36,8 @@ const UI: &str = "Inter";
 const SERIF: &str = "Source Serif 4";
 const SANS: &str = "Inter";
 
-/// The colours of one look, by role.
+/// The colours of one look, by role, from `spec/themes/` (the toolkit's
+/// own: light.ron and dark.ron).
 struct Look {
     /// Behind the pages: off-white, easier on the eyes than grey.
     desk: Color,
@@ -56,41 +57,40 @@ struct Look {
     shadow: Color,
 }
 
-const LIGHT: Look = Look {
-    desk: Color::rgb(246, 245, 241),
-    chrome: Color::rgb(239, 238, 233),
-    line: Color::rgb(222, 220, 213),
-    ink: Color::rgb(31, 30, 28),
-    secondary: Color::rgb(110, 108, 102),
-    hover: Color::rgb(228, 226, 219),
-    accent: Color::rgb(61, 108, 201),
-    field: Color::WHITE,
-    field_line: Color::rgb(214, 212, 204),
-    shadow: Color {
-        r: 60,
-        g: 50,
-        b: 30,
-        a: 24,
-    },
-};
+/// The look `spec/themes/{name}.ron` gives.
+fn look(name: &str) -> Look {
+    let source = testkit::specs("themes")
+        .expect("spec/themes")
+        .into_iter()
+        .find(|(n, _)| n == name)
+        .unwrap_or_else(|| panic!("spec/themes/{name}.ron"))
+        .1;
+    let c: toolkit::Colors = ron::from_str(&source).expect("a look");
+    Look {
+        desk: c.desk,
+        chrome: c.chrome,
+        line: c.line,
+        ink: c.ink,
+        secondary: c.secondary,
+        hover: c.hover,
+        accent: c.accent,
+        field: c.field,
+        field_line: c.field_line,
+        shadow: c.shadow,
+    }
+}
 
-const DARK: Look = Look {
-    desk: Color::rgb(30, 30, 28),
-    chrome: Color::rgb(38, 38, 36),
-    line: Color::rgb(58, 57, 54),
-    ink: Color::rgb(236, 235, 230),
-    secondary: Color::rgb(163, 161, 154),
-    hover: Color::rgb(51, 50, 47),
-    accent: Color::rgb(110, 151, 232),
-    field: Color::rgb(30, 30, 28),
-    field_line: Color::rgb(66, 65, 61),
-    shadow: Color {
-        r: 0,
-        g: 0,
-        b: 0,
-        a: 90,
-    },
-};
+/// The light look.
+fn light() -> &'static Look {
+    static LIGHT: OnceLock<Look> = OnceLock::new();
+    LIGHT.get_or_init(|| look("light"))
+}
+
+/// The dark look.
+fn dark() -> &'static Look {
+    static DARK: OnceLock<Look> = OnceLock::new();
+    DARK.get_or_init(|| look("dark"))
+}
 
 /// The view a document is shown in.
 #[derive(Clone, Copy, PartialEq)]
@@ -568,17 +568,17 @@ fn pages_window(look: &'static Look) -> Page {
 
 /// Pages, in xWorks' own title bar.
 pub(crate) fn pages_own_title() -> Page {
-    pages_window(&LIGHT)
+    pages_window(light())
 }
 
 /// Pages, in xWorks' own title bar, dark: the page stays white.
 pub(crate) fn pages_dark() -> Page {
-    pages_window(&DARK)
+    pages_window(dark())
 }
 
 /// A Markdown file in the draft view, dark, the inspector shut.
 pub(crate) fn draft_dark() -> Page {
-    let mut win = Window::new(&DARK);
+    let mut win = Window::new(dark());
     let top = win.top("README.md", View::Draft, false);
     let column = 640.0;
     let x = ((WIDTH - column) / 2.0).round();
@@ -597,7 +597,7 @@ pub(crate) fn draft_dark() -> Page {
     drawn.items.remove(0);
     for item in &mut drawn.items {
         if let Item::Glyphs(g) = item {
-            g.color = DARK.ink;
+            g.color = dark().ink;
         }
     }
     win.page
@@ -608,7 +608,7 @@ pub(crate) fn draft_dark() -> Page {
 
 /// The command palette, open over a document on pages.
 pub(crate) fn palette() -> Page {
-    let mut win = Window::new(&LIGHT);
+    let mut win = Window::new(light());
     let top = win.top("A walking skeleton", View::Pages, false);
     let page_x = ((WIDTH - PAGE_WIDTH) / 2.0).round();
     win.page_at(page_x, top + RULER + 22.0);

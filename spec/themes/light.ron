@@ -1,0 +1,34 @@
+// The light look's colours, by role (docs/ARCHITECTURE.md section 8; the
+// approved mockups, review 3ce247c2). xWorks follows the system between
+// this and dark.ron. Colours are Rgb(red, green, blue) or Rgba(..., opacity),
+// each 0 to 255.
+(
+    // Behind the pages: off-white, easier on the eyes than grey.
+    desk: Rgb(246, 245, 241),
+    // The title bar, the ruler, the inspector, the status bar, and menus.
+    chrome: Rgb(239, 238, 233),
+    // Hairlines between the chrome and the document.
+    line: Rgb(222, 220, 213),
+    // Text, and text that says less.
+    ink: Rgb(31, 30, 28),
+    secondary: Rgb(110, 108, 102),
+    // Commands that can't run now.
+    disabled: Rgb(170, 168, 161),
+    // What's under the pointer, or on.
+    hover: Rgb(228, 226, 219),
+    // Tab stops, links in the chrome, and what has the keyboard.
+    accent: Rgb(61, 108, 201),
+    // Fields in the inspector and the palette, and their edges.
+    field: Rgb(255, 255, 255),
+    field_line: Rgb(214, 212, 204),
+    // Shadows on the desk.
+    shadow: Rgba(60, 50, 30, 24),
+    // The selection, over the text.
+    selection: Rgba(61, 108, 201, 70),
+    // The window's close button, under the pointer.
+    danger: Rgb(196, 43, 28),
+    // Pages are white in both looks, and their text black; the draft view,
+    // without pages, shows the text in `ink` on the desk.
+    page: Rgb(255, 255, 255),
+    page_ink: Rgb(0, 0, 0),
+)
