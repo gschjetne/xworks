@@ -722,10 +722,33 @@ the stage's own, open to the owner's review unless marked settled.
   Ctrl+Shift+R.
 - **The draft** is the story in a column at most 640 pixels wide on the
   desk, in the look's ink; it prints on pages as ever.
-- **The ruler** measures in centimetres from the column's start, and a
-  paragraph's indents and stops from its own place, which a list or a
-  quote moves in. A click at its foot sets a stop, snapped to 2.5 mm; a
-  stop dragged off it goes.
+- **The ruler** spans the window and is marked from the page's one edge
+  to the other, numbered out from the column's start both ways. In the
+  draft, which has no page, the column stands for the page, so its marks
+  stay over the column. It measures in the person's unit, from View,
+  Units (`chrome::Marks`): centimetres to their quarters; inches to
+  their eighths; picas numbered every six, an inch, and ticked every
+  three, every one and every six points. A paragraph's indents and stops
+  are measured from its own place, which a list or a quote moves in. A
+  click at its foot sets a stop, snapped to the finest ticks (2.5 mm, an
+  eighth of an inch, six points); a stop dragged off it goes.
+- **Lengths in the person's unit.** The inspector shows the page's and
+  the paragraph's lengths in it (spacing, tab stops and margins), picas
+  as typographers write them, "3p6", and type sizes in points. The unit
+  is kept in `settings.ron` beside the recent documents (`app::Settings`).
+  Until the person chooses, it's the system's: inches where measurements
+  are US customary (Windows' own setting, or the locale's region
+  elsewhere), centimetres otherwise.
+- **The caret blinks** at the system's rate, read off the event loop from
+  Windows' registry (`CursorBlinkRate`, `CaretTimeout`), GNOME's
+  `gsettings`, KDE's `kdeglobals` and macOS's user defaults, with
+  Windows' 530 ms where none say (`app::Blink`). It shows steadily while
+  the person types or moves it and for a pause after, a blink's shown
+  time, or a whole blink as GTK has it on GNOME. Then it blinks, and
+  where the system stops it (Windows after 5 s, GNOME after 10 s) it
+  shows steadily again. It blinks only in the window with the keyboard.
+  The shell wakes for each blink, and a blink draws only the caret's
+  pixels again. Headless sessions and `shot` never blink.
 - **Paragraphs carry their own** spacing, line height (in thousandths of
   the largest font size on a line: 1 200 is 1.2 times the font), start,
   end and first-line indents, and tab stops, as properties (`story::keys`)
