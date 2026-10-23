@@ -616,7 +616,8 @@ impl Commands {
     /// The commands whose titles match `query`, as the command palette
     /// finds them, best first: titles that start with it, then those with
     /// a word that does, then those that hold it, then those with its
-    /// letters in order; each group in the spec's order. Case doesn't
+    /// letters in order from a word's start; each group in the spec's
+    /// order. Case doesn't
     /// count, and commands that take an argument, or that `shown` refuses,
     /// aren't found. An empty query finds every command.
     pub fn find(&self, query: &str, mac: bool, shown: impl Fn(&Command) -> bool) -> Vec<Found> {
@@ -643,7 +644,7 @@ impl Commands {
 
 /// How well `title` matches `query`, both lower case: 0 if it starts with
 /// it, 1 if a word in it does, 2 if it holds it, 3 if it has its letters
-/// in order, and `None` if not.
+/// in order from a word's start, and `None` if not.
 fn rank(title: &str, query: &str) -> Option<u8> {
     if query.is_empty() || title.starts_with(query) {
         return Some(0);
@@ -664,11 +665,23 @@ fn rank(title: &str, query: &str) -> Option<u8> {
     if title.contains(query) {
         return Some(2);
     }
-    let mut letters = title.chars();
-    query
-        .chars()
-        .filter(|c| !c.is_whitespace())
-        .all(|q| letters.any(|c| c == q))
+    // Its letters in order, from the start of a word.
+    let mut wanted = query.chars().filter(|c| !c.is_whitespace());
+    let first = wanted.next()?;
+    let rest: Vec<char> = wanted.collect();
+    title
+        .char_indices()
+        .filter(|&(i, c)| {
+            c == first
+                && title[..i]
+                    .chars()
+                    .next_back()
+                    .is_none_or(|before| !before.is_alphanumeric())
+        })
+        .any(|(i, c)| {
+            let mut letters = title[i + c.len_utf8()..].chars();
+            rest.iter().all(|q| letters.any(|c| c == *q))
+        })
         .then_some(3)
 }
 
@@ -936,10 +949,12 @@ mod tests {
         assert_eq!(found[0].title, "Heading 1");
         assert_eq!(found[0].kind, "Paragraph style");
         assert_eq!(found[0].shortcut.as_deref(), Some("Ctrl+1"));
-        // Its letters in order, and the menu it's in as its kind.
+        // Its letters in order, from a word's start, and the menu it's in
+        // as its kind.
         let bold = commands.find("bd", false, |_| true);
         assert_eq!(bold[0].id, "bold");
         assert_eq!(bold[0].kind, "Format");
+        assert!(commands.find("od", false, |_| true).is_empty());
         // Everything for nothing, but what takes an argument or isn't
         // shown.
         let all = commands.find("", true, |c| c.id != "bold");
