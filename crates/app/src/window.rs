@@ -1239,7 +1239,11 @@ impl Window {
         let bar = self.title_bar(&menus, &buttons, &name);
         let mut shape = PointerShape::Arrow;
         if let Some(view) = self.palette_view() {
-            if let Some(PaletteHit::Row(i)) = view.hit(x, y) {
+            if let Some(PaletteHit::Row(i)) = view.hit(x, y)
+                && let Some(palette) = &mut self.palette
+            {
+                // The pointer lights a command as the arrows do.
+                palette.selected = Window::palette_first(palette) + i;
                 self.hover = Hover::Palette(i);
             }
         } else if let Some(edge) = self.edge(x, y) {

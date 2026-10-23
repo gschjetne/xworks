@@ -669,7 +669,9 @@ the stage's own, open to the owner's review unless marked settled.
   is a column with a paragraph's indents and stops. The look is data:
   `spec/themes/chrome.ron` for type and sizes, `light.ron` and `dark.ron`
   for each look's colours by role, which the mockups read too.
-- **The menus** are File, Edit, View, Insert, Format and Help. Every
+- **The menus** are File, Edit, View, Insert, Format and Help; stage 7's
+  commands sit in File (Versions, Copy Out), Insert (Picture) and Help
+  (Save Recent Session), and Versions lists them over the document. Every
   command that runs without an argument is in one, but for moving the
   caret, which is keys, and languages and sizes, which the inspector sets;
   the palette finds them all, by a title's start, a word's, the letters
