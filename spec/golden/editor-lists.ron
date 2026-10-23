@@ -2,6 +2,6 @@
 Golden(
     name: "editor-lists",
     size: (900, 700),
-    sha256: "6c669335a19e2f623e644fb92c06a0605fddbf5046f1525acfbccabc55d1a132",
+    sha256: "afea68db4567b5b21cde0328114cc9c234897ffde834b5a98663a942fda94e61",
     approved_by: "Grim Schjetne",
 )

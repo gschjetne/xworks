@@ -2,6 +2,6 @@
 Golden(
     name: "editor",
     size: (900, 640),
-    sha256: "1ec87c219f80550370b9c9f7e24f247ed1cd032041b6ec27a4b117c86aba09a7",
+    sha256: "ac28f4867faa2ca1a0a7a9d0bd750b875f4169c130bf8cad7e1495c73045700f",
     approved_by: "Grim Schjetne",
 )
