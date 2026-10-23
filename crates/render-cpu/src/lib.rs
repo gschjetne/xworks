@@ -167,14 +167,18 @@ impl Renderer {
         let renders = self.renders;
         self.images
             .retain(|_, cached| renders - cached.used < FORGET_AFTER);
+        // The pixmap's own bytes, made straight where they're translucent:
+        // no copy of the whole image, which costs more than drawing it.
+        let mut pixels = pixmap.take_rgba8(ImageAlphaType::AlphaPremultiplied);
+        for pixel in pixels.as_chunks_mut::<4>().0 {
+            if !matches!(pixel[3], 0 | 255) {
+                *pixel = straight(*pixel);
+            }
+        }
         Image {
             width: u32::from(width),
             height: u32::from(height),
-            pixels: pixmap
-                .data()
-                .iter()
-                .flat_map(|p| straight([p.r, p.g, p.b, p.a]))
-                .collect(),
+            pixels,
         }
     }
 }
