@@ -3,7 +3,9 @@
 //! 1280 by 800 at 96 to the inch, on pages with the ruler and the
 //! inspector, light and dark; as a draft, dark; and with the command
 //! palette open. They're drawn by the app's own window, to compare with
-//! the mockups by eye and by difference (`shot --diff`).
+//! the mockups by eye and by difference (`shot --diff`). And the top of
+//! the window, its ruler in each unit the person can choose (review
+//! ydqhfds0).
 
 use std::path::PathBuf;
 use std::sync::Arc;
@@ -91,6 +93,33 @@ pub(crate) fn draft_dark() -> Page {
     let mut window = sample("README", true);
     window.update(Event::Command("view-draft".to_string()));
     window.view()
+}
+
+/// The top of the window on the sample on pages, the inspector shut: the
+/// title bar, the ruler in the unit command `units` chooses, and the top
+/// of the page, 1280 by 120.
+fn ruler(units: &str) -> Page {
+    let mut window = sample("A walking skeleton", false);
+    window.update(Event::Command(units.to_string()));
+    let view = window.view();
+    let mut top = Page::new(view.width, 120 * text::units::PIXEL);
+    top.items = view.items;
+    top
+}
+
+/// The ruler in centimetres.
+pub(crate) fn ruler_centimetres() -> Page {
+    ruler("units-centimetres")
+}
+
+/// The ruler in inches.
+pub(crate) fn ruler_inches() -> Page {
+    ruler("units-inches")
+}
+
+/// The ruler in picas.
+pub(crate) fn ruler_picas() -> Page {
+    ruler("units-picas")
 }
 
 /// The command palette, open over the sample on pages, "head" typed, as

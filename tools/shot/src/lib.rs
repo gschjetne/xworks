@@ -151,6 +151,27 @@ pub fn scenes() -> &'static [Scene] {
             pages: None,
         },
         Scene {
+            name: "ruler-centimetres",
+            description: "the ruler over the sample on pages, in centimetres: marked from the page's one edge to the other, numbered out from the column's start",
+            ppi: 96.0,
+            page: chrome::ruler_centimetres,
+            pages: None,
+        },
+        Scene {
+            name: "ruler-inches",
+            description: "the same, in inches, to their eighths",
+            ppi: 96.0,
+            page: chrome::ruler_inches,
+            pages: None,
+        },
+        Scene {
+            name: "ruler-picas",
+            description: "the same, in picas, numbered every six, with every three, every one and every six points ticked",
+            ppi: 96.0,
+            page: chrome::ruler_picas,
+            pages: None,
+        },
+        Scene {
             name: "blocks",
             description: "a document with every kind of block, lists, quotes, code and a table, and Markdown's marks, in automatic A4 pages, at 96 pixels per inch",
             ppi: 96.0,
