@@ -403,6 +403,15 @@ the document is open.
   2026-10-22, review pysc65hp).
 - **Its stylesheet is a Markdown file's program's,** since Markdown can't
   hold one; an `.xw` document carries its own (below).
+- **Reading and writing** (project owner, 2026-10-24, review ys9vyag1):
+  - it's read with pulldown-cmark and written by our own writer;
+  - blocks left untouched are saved byte for byte as their author wrote
+    them, and edited blocks follow the file's own habits where they're
+    clear (its bullets, emphasis and wrapping), or else a standard style;
+  - GitHub's strikethrough and task lists are read and written besides
+    CommonMark with tables, and other extensions are kept as written;
+  - a picture is linked where it is, by its path, relative to the file
+    where one exists, not copied.
 - **Its tables are Markdown's** in M2: a header row, rows of cells of one
   paragraph each, and column alignment. Fuller tables come with Write
   (project owner, 2026-10-22, review pysc65hp).
