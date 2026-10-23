@@ -236,14 +236,38 @@ fn a_canvas_drawn_where_it_changed_shows_the_new_page() {
 
 /// What render-cpu draws is written into a canvas as it is, in either of
 /// the formats windows' frames have, whole or where it changed, and a
-/// rectangle reaching past the canvas is cut at its edge.
+/// rectangle reaching past the canvas is cut at its edge: in several
+/// bands, as large ones go, on the GPU and on the software one where
+/// there's one, such as Windows' WARP, where each band waits for the last.
 #[test]
 #[ignore = "needs a GPU: on WSL, run the Windows build (CLAUDE.md)"]
 fn render_cpus_pixels_are_written_as_they_are() {
     let instance =
         wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
-    let device = render_gpu::open(&instance, None).expect("a GPU");
-    let (w, h) = (37u32, 23u32);
+    let gpu = render_gpu::open(&instance, None).expect("a GPU");
+    let software = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
+        force_fallback_adapter: true,
+        ..Default::default()
+    }))
+    .ok()
+    .and_then(|adapter| {
+        let (device, queue) =
+            pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).ok()?;
+        Some(render_gpu::Device {
+            adapter,
+            device,
+            queue,
+        })
+    });
+    for device in std::iter::once(gpu).chain(software) {
+        let info = device.adapter.get_info();
+        println!("{} ({:?})", info.name, info.device_type);
+        written_as_they_are(&device);
+    }
+}
+
+fn written_as_they_are(device: &render_gpu::Device) {
+    let (w, h) = (400u32, 900u32);
     let pixel = |x: u32, y: u32, n: u32| {
         [
             (x * 7 + n) as u8,
@@ -262,20 +286,21 @@ fn render_cpus_pixels_are_written_as_they_are() {
         wgpu::TextureFormat::Rgba8Unorm,
         wgpu::TextureFormat::Bgra8Unorm,
     ] {
-        let mut canvas = render_gpu::Canvas::new(&device, w as u16, h as u16, format);
+        let mut canvas = render_gpu::Canvas::new(device, w as u16, h as u16, format);
         let whole: Vec<u8> = (0..h)
             .flat_map(|y| (0..w).flat_map(move |x| pixel(x, y, 0)))
             .collect();
-        canvas.write(&device, rect(0, 0, w, h), &whole);
-        // A part, 10 by 5 from (30, 4): only 7 of its columns are inside.
-        let part: Vec<u8> = (0..5)
-            .flat_map(|y| (0..10).flat_map(move |x| pixel(x, y, 1)))
+        canvas.write(device, rect(0, 0, w, h), &whole);
+        // A part, 400 by 890 from (100, 4): only 300 of its columns are
+        // inside.
+        let part: Vec<u8> = (0..890)
+            .flat_map(|y| (0..400).flat_map(move |x| pixel(x, y, 1)))
             .collect();
-        canvas.write(&device, rect(30, 4, 10, 5), &part);
+        canvas.write(device, rect(100, 4, 400, 890), &part);
         let mut expected = whole.clone();
-        for y in 0..5 {
-            for x in 0..7 {
-                let at = (((4 + y) * w + 30 + x) * 4) as usize;
+        for y in 0..890 {
+            for x in 0..300 {
+                let at = (((4 + y) * w + 100 + x) * 4) as usize;
                 expected[at..at + 4].copy_from_slice(&pixel(x, y, 1));
             }
         }
@@ -284,7 +309,7 @@ fn render_cpus_pixels_are_written_as_they_are() {
                 p.swap(0, 2);
             }
         }
-        let got = canvas.read(&device);
+        let got = canvas.read(device);
         let first = got.iter().zip(&expected).position(|(a, b)| a != b);
         assert!(
             first.is_none(),

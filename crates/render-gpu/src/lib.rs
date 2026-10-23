@@ -620,9 +620,15 @@ pub struct Canvas {
     width: u16,
     height: u16,
     format: wgpu::TextureFormat,
+    /// Whether it's on a software GPU, such as llvmpipe.
+    software: bool,
     /// What it shows, at what resolution, if it shows anything yet.
     shows: Option<(Page, f64)>,
 }
+
+/// The most of render-cpu's pixels [`Canvas::write`] has the GPU take at
+/// once, in bytes.
+const BAND: usize = 512 * 1024;
 
 impl Canvas {
     /// An empty canvas `width` by `height` pixels in `format`.
@@ -650,6 +656,7 @@ impl Canvas {
             width: width.max(1),
             height: height.max(1),
             format,
+            software: device.adapter.get_info().device_type == wgpu::DeviceType::Cpu,
             shows: None,
         }
     }
@@ -699,6 +706,11 @@ impl Canvas {
 
     /// Writes `rgba`, straight RGBA pixels `rect` holds, as render-cpu
     /// draws them, into it at `rect`.
+    ///
+    /// They go a band of rows at a time, and on a software GPU each band
+    /// is done before the next goes: there the memory a write is staged
+    /// in is the program's own, and stays resident once used, so a whole
+    /// window at once would keep megabytes of it.
     pub fn write(&mut self, device: &Device, rect: PixelRect, rgba: &[u8]) {
         let (w, h) = (
             rect.width.min(u32::from(self.width).saturating_sub(rect.x)),
@@ -712,47 +724,56 @@ impl Canvas {
             self.format,
             wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
         );
-        // Whole rows of RGBA go as they are; others are copied a row at a
-        // time, and their red and blue swapped in place for BGRA: not a
-        // pixel at a time, which costs milliseconds on a whole window.
         let (row, inside) = (rect.width as usize * 4, w as usize * 4);
-        let pixels: Cow<'_, [u8]> = if !bgra && row == inside {
-            Cow::Borrowed(&rgba[..row * h as usize])
-        } else {
-            let mut pixels = Vec::with_capacity(inside * h as usize);
-            for line in rgba.chunks_exact(row).take(h as usize) {
-                pixels.extend_from_slice(&line[..inside]);
-            }
-            if bgra {
-                for pixel in pixels.as_chunks_mut::<4>().0 {
-                    pixel.swap(0, 2);
+        let rows = (BAND / inside).clamp(1, h as usize);
+        for (k, band) in rgba[..row * h as usize].chunks(row * rows).enumerate() {
+            let lines = (band.len() / row) as u32;
+            // Whole rows of RGBA go as they are; others are copied a row
+            // at a time, and their red and blue swapped in place for BGRA:
+            // not a pixel at a time, which costs milliseconds on a whole
+            // window.
+            let pixels: Cow<'_, [u8]> = if !bgra && row == inside {
+                Cow::Borrowed(band)
+            } else {
+                let mut pixels = Vec::with_capacity(inside * lines as usize);
+                for line in band.chunks_exact(row) {
+                    pixels.extend_from_slice(&line[..inside]);
                 }
-            }
-            Cow::Owned(pixels)
-        };
-        device.queue.write_texture(
-            wgpu::TexelCopyTextureInfo {
-                texture: &self.texture,
-                mip_level: 0,
-                origin: wgpu::Origin3d {
-                    x: rect.x,
-                    y: rect.y,
-                    z: 0,
+                if bgra {
+                    for pixel in pixels.as_chunks_mut::<4>().0 {
+                        pixel.swap(0, 2);
+                    }
+                }
+                Cow::Owned(pixels)
+            };
+            device.queue.write_texture(
+                wgpu::TexelCopyTextureInfo {
+                    texture: &self.texture,
+                    mip_level: 0,
+                    origin: wgpu::Origin3d {
+                        x: rect.x,
+                        y: rect.y + (k * rows) as u32,
+                        z: 0,
+                    },
+                    aspect: wgpu::TextureAspect::All,
                 },
-                aspect: wgpu::TextureAspect::All,
-            },
-            &pixels,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(w * 4),
-                rows_per_image: Some(h),
-            },
-            wgpu::Extent3d {
-                width: w,
-                height: h,
-                depth_or_array_layers: 1,
-            },
-        );
+                &pixels,
+                wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(w * 4),
+                    rows_per_image: Some(lines),
+                },
+                wgpu::Extent3d {
+                    width: w,
+                    height: lines,
+                    depth_or_array_layers: 1,
+                },
+            );
+            if self.software {
+                device.queue.submit([]);
+                let _ = device.device.poll(wgpu::PollType::wait_indefinitely());
+            }
+        }
     }
 
     /// Takes `page` at `ppi` as what it shows, once render-cpu's pixels of
