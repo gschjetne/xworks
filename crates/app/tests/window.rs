@@ -196,3 +196,36 @@ fn a_document_renamed_keeps_its_lock() {
     let p = reopened.document.paragraphs()[0];
     assert_eq!(reopened.document.paragraph(p).unwrap().text, "Locked on");
 }
+
+/// The document's area and the chrome round it cover the whole window,
+/// with nothing under them: in light and dark, pages and draft, the
+/// inspector open and shut, and the ruler shown and hidden.
+#[test]
+fn the_window_is_covered_everywhere() {
+    let mut window = window("app-covered");
+    window.update(Event::Text("Covered".to_string()));
+    let steps = [
+        None,
+        Some("toggle-inspector"),
+        Some("view-draft"),
+        Some("toggle-ruler"),
+        Some("toggle-inspector"),
+        Some("view-pages"),
+    ];
+    for dark in [false, true] {
+        window.update(Event::Theme { dark });
+        for step in steps {
+            if let Some(id) = step {
+                window.update(Event::Command(id.to_string()));
+            }
+            let image = render_cpu::render(&window.view(), 96.0, render_cpu::Level::Portable);
+            // Opaque, but for a step or two of rounding where a
+            // translucent colour, such as a shadow's, is laid over.
+            let bare = image.pixels.chunks(4).position(|p| p[3] < 250);
+            assert_eq!(
+                bare, None,
+                "dark {dark}, after {step:?}: a pixel isn't covered"
+            );
+        }
+    }
+}

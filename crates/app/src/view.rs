@@ -30,14 +30,15 @@ pub(crate) fn draw(editor: &Editor, look: &Look) -> Page {
             continue;
         }
         if !parts.draft {
-            // A soft shadow, as the mockups have it, and the page.
+            // A soft shadow, as the mockups have it, and the page: only
+            // what shows of the shadow round the page is drawn, as the page
+            // covers the rest.
             let r = 2 * PIXEL;
+            let page = Rect::new(x, y, style.width, style.height);
             for (dx, dy, dw) in [(-PIXEL, 0, 2 * PIXEL), (0, PIXEL, 0)] {
+                let shadow = Rect::new(x + dx, y + dy, style.width + dw, style.height);
                 out.items.push(Item::Fill {
-                    path: toolkit::rounded(
-                        Rect::new(x + dx, y + dy, style.width + dw, style.height),
-                        r,
-                    ),
+                    path: toolkit::ring(shadow, r, page),
                     color: look.shadow,
                 });
             }

@@ -468,6 +468,16 @@ impl Window {
         ))
     }
 
+    /// The inspector's fields, while it's open: the editor describes them
+    /// only then.
+    fn inspector_model(&self) -> chrome::Inspector {
+        if self.inspector {
+            Part::inspector(&self.editor)
+        } else {
+            chrome::Inspector::default()
+        }
+    }
+
     /// The control `at` of the inspector's tab shown.
     fn control(model: &chrome::Inspector, tab: usize, at: ControlRef) -> Option<&Control> {
         model
@@ -1006,7 +1016,7 @@ impl Window {
             }
         }
         let mut effects = Vec::new();
-        let model = Part::inspector(&self.editor);
+        let model = self.inspector_model();
         if let Some((at, _)) = &self.editing {
             let at = *at;
             let inside = self
@@ -1223,7 +1233,7 @@ impl Window {
         if self.menu.is_some() {
             self.menu_hover(x, y);
         }
-        let model = Part::inspector(&self.editor);
+        let model = self.inspector_model();
         if let Some((popup, _)) = self.choice_popup(&model)
             && let Some((at, _)) = self.choosing
         {
@@ -1303,9 +1313,9 @@ impl Window {
     /// 9 525 to a logical pixel.
     pub fn view(&self) -> Page {
         let kit = self.kit();
-        let c = &self.theme.colors;
+        // The document's area, which the editor fills with the desk, and
+        // the chrome round it fill all there is.
         let mut page = Page::new(self.width, self.height);
-        page.fill_background(c.desk);
         // The document, in its area.
         let area = self.area();
         let look = crate::editor::view_look(&self.res, self.dark);
@@ -1316,7 +1326,7 @@ impl Window {
         if let Some(ruler) = self.ruler_view() {
             page.items.extend(ruler.draw(&kit));
         }
-        let model = Part::inspector(&self.editor);
+        let model = self.inspector_model();
         if let Some(view) = self.inspector_view(&model) {
             let hover = match self.hover {
                 Hover::Inspector(hit) => Some(hit),
