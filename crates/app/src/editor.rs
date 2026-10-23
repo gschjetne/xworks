@@ -201,6 +201,8 @@ pub struct Editor {
     /// What a double or triple click selected, which dragging extends.
     dragged: Option<(Unit, Position, Position)>,
     message: String,
+    /// The pictures the document shows, decoded, by ID.
+    pictures: canvas::Pictures,
 }
 
 /// Sizes for Bigger and Smaller, in points.
@@ -332,6 +334,7 @@ impl Editor {
             dragging: false,
             dragged: None,
             message: String::new(),
+            pictures: canvas::Pictures::new(),
         };
         editor.relayout(true);
         editor
@@ -1746,6 +1749,7 @@ impl Editor {
                 &self.laid.paragraphs,
                 &self.laid.pages,
                 self.res.fonts(),
+                &self.pictures,
             ),
             structure: canvas::structure(&self.laid.paragraphs),
         }
@@ -1984,6 +1988,7 @@ impl Editor {
             units: &self.laid.units,
             blocks: &self.laid.blocks,
             pieces: &self.laid.pages,
+            pictures: &self.pictures,
             selection: (!self.collapsed()).then(|| {
                 let a = self.cursor(start);
                 let b = self.cursor(end);
@@ -2050,6 +2055,7 @@ pub(crate) struct ViewParts<'a> {
     pub units: &'a [std::ops::Range<usize>],
     pub blocks: &'a [canvas::Block],
     pub pieces: &'a [Vec<Piece>],
+    pub pictures: &'a canvas::Pictures,
     /// The selection, as (paragraph, byte) at its start and end.
     pub selection: Option<(usize, usize, usize, usize)>,
     pub caret: Option<(i64, i64, i64)>,

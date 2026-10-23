@@ -8,10 +8,13 @@
 //!   between lines; [`blocks`] makes them of a story's paragraphs, a
 //!   table's row as one.
 //! - [`paint_page`] and [`draw`]: a page's pieces as display lists, with
-//!   list markers, quotes' bars, code on its tint and tables' rules.
-//! - [`structure`]: the story's blocks, nested, for tagged PDF.
-//! - [`automatic`]: a document's story poured into automatic pages and
-//!   drawn, page by page, as display lists.
+//!   list markers, quotes' bars, code on its tint and tables' rules, and
+//!   the pictures in the text ([`Pictures`]), each standing on its line's
+//!   baseline with its alternative text.
+//! - [`structure`]: the story's blocks, nested, for tagged PDF; a
+//!   paragraph of one picture alone is a figure.
+//! - [`automatic`] and [`automatic_with`]: a document's story poured into
+//!   automatic pages and drawn, page by page, as display lists.
 //!
 //! The rules where a page breaks:
 //!
@@ -33,6 +36,7 @@
 //!   the run of kept-together blocks it ends in: editing a block leaves
 //!   every page before that run's page as it was.
 
+use std::collections::HashMap;
 use std::ops::Range;
 
 use doc::{Document, Kind, ObjectId};
@@ -305,9 +309,13 @@ fn extent(piece: &Piece, blocks: &[Block]) -> (i64, i64) {
     )
 }
 
+/// The pictures a document shows, decoded, by their IDs in its file, for
+/// drawing where its text places them.
+pub type Pictures = HashMap<String, scene::Image>;
+
 /// A story's laid-out paragraphs as they're poured: the paragraphs, what
-/// each block poured holds of them ([`units`]), and the blocks
-/// ([`blocks`]).
+/// each block poured holds of them ([`units`]), the blocks ([`blocks`]),
+/// and the pictures their text shows.
 #[derive(Clone, Copy, Debug)]
 pub struct Poured<'a> {
     /// The paragraphs, in reading order.
@@ -316,6 +324,57 @@ pub struct Poured<'a> {
     pub units: &'a [Range<usize>],
     /// The blocks.
     pub blocks: &'a [Block],
+    /// The pictures, by ID; one that isn't here is drawn as a tint the
+    /// look gives.
+    pub pictures: &'a Pictures,
+}
+
+/// The pictures on `lines` of paragraph `p`, drawn with the first line's
+/// top left at `origin`, as its text is: each standing on its line's
+/// baseline, with its alternative text, in the document's structure in
+/// `block`, where its character is. A picture that isn't in `pictures` is
+/// a tint, as `look` says.
+fn paint_pictures(
+    p: &ParagraphLayout,
+    lines: Range<usize>,
+    origin: Point,
+    block: Option<u32>,
+    pictures: &Pictures,
+    look: &story::Blocks,
+) -> Vec<Item> {
+    let mut items = Vec::new();
+    let Some(top) = p.layout.lines.get(lines.start).map(|l| l.top) else {
+        return items;
+    };
+    for line in &p.layout.lines[lines] {
+        for placed in &line.objects {
+            let Some(picture) = p.pictures.iter().find(|q| q.offset == placed.offset) else {
+                continue;
+            };
+            let rect = scene::Rect::new(
+                origin.x + placed.x,
+                origin.y + line.baseline - top - placed.height,
+                placed.width,
+                placed.height,
+            );
+            items.push(match pictures.get(&picture.id) {
+                Some(image) => Item::Image {
+                    image: image.clone(),
+                    rect,
+                    alt: picture.alt.clone(),
+                    source: block.map(|block| scene::Source {
+                        block,
+                        offset: placed.offset,
+                    }),
+                },
+                None => Item::Fill {
+                    path: scene::Path::rect(rect.x, rect.y, rect.width, rect.height),
+                    color: rgb(look.missing_picture),
+                },
+            });
+        }
+    }
+    items
 }
 
 /// The pieces of one page, `pieces`, drawn with the page body's top left
@@ -334,6 +393,7 @@ pub fn paint_page(
         paragraphs,
         units,
         blocks,
+        pictures,
     } = poured;
     let mut back = Vec::new();
     let mut front = Vec::new();
@@ -395,10 +455,16 @@ pub fn paint_page(
             for k in unit {
                 let p = &paragraphs[k];
                 let at = Point::new(origin.x + p.x(), origin.y + piece.y + pad);
-                front.extend(
-                    p.layout
-                        .paint(fonts, at, sources.map(|s| s.text[k]), color(p)),
-                );
+                let block = sources.map(|s| s.text[k]);
+                front.extend(p.layout.paint(fonts, at, block, color(p)));
+                front.extend(paint_pictures(
+                    p,
+                    0..p.layout.lines.len(),
+                    at,
+                    block,
+                    pictures,
+                    look,
+                ));
             }
             continue;
         }
@@ -454,12 +520,19 @@ pub fn paint_page(
                 |_| Color::BLACK,
             ));
         }
-        front.extend(p.layout.paint_lines(
-            fonts,
+        let at = Point::new(origin.x + p.x(), origin.y + piece.y);
+        let block = sources.map(|s| s.text[k]);
+        front.extend(
+            p.layout
+                .paint_lines(fonts, piece.lines.clone(), at, block, color(p)),
+        );
+        front.extend(paint_pictures(
+            p,
             piece.lines.clone(),
-            Point::new(origin.x + p.x(), origin.y + piece.y),
-            sources.map(|s| s.text[k]),
-            color(p),
+            at,
+            block,
+            pictures,
+            look,
         ));
     }
     back.extend(front);
@@ -467,13 +540,15 @@ pub fn paint_page(
 }
 
 /// `pages` of `paragraphs`, as [`paginate`] poured their [`blocks`],
-/// drawn on white pages of `style`, with blocks looking as `look` says.
+/// drawn on white pages of `style`, with blocks looking as `look` says,
+/// and the pictures their text shows.
 pub fn draw(
     style: &PageStyle,
     look: &story::Blocks,
     paragraphs: &[ParagraphLayout],
     pages: &[Vec<Piece>],
     fonts: &Fonts,
+    pictures: &Pictures,
 ) -> Vec<Page> {
     let units = units(paragraphs);
     let blocks = blocks(paragraphs, look);
@@ -489,6 +564,7 @@ pub fn draw(
                     paragraphs,
                     units: &units,
                     blocks: &blocks,
+                    pictures,
                 },
                 pieces,
                 Point::new(style.left, style.top),
@@ -553,6 +629,7 @@ pub fn tagged(paragraphs: &[ParagraphLayout]) -> (Structure, Sources) {
                 header: cell.index == 0,
             },
             (None, _) if p.code => Role::Code,
+            (None, _) if p.figure => Role::Figure,
             (None, Some(level)) => Role::Heading(level),
             (None, None) => Role::Paragraph,
         };
@@ -574,17 +651,29 @@ pub struct Pages {
 }
 
 /// `document`'s story in automatic pages of `style`: laid out, poured and
-/// drawn.
+/// drawn, its pictures as the tint for those missing.
 pub fn automatic(
     document: &Document,
     sheet: &StyleSheet,
     style: &PageStyle,
     fonts: &Fonts,
 ) -> Pages {
+    automatic_with(document, sheet, style, fonts, &Pictures::new())
+}
+
+/// `document`'s story in automatic pages of `style`, as [`automatic`]
+/// draws it, with `pictures`.
+pub fn automatic_with(
+    document: &Document,
+    sheet: &StyleSheet,
+    style: &PageStyle,
+    fonts: &Fonts,
+    pictures: &Pictures,
+) -> Pages {
     let paragraphs = story::lay_out(document, sheet, fonts, style.body_width());
     let pages = paginate(style.body_height(), &blocks(&paragraphs, &sheet.blocks));
     Pages {
-        pages: draw(style, &sheet.blocks, &paragraphs, &pages, fonts),
+        pages: draw(style, &sheet.blocks, &paragraphs, &pages, fonts, pictures),
         structure: structure(&paragraphs),
     }
 }

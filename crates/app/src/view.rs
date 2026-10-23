@@ -40,6 +40,7 @@ pub(crate) fn draw(editor: &Editor) -> Page {
                 paragraphs: parts.paragraphs,
                 units: parts.units,
                 blocks: parts.blocks,
+                pictures: parts.pictures,
             },
             &parts.pieces[n],
             Point::new(x + style.left, y + style.top),
