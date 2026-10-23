@@ -1,0 +1,69 @@
+// M2's pictures (docs/ROADMAP.md, M2 stage 7): a document with pictures in
+// its text, as story::build reads it; shot draws it (`pictures`). Each
+// picture is the character U+FFFC, "\u{fffc}", whose run names it, says
+// what it shows, and the size it's placed at, in layout units (914 400 to
+// the inch). shot gives the pictures by these names: "landscape", a
+// photograph-like PNG, and "heart", a small icon; "lost" it doesn't give,
+// as a file that lacks a picture doesn't.
+[
+    Paragraph("Heading 1", [("Pictures in a story", {})]),
+    Paragraph("Body", [
+        ("A picture sits in a paragraph's text, as Markdown's image does: here a heart ", {}),
+        ("\u{fffc}", {
+            "picture": Text("heart"),
+            "picture-alt": Text("A small red heart"),
+            "picture-width": Int(228600),
+            "picture-height": Int(203200),
+        }),
+        (" stands on the baseline among the words, and a line grows to hold a larger one, ", {}),
+        ("\u{fffc}", {
+            "picture": Text("heart"),
+            "picture-alt": Text("A larger red heart"),
+            "picture-width": Int(457200),
+            "picture-height": Int(406400),
+        }),
+        (", as it would a larger letter. Lines break around pictures as they break around words.", {}),
+    ]),
+    Paragraph("Body", [
+        ("\u{fffc}", {
+            "picture": Text("landscape"),
+            "picture-alt": Text("Hills under a blue sky with a yellow sun, a striped field in front"),
+            "picture-width": Int(5486400),
+            "picture-height": Int(3429000),
+        }),
+    ]),
+    Paragraph("Body", [
+        ("A paragraph of one picture alone, as above, is a figure, tagged as one in PDF with what it shows in words. Pictures wider than their paragraph are scaled to fit it, keeping their proportions.", {}),
+    ]),
+    List(false, [
+        [Paragraph("Body", [
+            ("In a list ", {}),
+            ("\u{fffc}", {
+                "picture": Text("heart"),
+                "picture-alt": Text("A heart"),
+                "picture-width": Int(228600),
+                "picture-height": Int(203200),
+            }),
+            (" a picture is placed as in any paragraph.", {}),
+        ])],
+        [Paragraph("Body", [
+            ("One the document's file lacks is a tint: ", {}),
+            ("\u{fffc}", {
+                "picture": Text("lost"),
+                "picture-alt": Text("A picture that isn't there"),
+                "picture-width": Int(914400),
+                "picture-height": Int(457200),
+            }),
+            (".", {}),
+        ])],
+    ]),
+    Table(["", "center"], [
+        [[("Picture", {})], [("Shown", {})]],
+        [[("A heart in a cell", {})], [("\u{fffc}", {
+            "picture": Text("heart"),
+            "picture-alt": Text("A heart"),
+            "picture-width": Int(457200),
+            "picture-height": Int(406400),
+        })]],
+    ]),
+]

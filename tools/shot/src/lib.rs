@@ -22,7 +22,8 @@ pub use typeset::typeset_page;
 
 pub use pages::{
     blocks_pages, blocks_sheet, document_pages, document_sheet, editor_lists_page,
-    editor_menu_page, editor_page, exit_pages, exit_sheet, fonts, shapes_page, text_page,
+    editor_menu_page, editor_page, exit_pages, exit_sheet, fonts, pictures_pages, pictures_sheet,
+    shapes_page, text_page,
 };
 
 /// A named page, and the resolution it's drawn at.
@@ -161,6 +162,13 @@ pub fn scenes() -> &'static [Scene] {
             ppi: 144.0,
             page: drawing::decorations_page,
             pages: None,
+        },
+        Scene {
+            name: "pictures",
+            description: "a document with pictures in its text: small and larger in a line, a figure scaled to its paragraph, in a list, a table's cell, and one the file lacks, at 96 pixels per inch",
+            ppi: 96.0,
+            page: pictures_sheet,
+            pages: Some(pictures_pages),
         },
         Scene {
             name: "typeset",

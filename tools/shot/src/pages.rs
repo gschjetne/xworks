@@ -341,6 +341,40 @@ pub fn blocks_pages() -> canvas::Pages {
     )
 }
 
+/// The document with pictures, side by side on a grey sheet.
+pub fn pictures_sheet() -> Page {
+    sheet(&pictures_pages().pages)
+}
+
+/// The document with pictures (`spec/documents/m2-pictures.ron`) in M2's
+/// styles, in automatic pages: the photograph and the heart drawing's
+/// pictures as they're named, and one it lacks.
+pub fn pictures_pages() -> canvas::Pages {
+    #[derive(serde::Deserialize)]
+    struct Sheet {
+        page: canvas::PageStyleSpec,
+    }
+    let styles = spec("styles", "m1");
+    let page: Sheet = ron::from_str(&styles).expect("a page style");
+    let sheet: story::StyleSheet = ron::from_str(&styles).expect("a style sheet");
+    let blocks: Vec<story::BlockSpec> =
+        ron::from_str(&spec("documents", "m2-pictures")).expect("a document");
+    let document = story::build(&blocks);
+    let mut pictures = canvas::Pictures::new();
+    pictures.insert(
+        "landscape".to_string(),
+        crate::drawing::photograph().clone(),
+    );
+    pictures.insert("heart".to_string(), crate::drawing::icon());
+    canvas::automatic_with(
+        &document,
+        &sheet,
+        &canvas::PageStyle::from_spec(&page.page),
+        fonts(),
+        &pictures,
+    )
+}
+
 /// The spec `spec/{dir}/{name}.ron`.
 fn spec(dir: &str, name: &str) -> String {
     testkit::specs(dir)
