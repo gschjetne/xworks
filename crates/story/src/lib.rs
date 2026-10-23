@@ -477,6 +477,7 @@ pub fn lay_out_at(
             hyphenate: style.hyphenate.unwrap_or(align == Align::Justify),
             hyphenation: Some(hyphenation),
             tabs: Some(&tabs),
+            objects: &[],
         },
     );
     // The marker is in the paragraph's style, whatever its runs say.

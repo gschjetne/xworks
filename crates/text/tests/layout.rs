@@ -197,6 +197,7 @@ fn lay_out(case: &Case) -> Layout {
             hyphenate: case.hyphenate,
             hyphenation: Some(hyphenation()),
             tabs: tabs.as_ref(),
+            objects: &[],
         },
     )
 }

@@ -144,8 +144,9 @@ pub struct Paragraph<'a> {
 }
 
 /// How a paragraph is set beyond its text and styles: whether its words
-/// are hyphenated, and where its tabs go. The default hyphenates nothing
-/// but at soft hyphens, and makes tabs as wide as spaces.
+/// are hyphenated, where its tabs go, and what objects stand in its text.
+/// The default hyphenates nothing but at soft hyphens, makes tabs as wide
+/// as spaces, and has no objects.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Setting<'a> {
     /// Whether words may be hyphenated at lines' ends, by their language's
@@ -155,6 +156,41 @@ pub struct Setting<'a> {
     pub hyphenation: Option<&'a Hyphenation>,
     /// The tab stops.
     pub tabs: Option<&'a Tabs>,
+    /// Objects set in the text as characters are, such as pictures, by the
+    /// characters they stand for.
+    pub objects: &'a [Inline],
+}
+
+/// Something set in a paragraph's text as a character is, such as a
+/// picture: a box standing on the baseline in place of the character at
+/// `offset`, usually U+FFFC OBJECT REPLACEMENT CHARACTER. Lines break
+/// around it as the character allows, the caret stands either side of it,
+/// and its line is at least as tall above the baseline as it is. No font
+/// draws it: its caller draws it where [`Line::objects`] says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Inline {
+    /// The byte offset of the character it stands for. One that isn't a
+    /// character's start in the text, or that's there twice, is ignored.
+    pub offset: usize,
+    /// Its width, in layout units; negative counts as none.
+    pub width: i64,
+    /// Its height above the baseline, in layout units; negative counts
+    /// as none.
+    pub height: i64,
+}
+
+/// An inline object on a line, where layout put it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Placed {
+    /// The byte offset of the character it stands for.
+    pub offset: usize,
+    /// Its left edge, from the paragraph's left edge.
+    pub x: i64,
+    /// Its width.
+    pub width: i64,
+    /// Its height: it stands on the line's baseline, so its top is the
+    /// baseline less this.
+    pub height: i64,
 }
 
 /// A paragraph laid out: its lines, top to bottom. Positions are in layout
@@ -221,6 +257,8 @@ pub struct Line {
     pub hyphen: bool,
     /// Its glyphs, in runs from left to right.
     pub runs: Vec<GlyphRun>,
+    /// Its inline objects, from left to right, for the caller to draw.
+    pub objects: Vec<Placed>,
     /// Its graphemes from left to right, where the caret can stand.
     pub(crate) cells: Vec<Cell>,
 }
@@ -308,7 +346,20 @@ pub fn layout_with(fonts: &Fonts, paragraph: &Paragraph<'_>, setting: &Setting<'
     );
     let bidi = Bidi::new(text, paragraph.direction);
     let graphemes = locale::graphemes(text);
-    let items = shape::itemize(fonts, text, paragraph.spans, &bidi, &graphemes);
+    // The objects that stand for characters, in order, once each.
+    let mut objects: Vec<Inline> = setting
+        .objects
+        .iter()
+        .filter(|o| o.offset < text.len() && text.is_char_boundary(o.offset))
+        .map(|o| Inline {
+            width: o.width.max(0),
+            height: o.height.max(0),
+            ..*o
+        })
+        .collect();
+    objects.sort_by_key(|o| o.offset);
+    objects.dedup_by_key(|o| o.offset);
+    let items = shape::itemize(fonts, text, paragraph.spans, &bidi, &graphemes, &objects);
     let missing = items.iter().any(|item| item.missing);
 
     // Each cluster's advance, at the offset where it starts, and their
@@ -347,6 +398,7 @@ pub fn layout_with(fonts: &Fonts, paragraph: &Paragraph<'_>, setting: &Setting<'
             .map(|(i, _)| i)
             .collect(),
         glue,
+        objects,
     };
 
     let hard_breaks: Vec<usize> = text
@@ -434,6 +486,8 @@ struct Shaping<'a> {
     /// Where the text's tabs are.
     tab_offsets: Vec<usize>,
     glue: Glue,
+    /// The inline objects, by offset.
+    objects: Vec<Inline>,
 }
 
 impl Shaping<'_> {
@@ -570,6 +624,7 @@ impl Shaping<'_> {
             item.face,
             level,
             item.script,
+            &self.objects,
         )
     }
 
@@ -700,6 +755,7 @@ impl Shaping<'_> {
                 item.face,
                 item.level,
                 item.script,
+                &[],
             );
             glyphs.first().map(|g| Shaped {
                 advance: glyphs.iter().map(|g| g.advance).sum(),
@@ -752,6 +808,7 @@ fn build_line(
                         item.face,
                         level,
                         item.script,
+                        &shaping.objects,
                     )
                 } else if sub == part {
                     glyphs.clone()
@@ -833,13 +890,23 @@ fn build_line(
 
     let mut runs = Vec::new();
     let mut cells = Vec::new();
+    let mut objects = Vec::new();
     for &i in &order {
         let piece = &pieces[i];
         let item = &shaping.items[piece.item];
         let x = pen;
         let mut glyphs = Vec::with_capacity(piece.glyphs.len());
         for g in &piece.glyphs {
-            if !g.hidden {
+            if g.object {
+                // No font draws it: its caller does, here.
+                let height = shape::object_at(&shaping.objects, g.cluster).map_or(0, |o| o.height);
+                objects.push(Placed {
+                    offset: g.cluster,
+                    x: pen,
+                    width: g.advance,
+                    height,
+                });
+            } else if !g.hidden {
                 glyphs.push(Glyph {
                     id: g.id,
                     x: pen + g.x_offset,
@@ -883,6 +950,10 @@ fn build_line(
         ascent = ascent.max(scale(face.ascent, size, upem) + gap / 2);
         descent = descent.max(scale(face.descent, size, upem) + gap - gap / 2);
     }
+    // And as tall as its objects, which stand on the baseline.
+    for object in &objects {
+        ascent = ascent.max(object.height);
+    }
     Line {
         range,
         top,
@@ -894,6 +965,7 @@ fn build_line(
         width,
         hyphen,
         runs,
+        objects,
         cells,
     }
 }

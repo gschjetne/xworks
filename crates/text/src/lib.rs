@@ -11,8 +11,11 @@
 //!   stretched. Each line is ordered for display by the bidi algorithm.
 //! - [`Hyphenator`] and [`Hyphenation`]: hyphenation by Liang's
 //!   algorithm, from TeX's pattern files as they ship; a [`Setting`] says
-//!   whether a paragraph's words are hyphenated, and where its [`Tabs`]
-//!   are.
+//!   whether a paragraph's words are hyphenated, where its [`Tabs`] are,
+//!   and what [`Inline`] objects, such as pictures, stand in its text,
+//!   each for a character, as boxes on the baseline that lines break
+//!   around and grow to hold; each line says where they went
+//!   ([`Placed`]), for the caller to draw.
 //! - [`Layout::paint`]: the paragraph as display-list glyph runs (`scene`),
 //!   each glyph with the text it shows.
 //! - [`Layout`]'s editing queries ([`Cursor`], [`Caret`]): where the
@@ -51,8 +54,8 @@ pub use caret::{Affinity, Caret, Cursor, Rect};
 pub use font::{Face, FaceId, FamilySpec, FontError, FontSpec, Fonts};
 pub use hyphen::{Hyphenation, Hyphenator};
 pub use layout::{
-    Align, Glyph, GlyphRun, Layout, Ligatures, Line, Paragraph, Setting, Span, Style, layout,
-    layout_with,
+    Align, Glyph, GlyphRun, Inline, Layout, Ligatures, Line, Paragraph, Placed, Setting, Span,
+    Style, layout, layout_with,
 };
 pub use locale::{Direction, Language};
 pub use paint::Decoration;

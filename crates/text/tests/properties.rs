@@ -127,6 +127,7 @@ fn lay_out(
             hyphenate: bold,
             hyphenation: Some(hyphenation()),
             tabs: Some(&tabs),
+            objects: &[],
         },
     )
 }
