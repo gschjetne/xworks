@@ -342,7 +342,7 @@ pub fn blocks_pages() -> canvas::Pages {
 }
 
 /// The spec `spec/{dir}/{name}.ron`.
-fn spec(dir: &str, name: &str) -> String {
+pub(crate) fn spec(dir: &str, name: &str) -> String {
     testkit::specs(dir)
         .expect("spec/")
         .into_iter()
@@ -352,17 +352,16 @@ fn spec(dir: &str, name: &str) -> String {
 }
 
 /// The editor's window after the tour session (`spec/sessions/tour.ron`),
-/// with a menu open if `menu` names one, as a display list.
-fn editor_after_tour(menu: Option<(f64, f64)>) -> Page {
+/// with the menu open whose access key `menu` is, as Alt and the key open
+/// it, as a display list.
+fn editor_after_tour(menu: Option<char>) -> Page {
     let mut session = session("tour");
-    if let Some((x, y)) = menu {
-        session.events.push(app::session::Step::Hover(x, y));
-        session.events.push(app::session::Step::Click(x, y));
+    if let Some(key) = menu {
         session
             .events
-            .push(app::session::Step::Hover(x + 20.0, 41.0));
+            .push(app::session::Step::Key(format!("Alt+{key}")));
     }
-    play(&session).editor.view()
+    play(&session).window.view()
 }
 
 /// The pages of the document M1's exit session types
@@ -374,7 +373,7 @@ pub fn exit_sheet() -> Page {
 /// The pages of the document M1's exit session types, undoes, redoes and
 /// opens again.
 pub fn exit_pages() -> canvas::Pages {
-    play(&session("exit")).editor.pages()
+    play(&session("exit")).editor().pages()
 }
 
 /// The session `spec/sessions/{name}.ron`.
@@ -408,10 +407,10 @@ pub fn editor_page() -> Page {
 /// The editor after the lists session (`spec/sessions/lists.ron`): lists
 /// typed, nested, numbered, closed and opened again.
 pub fn editor_lists_page() -> Page {
-    play(&session("lists")).editor.view()
+    play(&session("lists")).window.view()
 }
 
-/// The editor after the tour, with the Format menu open.
+/// The editor after the tour, with the Format menu open from the keyboard.
 pub fn editor_menu_page() -> Page {
-    editor_after_tour(Some((220.0, 13.0)))
+    editor_after_tour(Some('o'))
 }

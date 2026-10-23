@@ -1,0 +1,15 @@
+// File, Move To asks for a place in the system's own dialog, and the
+// document's file goes there, named by hand; editing goes on.
+(
+    size: (900, 700),
+    events: [
+        Type("Moving"),
+        Command("move-to"),
+        Choose(Some("Elsewhere/Moved.xw")),
+        Key("Enter"),
+        Type("On"),
+    ],
+    expect: [("Body", "Moving"), ("Body", "On")],
+    name: Some("Moved"),
+    file: Some("Moved"),
+)

@@ -1,15 +1,15 @@
 // Clicking puts the caret where the click is; dragging selects, and typing
 // replaces the selection. At 900 by 700 the first line of text starts near
-// (148, 137): left of it is the line's start.
+// (148, 183): left of it is the line's start.
 (
     size: (900, 700),
     events: [
         Type("Click"),
         Key("Enter"),
         Type("here"),
-        Click(100, 145),
+        Click(100, 191),
         Type(">"),
-        Drag((100, 145), (800, 145)),
+        Drag((100, 191), (800, 191)),
         Type("Replaced"),
     ],
     expect: [("Body", "Replaced"), ("Body", "here")],

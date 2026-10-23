@@ -1,0 +1,23 @@
+// The ruler, at 1280 by 800, its column starting at 337.6 pixels, 3 cm to
+// 113.4 of them: a click at its foot sets a tab stop, snapped to the
+// nearest 2.5 mm; a stop dragged moves, and dragged off the ruler goes;
+// the start indent dragged moves the paragraph in.
+(
+    size: (1280, 800),
+    events: [
+        Type("Tabbed\tText"),
+        // A stop at 3 cm, dragged on to 4 cm.
+        Click(451, 60),
+        Drag((451, 60), (489, 60)),
+        // The start indent, 5 mm in.
+        Drag((338, 60), (357, 60)),
+        // A stop at 6 cm, dragged off.
+        Click(564, 60),
+        Drag((564, 60), (564, 200)),
+    ],
+    expect: [("Body", "Tabbed\tText")],
+    props: [
+        ("Tabbed", "tabs", Some("start 1440000")),
+        ("Tabbed", "indent-start", Some("180000")),
+    ],
+)

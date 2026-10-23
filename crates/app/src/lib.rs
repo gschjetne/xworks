@@ -4,9 +4,14 @@
 //!
 //! - [`Resources`]: what every window shares, loaded once.
 //! - [`session`]: scripted sessions, played headless.
-//! - [`Editor`]: one document in one window. Shells feed it [`Event`]s and
-//!   carry out the [`Effect`]s it returns; [`Editor::view`] draws the window
-//!   as a display list, which the shell renders.
+//! - [`Window`]: one document in one window, with the chrome xWorks draws
+//!   around it: its title bar and menus, the ruler, the inspector, the
+//!   command palette and the status bar, light or dark. Shells feed it
+//!   [`Event`]s and carry out the [`Effect`]s it returns; [`Window::view`]
+//!   draws it as a display list, which the shell renders.
+//! - [`Editor`]: the document's story, edited, on pages or as a draft: the
+//!   first part behind the canvas contract (`part`).
+//! - [`Recent`]: the documents opened lately.
 //! - [`picture`]: PNG, JPEG, GIF and WebP files decoded, in sRGB, to
 //!   place in documents and draw.
 //!
@@ -26,9 +31,15 @@
 mod blocks;
 mod editor;
 pub mod picture;
+mod recent;
 mod resources;
 pub mod session;
 mod view;
+mod window;
 
-pub use editor::{Choice, Editor, EditorError, Effect, Event, Position};
+pub use editor::{
+    Choice, Edge, Editor, EditorError, Effect, Event, PointerShape, Position, View, WindowAction,
+};
+pub use recent::Recent;
 pub use resources::{ResourceError, Resources};
+pub use window::Window;

@@ -1,0 +1,39 @@
+// On Windows and Linux, Ctrl and the arrows move by words, forward to the
+// next word's start and back to a word's start, and with Shift they select
+// a word with the space after it (project owner, 2026-10-23, review
+// dcn5ejrd; words.ron has a Mac's). Forward past a paragraph's last word
+// goes to its end, then to the start of the next paragraph.
+(
+    size: (900, 700),
+    events: [
+        Type("The cat's toy is lost. Find it."),
+        Key("Primary+Home"),
+        // To the start of "cat's", then of "toy".
+        Repeat("Primary+Right", 2),
+        Type("red "),
+        // Back to the start of "red", and "red " selected, its space too.
+        Key("Primary+Left"),
+        Key("Primary+Shift+Right"),
+        // On to the end of the sentence.
+        Command("select-sentence-right"),
+        Command("copy"),
+        // To the end of the next sentence.
+        Command("sentence-right"),
+        Type(" Now."),
+        Key("Enter"),
+        Type("Second line"),
+        // Back past "line" and "Second", into the paragraph before, to the
+        // start of its last word.
+        Repeat("Primary+Left", 3),
+        Type("X"),
+        // Forward to the end of the paragraph, past "XNow" and its full
+        // stop; to the start of the next; to the start of "line".
+        Repeat("Primary+Right", 3),
+        Type("?"),
+    ],
+    expect: [
+        ("Body", "The cat's red toy is lost. Find it. XNow."),
+        ("Body", "Second ?line"),
+    ],
+    clipboard: Some("red toy is lost."),
+)

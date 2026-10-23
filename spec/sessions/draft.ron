@@ -1,0 +1,19 @@
+// The draft view: the story in one column of readable width, without
+// pages, on the desk, Pages a command away. At 900 by 700 its column is
+// 640 pixels wide from 130, and its first line starts near (130, 102).
+(
+    size: (900, 700),
+    events: [
+        Type("A draft"),
+        Command("view-draft"),
+        Key("Enter"),
+        Type("in one column"),
+        Command("view-pages"),
+        Command("view-draft"),
+        Click(132, 110),
+        Type(">"),
+    ],
+    expect: [("Body", ">A draft"), ("Body", "in one column")],
+    on: ["view-draft"],
+    off: ["view-pages"],
+)

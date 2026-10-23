@@ -1,16 +1,16 @@
 // A double click selects a word, and typing replaces it; a triple click
 // selects a sentence, with the space after it. The shell counts clicks in
 // one place; here each step clicks two or three times. At 900 by 700 the
-// first line of text starts near (148, 137).
+// first line of text starts near (148, 183).
 (
     size: (900, 700),
     events: [
         Type("The first sentence is here. The second one follows it."),
         // On "first".
-        DoubleClick(182, 145),
+        DoubleClick(182, 191),
         Type("1st"),
         // On "second".
-        TripleClick(360, 145),
+        TripleClick(360, 191),
         Command("copy"),
     ],
     expect: [("Body", "The 1st sentence is here. The second one follows it.")],

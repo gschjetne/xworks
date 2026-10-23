@@ -1,0 +1,22 @@
+// The command palette finds every command by name, from the keyboard:
+// titles that start with what's typed first, then those with its letters
+// in order; Enter runs the one lit, and Escape closes it.
+(
+    size: (1280, 800),
+    events: [
+        Type("A heading by name"),
+        Key("Primary+Shift+P"),
+        Type("head"),
+        Key("Enter"),
+        Key("Primary+A"),
+        Key("Primary+Shift+P"),
+        Type("bld"),
+        Key("Enter"),
+        Key("Primary+Shift+P"),
+        Type("italic"),
+        Key("Escape"),
+    ],
+    expect: [("Heading 1", "A heading by name")],
+    marks: [("A heading by name", ["bold"])],
+    off: ["italic"],
+)

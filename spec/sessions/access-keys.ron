@@ -1,0 +1,25 @@
+// On Windows and Linux, Alt and a menu's access key opens it, and an item's
+// access key chooses it; Alt alone goes to the menus, which the arrows,
+// Enter and Escape move about (ARCHITECTURE.md section 8).
+(
+    size: (900, 700),
+    events: [
+        Type("Bold and italic by keys"),
+        Key("Primary+A"),
+        // Alt+O opens Format, and B chooses Bold.
+        Key("Alt+O"),
+        Type("b"),
+        // Alt alone; right to Format; down into it, to Italic; Enter.
+        Key("Alt"),
+        Repeat("Right", 4),
+        Repeat("Down", 2),
+        Key("Enter"),
+        // Alt, then Escape, leaves the menus, and keys go to the text.
+        Key("Alt"),
+        Key("Escape"),
+        Key("End"),
+        Type("!"),
+    ],
+    expect: [("Body", "Bold and italic by keys!")],
+    marks: [("Bold and italic by keys", ["bold", "italic"])],
+)

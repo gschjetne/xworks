@@ -1,40 +1,52 @@
-//! Drawing a window: the pages in view, the selection, the caret and the
-//! composition, then the chrome over them.
+//! Drawing the editor's area: the pages in view, or the draft's column on
+//! the desk, then the selection, the caret and the composition. The window
+//! draws the chrome around it.
 
+use part::Look;
 use scene::{Color, Item, Page, Path, Point};
 use text::units::PIXEL;
+use toolkit::Rect;
 
 use crate::Editor;
 
-pub(crate) fn draw(editor: &Editor) -> Page {
+pub(crate) fn draw(editor: &Editor, look: &Look) -> Page {
     let res = editor.resources();
     let parts = editor.view_parts();
     let fonts = res.fonts();
-    let style = &res.page;
+    let style = editor.page_style();
     let mut out = Page::new(parts.width, parts.height);
-    out.fill_background(res.theme.desk);
+    out.fill_background(look.desk);
 
-    // The pages in view, and their text.
+    // The pages in view, and their text; or the draft's, on the desk.
     let (view_top, view_bottom) = (parts.top, parts.top + parts.view_height);
     for n in 0..parts.pages {
         let (x, y) = editor.origin_of_page(n);
-        if y + style.height < view_top || y > view_bottom {
+        let height = if parts.draft {
+            editor.draft_bottom()
+        } else {
+            style.height
+        };
+        if y + height < view_top || y > view_bottom {
             continue;
         }
-        out.items.push(Item::Fill {
-            path: Path::rect(x + 2 * PIXEL, y + 2 * PIXEL, style.width, style.height),
-            color: Color {
-                r: 0,
-                g: 0,
-                b: 0,
-                a: 45,
-            },
-        });
-        out.items.push(Item::Fill {
-            path: Path::rect(x, y, style.width, style.height),
-            color: Color::WHITE,
-        });
-        out.items.extend(canvas::paint_page(
+        if !parts.draft {
+            // A soft shadow, as the mockups have it, and the page.
+            let r = 2 * PIXEL;
+            for (dx, dy, dw) in [(-PIXEL, 0, 2 * PIXEL), (0, PIXEL, 0)] {
+                out.items.push(Item::Fill {
+                    path: toolkit::rounded(
+                        Rect::new(x + dx, y + dy, style.width + dw, style.height),
+                        r,
+                    ),
+                    color: look.shadow,
+                });
+            }
+            out.items.push(Item::Fill {
+                path: Path::rect(x, y, style.width, style.height),
+                color: look.page,
+            });
+        }
+        let painted = canvas::paint_page(
             &res.sheet.blocks,
             canvas::Poured {
                 paragraphs: parts.paragraphs,
@@ -45,7 +57,13 @@ pub(crate) fn draw(editor: &Editor) -> Page {
             Point::new(x + style.left, y + style.top),
             fonts,
             None,
-        ));
+        );
+        if parts.draft {
+            out.items
+                .extend(painted.into_iter().map(|item| on_desk(item, res, look)));
+        } else {
+            out.items.extend(painted);
+        }
     }
 
     // The selection, a rectangle for each stretch together on screen.
@@ -60,40 +78,60 @@ pub(crate) fn draw(editor: &Editor) -> Page {
                 k,
                 layout,
                 start..end,
-                res.theme.selection,
+                look.selection,
                 false,
             );
         }
     }
+    let ink = if parts.draft { look.ink } else { look.page_ink };
     // The composition, underlined.
     if let Some((k, from, to)) = parts.composition {
         let layout = &parts.paragraphs[k].layout;
-        highlight(editor, &mut out, k, layout, from..to, Color::BLACK, true);
+        highlight(editor, &mut out, k, layout, from..to, ink, true);
     }
     if let Some((x, top, bottom)) = parts.caret {
         out.items.push(Item::Fill {
             path: Path::rect(x - PIXEL / 2, top, PIXEL * 3 / 2, bottom - top),
-            color: Color::BLACK,
+            color: ink,
         });
     }
-
-    // The chrome over everything.
-    let theme = &res.theme;
-    let (status, _) = toolkit::status_bar(
-        fonts,
-        theme,
-        &parts.status,
-        &parts.message,
-        parts.width,
-        parts.height,
-    );
-    out.items.extend(status);
-    out.items
-        .extend(parts.menu.draw(fonts, theme, parts.hover.as_ref()));
-    if let Some((list, selected)) = &parts.list {
-        out.items.extend(list.draw(fonts, theme, Some(*selected)));
-    }
     out
+}
+
+/// `item` as the draft shows it on the desk: text in the look's ink, and
+/// tints, bars and rules in its colours, so it reads in light and dark.
+fn on_desk(item: Item, res: &crate::Resources, look: &Look) -> Item {
+    let blocks = &res.sheet.blocks;
+    let rgb = |(r, g, b): (u8, u8, u8)| Color::rgb(r, g, b);
+    let recolor = |color: Color| {
+        if color == Color::BLACK || color == rgb(blocks.rule_color) {
+            look.ink
+        } else if color == rgb(blocks.link_color) {
+            look.accent
+        } else if color == rgb(blocks.code_tint) {
+            look.tint
+        } else if color == rgb(blocks.quote_color) || color == rgb(blocks.hairline_color) {
+            look.line
+        } else {
+            color
+        }
+    };
+    match item {
+        Item::Glyphs(mut g) => {
+            g.color = recolor(g.color);
+            Item::Glyphs(g)
+        }
+        Item::Fill { path, color } => Item::Fill {
+            path,
+            color: recolor(color),
+        },
+        Item::Stroke { path, width, color } => Item::Stroke {
+            path,
+            width,
+            color: recolor(color),
+        },
+        other => other,
+    }
 }
 
 /// Fills `range` of paragraph `k`'s text, or underlines it.

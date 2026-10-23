@@ -1,0 +1,26 @@
+// xWorks' own title bar (review 3ce247c2), at 1280 by 800: pressing where
+// nothing is moves the window, and a double click maximises it; its own
+// buttons minimise, maximise and close it; its edges resize it; the
+// inspector's button opens the inspector, and Draft and Pages switch the
+// view.
+(
+    size: (1280, 800),
+    events: [
+        Click(500, 20),
+        DoubleClick(500, 20),
+        // Minimise, then maximise.
+        Click(1165, 20),
+        Click(1211, 20),
+        // The right edge.
+        Click(1279, 400),
+        // The inspector's button, then Draft.
+        Click(1116, 20),
+        Click(996, 20),
+        // Close.
+        Click(1257, 20),
+    ],
+    expect: [("Body", "")],
+    actions: Some(["Drag", "Drag", "ToggleMaximize", "Minimize", "ToggleMaximize", "Resize(East)", "Close"]),
+    on: ["toggle-inspector", "view-draft", "toggle-ruler"],
+    off: ["view-pages"],
+)

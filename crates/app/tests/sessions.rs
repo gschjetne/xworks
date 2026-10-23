@@ -34,7 +34,7 @@ fn sessions_end_as_they_expect() {
             failures.push(format!("{name}: {problem}"));
         }
         // The window draws.
-        assert!(!played.editor.view().items.is_empty(), "{name}");
+        assert!(!played.window.view().items.is_empty(), "{name}");
     }
     assert!(failures.is_empty(), "\n{}", failures.join("\n"));
 }
@@ -133,9 +133,9 @@ fn the_exit_document_reopens_and_exports_the_same() {
     let played = session::play(res.clone(), &exit).expect("the session plays");
     let problems = session::check(&exit, &played);
     assert!(problems.is_empty(), "{problems:?}");
-    let path = played.editor.path().to_path_buf();
-    let dump = played.editor.document().dump();
-    let drawn = renders(&played.editor.pages());
+    let path = played.editor().path().to_path_buf();
+    let dump = played.editor().document().dump();
+    let drawn = renders(&played.editor().pages());
     assert!(drawn.len() >= 3, "several pages, not {}", drawn.len());
     drop(played);
 
@@ -187,9 +187,9 @@ fn layout_kept_through_edits_is_layout_made_afresh() {
         let mut played = session::play(res.clone(), &session).expect("the session plays");
         // A composition in progress is shown but not in the document:
         // it's cancelled first.
-        played.editor.update(app::Event::Preedit(String::new()));
-        let pages = played.editor.pages();
-        let path = played.editor.path().to_path_buf();
+        played.window.update(app::Event::Preedit(String::new()));
+        let pages = played.editor().pages();
+        let path = played.editor().path().to_path_buf();
         drop(played);
         let fresh = app::Editor::open(res, &path).expect("it opens").pages();
         if pages.structure != fresh.structure || renders(&pages) != renders(&fresh) {

@@ -1,25 +1,30 @@
-//! One document in one window: its file, its text and history, where the
-//! caret is, and what the window shows. Shells feed it [`Event`]s and carry
-//! out the [`Effect`]s it returns; [`Editor::view`] draws the window.
+//! One document's story, edited: its file, its text and history, where the
+//! caret is, and how it's shown, on pages or as a draft. It's the first
+//! part behind the canvas contract (`part`): a [`crate::Window`] holds it
+//! and draws the chrome around it. It takes [`Event`]s and returns
+//! [`Effect`]s; [`Editor::view`] draws its area of the window.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
+use crate::{Resources, blocks};
 use canvas::Piece;
-use chrome::{CommandState, Key, Modifiers};
+use chrome::{Arg, CommandState, Key, Modifiers};
 use doc::{Document, History, Object, ObjectId, Op, Paragraph, Props, Run, Transaction, Value};
 use rayon::prelude::*;
 use store::{Entry, Store};
 use story::{ParagraphLayout, keys};
 use text::units::{PIXEL, POINT};
 use text::{Affinity, Cursor};
-use toolkit::{List, MenuBar, MenuHit};
 
-use crate::{Resources, blocks};
-
+mod access;
+mod file;
+mod format;
+mod part;
 mod units;
 
+pub(crate) use part::view_look;
 use units::Unit;
 
 /// A place in a document: a paragraph, an offset into its text in
@@ -83,24 +88,64 @@ pub enum Event {
     },
     /// A command, from a menu, a shortcut or a script.
     Command(String),
+    /// A command with its arguments, from the inspector, the ruler, a
+    /// submenu or a script.
+    CommandWith(String, Vec<Arg>),
     /// Text from the clipboard, after [`Effect::Paste`].
     Pasted(String),
     /// The file a person chose, after [`Effect::Choose`], or `None` if they
     /// chose none.
     Chosen(Choice, Option<PathBuf>),
+    /// The system's look changed: dark, or light.
+    Theme {
+        /// Whether it's dark.
+        dark: bool,
+    },
+    /// The window was maximised, or restored.
+    Maximized(bool),
 }
 
-/// What a file is chosen for, through the system's own dialog (ARCHITECTURE.md
-/// section 8): the shell shows the dialog [`Effect::Choose`] asks for and
-/// sends back [`Event::Chosen`].
+/// What a file is chosen for, through the system's own dialog
+/// (ARCHITECTURE.md section 8): the shell shows the dialog
+/// [`Effect::Choose`] asks for and sends back [`Event::Chosen`]. It's
+/// `part`'s, as parts ask for files too.
+pub use ::part::Choice;
+
+/// What the window itself does, which only the shell can: xWorks draws its
+/// own title bar (review 3ce247c2), so its buttons and edges ask for these.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Choice {
-    /// A document to open.
-    Open,
-    /// Where to move the document, which renames it too.
-    MoveTo,
-    /// A picture to place in the document.
-    Picture,
+pub enum WindowAction {
+    /// Move the window with the pointer, from a press in the title bar.
+    Drag,
+    /// Resize it with the pointer from an edge or corner.
+    Resize(Edge),
+    /// Minimise it.
+    Minimize,
+    /// Maximise it, or restore it if it's maximised.
+    ToggleMaximize,
+    /// Close it.
+    Close,
+}
+
+/// An edge or corner of a window.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Edge {
+    /// The top.
+    North,
+    /// The bottom.
+    South,
+    /// The right.
+    East,
+    /// The left.
+    West,
+    /// The top right.
+    NorthEast,
+    /// The top left.
+    NorthWest,
+    /// The bottom right.
+    SouthEast,
+    /// The bottom left.
+    SouthWest,
 }
 
 /// Something the shell does for the editor.
@@ -121,6 +166,22 @@ pub enum Effect {
     Choose(Choice),
     /// Quit the app.
     Quit,
+    /// Do something to the window itself.
+    Window(WindowAction),
+    /// Show the pointer as this over the window.
+    Pointer(PointerShape),
+}
+
+/// What the pointer looks like over a window.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum PointerShape {
+    /// The arrow.
+    #[default]
+    Arrow,
+    /// The text beam, over text that can be edited.
+    Text,
+    /// Resizing the window from an edge or corner.
+    Resize(Edge),
 }
 
 /// Why a document couldn't be opened or made.
@@ -167,17 +228,13 @@ struct Laid {
     words: Vec<usize>,
 }
 
-/// The Open panel: documents to choose from.
-struct Panel {
-    paths: Vec<PathBuf>,
-    selected: usize,
-}
-
 /// One document in one window.
 pub struct Editor {
     res: Arc<Resources>,
     path: PathBuf,
-    store: Store,
+    /// The document's file; none only while it's moved, or if it couldn't
+    /// be opened again after.
+    store: Option<Store>,
     document: Document,
     history: History,
     laid: Laid,
@@ -194,9 +251,11 @@ pub struct Editor {
     width: i64,
     height: i64,
     scroll: i64,
-    menu: Option<usize>,
-    hover: Option<MenuHit>,
-    panel: Option<Panel>,
+    /// Whether the story is shown on pages or as a draft.
+    view: View,
+    /// Whether the person named the document; until they do, it's named
+    /// after its first heading or line (review a23vvez8).
+    named: bool,
     dragging: bool,
     /// What a double or triple click selected, which dragging extends.
     dragged: Option<(Unit, Position, Position)>,
@@ -205,8 +264,17 @@ pub struct Editor {
 
 /// Sizes for Bigger and Smaller, in points.
 const SIZES: &[i64] = &[8, 9, 10, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48, 72];
-/// Space between pages, and around them.
-const GAP: i64 = 16 * PIXEL;
+
+/// How a story is shown (ARCHITECTURE.md section 8).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum View {
+    /// On pages, as it prints.
+    #[default]
+    Pages,
+    /// As a draft: one column of readable width, without pages, on the
+    /// desk.
+    Draft,
+}
 
 fn chars(text: &str) -> u32 {
     text.chars().count() as u32
@@ -278,9 +346,7 @@ impl Editor {
             opened.document,
             opened.history,
         );
-        if let Some(schema) = editor.store.read_only() {
-            editor.message = format!("Read-only: made by a newer xWorks (schema {schema})");
-        }
+        editor.unwritable();
         Ok(editor)
     }
 
@@ -300,7 +366,7 @@ impl Editor {
         let mut editor = Editor {
             res,
             path,
-            store,
+            store: Some(store),
             laid: Laid {
                 document: Document::new(),
                 paragraphs: Vec::new(),
@@ -326,13 +392,13 @@ impl Editor {
             width: 800 * PIXEL,
             height: 600 * PIXEL,
             scroll: 0,
-            menu: None,
-            hover: None,
-            panel: None,
+            view: View::Pages,
+            named: false,
             dragging: false,
             dragged: None,
             message: String::new(),
         };
+        editor.named = !editor.auto_named();
         editor.relayout(true);
         editor
     }
@@ -342,7 +408,7 @@ impl Editor {
         &self.path
     }
 
-    /// The window's title: the document's name.
+    /// The document's name, as its file has it.
     pub fn title(&self) -> String {
         self.path.file_stem().map_or_else(
             || "Untitled".to_string(),
@@ -350,9 +416,48 @@ impl Editor {
         )
     }
 
+    /// How the story is shown.
+    pub fn view_mode(&self) -> View {
+        self.view
+    }
+
     /// The document.
     pub fn document(&self) -> &Document {
         &self.document
+    }
+
+    /// What the status bar says at its end, if anything: what was just
+    /// done, or why it couldn't be.
+    pub fn message(&self) -> &str {
+        &self.message
+    }
+
+    /// Says `message` in the status bar.
+    pub(crate) fn say(&mut self, message: &str) {
+        self.message = message.to_string();
+    }
+
+    /// Whether the document can be changed: its file is open, and not
+    /// from a newer xWorks.
+    pub(crate) fn writable(&self) -> bool {
+        self.store.as_ref().is_some_and(|s| s.read_only().is_none())
+    }
+
+    /// Whether the document can't be changed, saying why if so.
+    fn unwritable(&mut self) -> bool {
+        match &self.store {
+            Some(store) => match store.read_only() {
+                Some(schema) => {
+                    self.message = format!("Read-only: made by a newer xWorks (schema {schema})");
+                    true
+                }
+                None => false,
+            },
+            None => {
+                self.message = "Read-only: the document's file can't be reached".to_string();
+                true
+            }
+        }
     }
 
     /// The selection: where it started and where it ends, which is where
@@ -406,7 +511,7 @@ impl Editor {
     /// kept, every other paragraph keeps its layout where it is, and only
     /// the changed paragraph's block is made again before pouring.
     fn relayout(&mut self, all: bool) {
-        let width = self.res.page.body_width();
+        let width = self.page_style().body_width();
         // Whether `id` is the very object it was when last laid out.
         let was = self.laid.document.clone();
         let now = &self.document;
@@ -584,7 +689,7 @@ impl Editor {
                 canvas::blocks(&paragraphs, look),
             )
         };
-        let pages = canvas::paginate(self.res.page.body_height(), &blocks);
+        let pages = canvas::paginate(self.page_style().body_height(), &blocks);
         let mut places: Vec<Vec<(usize, i64)>> = paragraphs
             .iter()
             .map(|p| vec![(0, 0); p.layout.lines.len()])
@@ -647,25 +752,84 @@ impl Editor {
 
     // ---- geometry: positions on pages, in the window
 
-    /// The top of the area pages show in.
+    /// The top of its area: its own coordinates start there.
     fn top(&self) -> i64 {
-        MenuBar::height(&self.res.theme)
+        0
     }
 
-    /// The height of the area pages show in.
+    /// The height of its area.
     fn view_height(&self) -> i64 {
-        (self.height - self.top() - self.res.theme.bar_height).max(PIXEL)
+        self.height.max(PIXEL)
     }
 
-    /// Page `n`'s top left, in document coordinates.
+    /// The room above the first page, and between pages.
+    fn gaps(&self) -> (i64, i64) {
+        let s = &self.res.sizes;
+        match self.view {
+            View::Pages => (s.page_top.units(), s.page_gap.units()),
+            View::Draft => (s.draft_top.units(), s.page_gap.units()),
+        }
+    }
+
+    /// How wide the draft's column is: as wide as reads well, or the area
+    /// less a gap at each side.
+    fn column(&self) -> i64 {
+        let s = &self.res.sizes;
+        let gap = s.page_gap.units();
+        s.draft_column
+            .units()
+            .min(self.width - 2 * gap)
+            .max(160 * PIXEL)
+    }
+
+    /// The page the story is poured into: the page style's, or as a
+    /// draft, one column as tall as it needs, without margins.
+    pub(crate) fn page_style(&self) -> canvas::PageStyle {
+        match self.view {
+            View::Pages => self.res.page,
+            View::Draft => canvas::PageStyle {
+                width: self.column(),
+                height: i64::MAX / 8,
+                top: 0,
+                bottom: 0,
+                left: 0,
+                right: 0,
+            },
+        }
+    }
+
+    /// How tall the draft's text is.
+    fn draft_height(&self) -> i64 {
+        let Some(pieces) = self.laid.pages.first() else {
+            return 0;
+        };
+        pieces.last().map_or(0, |piece| {
+            let block = &self.laid.blocks[piece.block];
+            piece.y + block.lines[piece.lines.clone()].iter().sum::<i64>()
+        })
+    }
+
+    /// Page `n`'s top left, in document coordinates: centred across the
+    /// area, on a whole pixel, so its edges are sharp.
     fn page_origin(&self, n: usize) -> (i64, i64) {
-        let page = &self.res.page;
-        let x = ((self.width - page.width) / 2).max(GAP);
-        (x, GAP + n as i64 * (page.height + GAP))
+        let (top, gap) = self.gaps();
+        let whole = |x: i64| (x + PIXEL / 2).div_euclid(PIXEL) * PIXEL;
+        match self.view {
+            View::Pages => {
+                let page = &self.res.page;
+                let x = whole((self.width - page.width) / 2).max(gap);
+                (x, top + n as i64 * (page.height + gap))
+            }
+            View::Draft => (whole((self.width - self.column()) / 2), top),
+        }
     }
 
     fn document_height(&self) -> i64 {
-        GAP + self.laid.pages.len() as i64 * (self.res.page.height + GAP)
+        let (top, gap) = self.gaps();
+        match self.view {
+            View::Pages => top + self.laid.pages.len() as i64 * (self.res.page.height + gap),
+            View::Draft => 2 * top + self.draft_height(),
+        }
     }
 
     /// Where line `line` of paragraph `k` starts, in window coordinates:
@@ -673,7 +837,7 @@ impl Editor {
     fn line_origin(&self, k: usize, line: usize) -> (i64, i64) {
         let (n, y) = self.laid.places[k][line];
         let (px, py) = self.page_origin(n);
-        let page = &self.res.page;
+        let page = &self.page_style();
         let p = &self.laid.paragraphs[k];
         let top = p.layout.lines[line].top;
         (
@@ -724,11 +888,12 @@ impl Editor {
 
     /// The position at (`x`, `y`) in the window.
     fn hit(&self, x: i64, y: i64) -> Position {
-        let page = &self.res.page;
+        let page = &self.page_style();
         let doc_y = y - self.top() + self.scroll;
-        let stride = page.height + GAP;
+        let (top, gap) = self.gaps();
+        let stride = page.height + gap;
         let last = self.laid.pages.len().saturating_sub(1);
-        let n = (((doc_y - GAP).max(0)) / stride).min(last as i64) as usize;
+        let n = (((doc_y - top).max(0)) / stride).min(last as i64) as usize;
         let (px, py) = self.page_origin(n);
         let body_y = doc_y - py - page.top;
         let body_x = x - px - page.left;
@@ -780,10 +945,11 @@ impl Editor {
     fn reveal(&mut self) {
         let (_, top, bottom) = self.caret_rect();
         let (view_top, view_bottom) = (self.top(), self.top() + self.view_height());
+        let gap = self.gaps().1;
         if top < view_top {
-            self.scroll -= view_top - top + GAP;
+            self.scroll -= view_top - top + gap;
         } else if bottom > view_bottom {
-            self.scroll += bottom - view_bottom + GAP;
+            self.scroll += bottom - view_bottom + gap;
         }
         self.clamp_scroll();
     }
@@ -925,15 +1091,6 @@ impl Editor {
             let id = command.id.clone();
             return self.command(&id);
         }
-        if self.menu.is_some() {
-            if key == Key::Escape {
-                self.menu = None;
-            }
-            return Vec::new();
-        }
-        if self.panel.is_some() {
-            return self.panel_key(key);
-        }
         let extend = modifiers.shift;
         let goal = self.goal.take();
         match key {
@@ -980,7 +1137,7 @@ impl Editor {
             }
             Key::PageUp | Key::PageDown => {
                 let (x, top, _) = self.caret_rect();
-                let by = self.view_height() - GAP * 2;
+                let by = self.view_height() - self.gaps().1 * 2;
                 let y = if key == Key::PageDown {
                     top + by
                 } else {
@@ -1040,8 +1197,7 @@ impl Editor {
         if ops.is_empty() {
             return false;
         }
-        if let Some(schema) = self.store.read_only() {
-            self.message = format!("Read-only: made by a newer xWorks (schema {schema})");
+        if self.unwritable() {
             return false;
         }
         let t = match self.document.transact(name, ops) {
@@ -1056,9 +1212,10 @@ impl Editor {
         } else {
             Entry::Commit(&t)
         };
-        match self.store.append(entry, &self.document) {
-            Ok(_) => self.message.clear(),
-            Err(e) => self.message = format!("Couldn't save: {e}"),
+        match self.store.as_mut().map(|s| s.append(entry, &self.document)) {
+            Some(Ok(_)) => self.message.clear(),
+            Some(Err(e)) => self.message = format!("Couldn't save: {e}"),
+            None => {}
         }
         if !(continuing && self.history.continue_last(t.clone())) {
             self.history.push(t);
@@ -1562,8 +1719,7 @@ impl Editor {
     }
 
     fn undo(&mut self, redo: bool) {
-        if let Some(schema) = self.store.read_only() {
-            self.message = format!("Read-only: made by a newer xWorks (schema {schema})");
+        if self.unwritable() {
             return;
         }
         let done = if redo {
@@ -1584,7 +1740,7 @@ impl Editor {
         } else {
             Entry::Undo(&t)
         };
-        if let Err(e) = self.store.append(entry, &self.document) {
+        if let Some(Err(e)) = self.store.as_mut().map(|s| s.append(entry, &self.document)) {
             self.message = format!("Couldn't save: {e}");
         }
         self.relayout(false);
@@ -1598,7 +1754,7 @@ impl Editor {
 
     /// Whether command `id` can run now, and whether it's on.
     pub fn state(&self, id: &str) -> CommandState {
-        let writable = self.store.read_only().is_none();
+        let writable = self.writable();
         let enabled = match id {
             "undo" => writable && self.history.undo_name().is_some(),
             "redo" => writable && self.history.redo_name().is_some(),
@@ -1611,6 +1767,8 @@ impl Editor {
         let checked = match id {
             "bold" => self.all(keys::BOLD),
             "italic" => self.all(keys::ITALIC),
+            "view-draft" => self.view == View::Draft,
+            "view-pages" => self.view == View::Pages,
             _ => {
                 id.strip_prefix("style-")
                     .is_some_and(|style| self.style_id() == style)
@@ -1637,7 +1795,6 @@ impl Editor {
     }
 
     fn command(&mut self, id: &str) -> Vec<Effect> {
-        self.menu = None;
         if !self.state(id).enabled {
             return Vec::new();
         }
@@ -1648,15 +1805,26 @@ impl Editor {
         let mut effects = Vec::new();
         match id {
             "new" => effects.push(Effect::Open(None)),
-            "open" => self.open_panel(),
+            "open" => effects.push(Effect::Choose(Choice::Open)),
+            "move-to" => effects.push(Effect::Choose(Choice::MoveTo)),
             "quit" => effects.push(Effect::Quit),
-            "save-version" => {
-                let n = self.store.versions().map_or(0, |v| v.len()) + 1;
-                let name = format!("Version {n}");
-                self.message = match self.store.name_version(&name) {
-                    Ok(()) => format!("Saved {name}"),
-                    Err(e) => format!("Couldn't save a version: {e}"),
+            "view-draft" | "view-pages" => {
+                let view = if id == "view-draft" {
+                    View::Draft
+                } else {
+                    View::Pages
                 };
+                self.set_view(view);
+            }
+            "save-version" => {
+                if let Some(store) = &mut self.store {
+                    let n = store.versions().map_or(0, |v| v.len()) + 1;
+                    let name = format!("Version {n}");
+                    self.message = match store.name_version(&name) {
+                        Ok(()) => format!("Saved {name}"),
+                        Err(e) => format!("Couldn't save a version: {e}"),
+                    };
+                }
             }
             "export-pdf" => {
                 let path = self.path.with_extension("pdf");
@@ -1738,11 +1906,31 @@ impl Editor {
     }
 
     /// The document's pages and structure, as drawn and printed.
+    /// On pages, they're those shown; as a draft, the story is laid out
+    /// on pages afresh, as it prints.
     pub fn pages(&self) -> canvas::Pages {
+        let look = &self.res.sheet.blocks;
+        if self.view == View::Draft {
+            let page = &self.res.page;
+            let flow = story::flow(&self.document, &self.res.sheet, page.body_width());
+            let hyphenation = self.res.hyphenation();
+            let (document, sheet, fonts) = (&self.document, &self.res.sheet, self.res.fonts());
+            let paragraphs: Vec<ParagraphLayout> = flow
+                .entries
+                .par_iter()
+                .map(|e| story::lay_out_at(document, e.id, &e.place, sheet, fonts, &hyphenation))
+                .collect();
+            let blocks = canvas::blocks(&paragraphs, look);
+            let pages = canvas::paginate(page.body_height(), &blocks);
+            return canvas::Pages {
+                pages: canvas::draw(page, look, &paragraphs, &pages, self.res.fonts()),
+                structure: canvas::structure(&paragraphs),
+            };
+        }
         canvas::Pages {
             pages: canvas::draw(
                 &self.res.page,
-                &self.res.sheet.blocks,
+                look,
                 &self.laid.paragraphs,
                 &self.laid.pages,
                 self.res.fonts(),
@@ -1758,73 +1946,6 @@ impl Editor {
         std::fs::write(path, bytes).map_err(|e| e.to_string())
     }
 
-    // ---- the Open panel
-
-    fn open_panel(&mut self) {
-        let mut found: Vec<(std::time::SystemTime, PathBuf)> =
-            std::fs::read_dir(&self.res.documents)
-                .map(|entries| {
-                    entries
-                        .filter_map(Result::ok)
-                        .map(|e| e.path())
-                        .filter(|p| p.extension().is_some_and(|e| e == "xw") && p != &self.path)
-                        .map(|p| {
-                            let modified = std::fs::metadata(&p)
-                                .and_then(|m| m.modified())
-                                .unwrap_or(std::time::UNIX_EPOCH);
-                            (modified, p)
-                        })
-                        .collect()
-                })
-                .unwrap_or_default();
-        found.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-        self.panel = Some(Panel {
-            paths: found.into_iter().map(|(_, p)| p).collect(),
-            selected: 0,
-        });
-    }
-
-    fn list(&self) -> Option<List> {
-        let panel = self.panel.as_ref()?;
-        let names = panel
-            .paths
-            .iter()
-            .map(|p| {
-                p.file_stem()
-                    .map_or_else(String::new, |s| s.to_string_lossy().into_owned())
-            })
-            .collect();
-        Some(List::new(
-            &self.res.theme,
-            "Open a document",
-            names,
-            self.width,
-            self.height,
-        ))
-    }
-
-    fn panel_key(&mut self, key: Key) -> Vec<Effect> {
-        let Some(panel) = &mut self.panel else {
-            return Vec::new();
-        };
-        match key {
-            Key::Up => panel.selected = panel.selected.saturating_sub(1),
-            Key::Down => {
-                panel.selected = (panel.selected + 1).min(panel.paths.len().saturating_sub(1))
-            }
-            Key::Enter => {
-                let chosen = panel.paths.get(panel.selected).cloned();
-                self.panel = None;
-                if let Some(path) = chosen {
-                    return vec![Effect::Open(Some(path))];
-                }
-            }
-            Key::Escape => self.panel = None,
-            _ => {}
-        }
-        Vec::new()
-    }
-
     // ---- events
 
     /// Handles `event`, returning what the shell should do.
@@ -1833,11 +1954,9 @@ impl Editor {
         match event {
             Event::Key { key, modifiers } => return self.key(key, modifiers),
             Event::Text(text) => {
-                if self.panel.is_none() && self.menu.is_none() {
-                    self.composition.clear();
-                    self.insert_text(&text);
-                    self.reveal();
-                }
+                self.composition.clear();
+                self.insert_text(&text);
+                self.reveal();
             }
             Event::Preedit(text) => {
                 self.composition = text;
@@ -1845,15 +1964,22 @@ impl Editor {
                 self.reveal();
             }
             Event::Command(id) => return self.command(&id),
+            Event::CommandWith(id, args) => return self.command_with(&id, &args),
             Event::Pasted(text) => {
                 self.paste(&text);
                 self.reveal();
             }
-            // Nothing asks for a file yet: stages 5 and 7 of M2 do.
-            Event::Chosen(..) => {}
+            Event::Chosen(Choice::Open, Some(path)) => return vec![Effect::Open(Some(path))],
+            Event::Chosen(Choice::MoveTo, Some(path)) => self.move_to_chosen(&path),
+            // Placing pictures is stage 7's.
+            Event::Chosen(..) | Event::Theme { .. } | Event::Maximized(_) => {}
             Event::Resize { width, height } => {
+                let column = self.column();
                 self.width = px(width).max(PIXEL);
                 self.height = px(height).max(PIXEL);
+                if self.view == View::Draft && self.column() != column {
+                    self.relayout(true);
+                }
                 self.clamp_scroll();
             }
             Event::Scroll(dy) => {
@@ -1867,51 +1993,7 @@ impl Editor {
         Vec::new()
     }
 
-    fn menu_bar(&self) -> MenuBar {
-        let bar = self
-            .res
-            .commands
-            .menu_bar(self.res.mac, |id| self.state(id), |_| Vec::new());
-        MenuBar::new(
-            self.res.fonts(),
-            &self.res.theme,
-            bar,
-            self.width,
-            self.menu,
-        )
-    }
-
     fn press(&mut self, x: i64, y: i64, shift: bool, count: u32) -> Vec<Effect> {
-        let theme = self.res.theme.clone();
-        if let Some(list) = self.list() {
-            match list.hit(&theme, x, y) {
-                Some(Some(row)) => {
-                    let chosen = self.panel.as_ref().and_then(|p| p.paths.get(row).cloned());
-                    self.panel = None;
-                    return chosen
-                        .map(|p| vec![Effect::Open(Some(p))])
-                        .unwrap_or_default();
-                }
-                Some(None) => return Vec::new(),
-                None => {
-                    self.panel = None;
-                    return Vec::new();
-                }
-            }
-        }
-        match self.menu_bar().hit(&theme, x, y) {
-            Some(MenuHit::Title(i)) => {
-                self.menu = if self.menu == Some(i) { None } else { Some(i) };
-                return Vec::new();
-            }
-            Some(MenuHit::Command(id)) => return self.command(&id),
-            Some(MenuHit::Menu) => return Vec::new(),
-            None if self.menu.is_some() => {
-                self.menu = None;
-                return Vec::new();
-            }
-            None => {}
-        }
         if y < self.top() || y >= self.top() + self.view_height() {
             return Vec::new();
         }
@@ -1929,13 +2011,7 @@ impl Editor {
     }
 
     fn pointer_move(&mut self, x: i64, y: i64) {
-        let theme = self.res.theme.clone();
-        let bar = self.menu_bar();
-        self.hover = bar.hit(&theme, x, y);
-        if let (Some(_), Some(MenuHit::Title(i))) = (self.menu, &self.hover) {
-            self.menu = Some(*i);
-        }
-        if self.dragging && self.menu.is_none() && self.panel.is_none() {
+        if self.dragging {
             let target = self.hit(x, y);
             if self.dragged.is_some() {
                 self.drag_unit(target);
@@ -1943,19 +2019,15 @@ impl Editor {
                 self.go(target, true);
             }
         }
-        if let (Some(list), Some(panel)) = (self.list(), &mut self.panel)
-            && let Some(Some(row)) = list.hit(&theme, x, y)
-        {
-            panel.selected = row;
-        }
     }
 
     // ---- drawing
 
-    /// The window as a display list, in layout units from its top left,
-    /// with its size: 9 525 to a logical pixel.
+    /// Its area of the window as a display list, in layout units from the
+    /// area's top left, with its size: 9 525 to a logical pixel. The
+    /// window draws the chrome around it.
     pub fn view(&self) -> scene::Page {
-        crate::view::draw(self)
+        crate::view::draw(self, &view_look(&self.res, false))
     }
 
     /// Where an input method's candidate window should go: below the caret,
@@ -1989,24 +2061,18 @@ impl Editor {
                 let b = self.cursor(end);
                 (a.0, a.1.offset, b.0, b.1.offset)
             }),
-            caret: (self.collapsed() && self.menu.is_none() && self.panel.is_none())
-                .then(|| self.caret_rect()),
+            caret: self.collapsed().then(|| self.caret_rect()),
             composition: (!self.composition.is_empty()).then(|| {
                 let (k, c) = self.cursor(start);
                 (k, c.offset, c.offset + self.composition.len())
             }),
-            menu: self.menu_bar(),
-            hover: self.hover.clone(),
-            list: self
-                .list()
-                .map(|l| (l, self.panel.as_ref().map_or(0, |p| p.selected))),
-            status: self.status(),
-            message: if self.message.is_empty() {
-                "Saved".to_string()
-            } else {
-                self.message.clone()
-            },
+            draft: self.view == View::Draft,
         }
+    }
+
+    /// How tall the draft's text is, for drawing what's in view.
+    pub(crate) fn draft_bottom(&self) -> i64 {
+        self.draft_height()
     }
 
     pub(crate) fn origin_of_page(&self, n: usize) -> (i64, i64) {
@@ -2018,8 +2084,8 @@ impl Editor {
         self.line_origin(k, line)
     }
 
-    /// What the status bar says: the page, the style and size at the
-    /// caret, and the document's words.
+    /// What the status bar says: the page, or that it's a draft, the
+    /// style and size at the caret, and the document's words.
     pub fn status(&self) -> String {
         let (k, cursor) = self.cursor(self.focus);
         let line = self.laid.paragraphs[k].layout.line_of(cursor);
@@ -2031,9 +2097,12 @@ impl Editor {
             _ => None,
         };
         let style = &self.res.sheet.paragraph_style(name).name;
+        let place = match self.view {
+            View::Pages => format!("Page {page} of {}", self.laid.pages.len()),
+            View::Draft => "Draft".to_string(),
+        };
         format!(
-            "Page {page} of {}   ·   {style}   ·   {} pt   ·   {words} words",
-            self.laid.pages.len(),
+            "{place}   ·   {style}   ·   {} pt   ·   {words} words",
             self.size() as f64 / POINT as f64
         )
     }
@@ -2055,9 +2124,6 @@ pub(crate) struct ViewParts<'a> {
     pub caret: Option<(i64, i64, i64)>,
     /// The composition: its paragraph and byte range.
     pub composition: Option<(usize, usize, usize)>,
-    pub menu: MenuBar,
-    pub hover: Option<MenuHit>,
-    pub list: Option<(List, usize)>,
-    pub status: String,
-    pub message: String,
+    /// Whether it's a draft, on the desk, rather than pages.
+    pub draft: bool,
 }

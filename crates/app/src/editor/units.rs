@@ -1,6 +1,12 @@
 //! Moving and selecting by words and sentences, as the arrows with Ctrl,
 //! or Option on a Mac, and double and triple clicks do; and setting text's
 //! language and paragraphs' alignment.
+//!
+//! Words go as each platform's do (project owner, 2026-10-23, review
+//! dcn5ejrd): forward on Windows and Linux to the next word's start, and
+//! on into the next paragraph at its start; on a Mac to a word's end, and
+//! into the next paragraph to its first word's end. Back is to a word's
+//! start everywhere.
 
 use doc::{Op, Value};
 use story::keys;
@@ -61,7 +67,7 @@ impl Editor {
 
     /// The language of text typed at `p`: the character's before it, or
     /// its paragraph's.
-    fn language_at(&self, p: Position) -> Option<Language> {
+    pub(super) fn language_at(&self, p: Position) -> Option<Language> {
         let tag = match self.typing_props(p).get(keys::LANGUAGE) {
             Some(Value::Text(tag)) => Some(tag.clone()),
             _ => match self.paragraph(p.paragraph).props.get(keys::LANGUAGE) {
@@ -74,9 +80,10 @@ impl Editor {
 
     /// Where a step by `unit` to the right or left on screen goes from
     /// `p`: in the paragraph's reading direction, forward to the end of a
-    /// unit or back to its start; past the paragraph's edge, to the first
-    /// unit's end in the next paragraph, or the last's start in the one
-    /// before.
+    /// unit, or on Windows and Linux to the next word's start, or back to
+    /// its start; past the paragraph's edge, to the first unit's end in
+    /// the next paragraph (its start, by words on Windows and Linux), or
+    /// the last's start in the one before.
     fn unit_step(&self, p: Position, unit: Unit, right: bool) -> Position {
         let (k, cursor) = self.cursor(p);
         let forward = right == (self.laid.paragraphs[k].layout.direction() == Direction::Ltr);
@@ -92,6 +99,9 @@ impl Editor {
         let Some(n) = next else {
             return p;
         };
+        if forward && unit == Unit::Word && !self.res.mac {
+            return self.position(n, Cursor::downstream(0));
+        }
         let edge = if forward {
             Cursor::downstream(0)
         } else {
@@ -112,7 +122,8 @@ impl Editor {
     fn unit_move(&self, k: usize, cursor: Cursor, unit: Unit, forward: bool) -> Option<Cursor> {
         let layout = &self.laid.paragraphs[k].layout;
         match (unit, forward) {
-            (Unit::Word, true) => layout.next_word(cursor),
+            (Unit::Word, true) if self.res.mac => layout.next_word(cursor),
+            (Unit::Word, true) => layout.next_word_start(cursor),
             (Unit::Word, false) => layout.previous_word(cursor),
             (Unit::Sentence, true) => layout.next_sentence(cursor),
             (Unit::Sentence, false) => layout.previous_sentence(cursor),
@@ -165,7 +176,7 @@ impl Editor {
 
     /// Sets the selected text's language to `tag`, or with no selection
     /// the caret's whole paragraph's.
-    fn set_language(&mut self, tag: &str) {
+    pub(super) fn set_language(&mut self, tag: &str) {
         let Ok(language) = Language::parse(tag) else {
             return;
         };

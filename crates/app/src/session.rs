@@ -1,5 +1,5 @@
-//! Scripted sessions (`spec/sessions/`): input played into an editor, as a
-//! person would give it, for tests and for `shot`'s frames.
+//! Scripted sessions (`spec/sessions/`): input played into a window, as a
+//! person would give it, chrome and all, for tests and for `shot`'s frames.
 
 use std::sync::Arc;
 
@@ -7,7 +7,7 @@ use chrome::{Key, Modifiers, Shortcut};
 use doc::Value;
 use serde::Deserialize;
 
-use crate::{Editor, EditorError, Effect, Event, Resources};
+use crate::{Choice, Editor, EditorError, Effect, Event, Resources, Window};
 
 /// A session as `spec/sessions/` gives it.
 #[derive(Clone, Debug, Deserialize)]
@@ -42,6 +42,30 @@ pub struct Session {
     /// in, as a BCP 47 tag: its own, or its paragraph's.
     #[serde(default)]
     pub languages: Vec<(String, String)>,
+    /// Whether it's played as on a Mac: its shortcuts, its words, and no
+    /// access keys.
+    #[serde(default)]
+    pub mac: bool,
+    /// The document's name afterwards, as the title bar shows it.
+    #[serde(default)]
+    pub name: Option<String>,
+    /// The name of its file afterwards, without the folder or extension.
+    #[serde(default)]
+    pub file: Option<String>,
+    /// What's asked of the window itself, in order, as their names: Drag,
+    /// ToggleMaximize, Minimize, Close, Resize(..).
+    #[serde(default)]
+    pub actions: Option<Vec<String>>,
+    /// Commands that are on afterwards, such as the inspector's.
+    #[serde(default)]
+    pub on: Vec<String>,
+    /// Commands that are off afterwards.
+    #[serde(default)]
+    pub off: Vec<String>,
+    /// Paragraph properties afterwards: a stretch of the paragraph's text,
+    /// the property, and its value as text, or none for unset.
+    #[serde(default)]
+    pub props: Vec<(String, String, Option<String>)>,
 }
 
 /// One thing a person does.
@@ -80,33 +104,62 @@ pub enum Step {
     /// Checks the story's tree at this point, as `outline` does at the
     /// end.
     Outline(Vec<String>),
+    /// Runs a command with arguments: text, or a whole number.
+    CommandWith(String, Vec<SessionArg>),
+    /// The system's look turns dark, or light.
+    Dark(bool),
+    /// Answers the last file the window asked for, in the system's dialog:
+    /// a file in the documents folder, or none.
+    Choose(Option<String>),
+    /// Checks the document's name, as the title bar shows it, at this
+    /// point.
+    Name(String),
 }
 
-/// A session played: the editor as it ends, and the clipboard.
+/// A command's argument, as a session writes it.
+#[derive(Clone, Debug, Deserialize)]
+pub enum SessionArg {
+    /// Text.
+    Text(String),
+    /// A whole number.
+    Int(i64),
+}
+
+/// A session played: the window as it ends, the clipboard, and what was
+/// asked of the window itself.
 pub struct Played {
-    /// The editor.
-    pub editor: Editor,
+    /// The window.
+    pub window: Window,
     /// The clipboard's text.
     pub clipboard: String,
     /// What was wrong at the session's [`Step::Expect`]s.
     pub problems: Vec<String>,
+    /// What was asked of the window itself, in order.
+    pub actions: Vec<crate::WindowAction>,
+}
+
+impl Played {
+    /// The document's part.
+    pub fn editor(&self) -> &Editor {
+        self.window.editor()
+    }
 }
 
 /// Plays `session` into a new document in `res`'s documents folder.
 pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorError> {
-    let res = match &session.language {
-        Some(tag) => {
-            let mut res = (*res).clone();
-            res.language = text::Language::parse(tag).unwrap_or_default();
-            Arc::new(res)
-        }
-        None => res,
-    };
-    let mut editor = Editor::create(res.clone())?;
+    let mut res = (*res).clone();
+    if let Some(tag) = &session.language {
+        res.language = text::Language::parse(tag).unwrap_or_default();
+    }
+    res.mac = session.mac;
+    let res = Arc::new(res);
+    let mut window = Window::create(res.clone())?;
     let mut clipboard = String::new();
     let mut problems = Vec::new();
+    let mut actions = Vec::new();
+    let mut choosing: Option<Choice> = None;
     let (width, height) = session.size;
-    editor.update(Event::Resize { width, height });
+    window.update(Event::Resize { width, height });
     for (n, step) in session.events.iter().enumerate() {
         let events = match step {
             Step::Type(text) => vec![Event::Text(text.clone())],
@@ -131,14 +184,44 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
             Step::Preedit(text) => vec![Event::Preedit(text.clone())],
             Step::Scroll(dy) => vec![Event::Scroll(*dy)],
             Step::Reopen => {
-                let path = editor.path().to_path_buf();
-                drop(editor);
-                editor = Editor::open(res.clone(), &path)?;
-                editor.update(Event::Resize { width, height });
+                window.close();
+                let path = window.editor().path().to_path_buf();
+                drop(window);
+                window = Window::open(res.clone(), &path)?;
+                window.update(Event::Resize { width, height });
+                Vec::new()
+            }
+            Step::CommandWith(id, args) => vec![Event::CommandWith(
+                id.clone(),
+                args.iter()
+                    .map(|a| match a {
+                        SessionArg::Text(t) => chrome::Arg::Text(t.clone()),
+                        SessionArg::Int(n) => chrome::Arg::Int(*n),
+                    })
+                    .collect(),
+            )],
+            Step::Dark(dark) => vec![Event::Theme { dark: *dark }],
+            Step::Choose(file) => match choosing.take() {
+                Some(choice) => vec![Event::Chosen(
+                    choice,
+                    file.as_ref().map(|f| res.documents.join(f)),
+                )],
+                None => {
+                    problems.push(format!("at step {n}, nothing asked for a file"));
+                    Vec::new()
+                }
+            },
+            Step::Name(want) => {
+                let got = window.editor().name();
+                if &got != want {
+                    problems.push(format!(
+                        "at step {n}, the name is {got:?}, expected {want:?}"
+                    ));
+                }
                 Vec::new()
             }
             Step::Expect(want) => {
-                let got = paragraphs(editor.document());
+                let got = paragraphs(window.editor().document());
                 if &got != want {
                     problems.push(format!(
                         "at step {n}, paragraphs {got:?}, expected {want:?}"
@@ -147,7 +230,7 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
                 Vec::new()
             }
             Step::Outline(want) => {
-                let got = story::outline(editor.document(), &res.sheet);
+                let got = story::outline(window.editor().document(), &res.sheet);
                 if &got != want {
                     problems.push(format!(
                         "at step {n}, the outline is {got:#?}, expected {want:#?}"
@@ -157,24 +240,27 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
             }
         };
         for event in events {
-            let mut queue = editor.update(event);
+            let mut queue = window.update(event);
             while let Some(effect) = queue.pop() {
                 match effect {
                     Effect::Copy(text) => clipboard = text,
-                    Effect::Paste => queue.extend(editor.update(Event::Pasted(clipboard.clone()))),
+                    Effect::Paste => queue.extend(window.update(Event::Pasted(clipboard.clone()))),
+                    Effect::Choose(choice) => choosing = Some(choice),
+                    Effect::Window(action) => actions.push(action),
                     Effect::Open(_)
                     | Effect::OpenExternally(_)
                     | Effect::Reveal(_)
-                    | Effect::Choose(_)
-                    | Effect::Quit => {}
+                    | Effect::Quit
+                    | Effect::Pointer(_) => {}
                 }
             }
         }
     }
     Ok(Played {
-        editor,
+        window,
         clipboard,
         problems,
+        actions,
     })
 }
 
@@ -212,13 +298,14 @@ fn key(keys: &str) -> Event {
 /// expects.
 pub fn check(session: &Session, played: &Played) -> Vec<String> {
     let mut problems = played.problems.clone();
-    let document = played.editor.document();
+    let editor = played.editor();
+    let document = editor.document();
     let got = paragraphs(document);
     if got != session.expect {
         problems.push(format!("paragraphs {got:?}, expected {:?}", session.expect));
     }
     if let Some(want) = &session.outline {
-        let outline = story::outline(document, &played.editor.resources().sheet);
+        let outline = story::outline(document, &editor.resources().sheet);
         if &outline != want {
             problems.push(format!("the outline is {outline:#?}, expected {want:#?}"));
         }
@@ -290,9 +377,62 @@ pub fn check(session: &Session, played: &Played) -> Vec<String> {
         ));
     }
     if let Some(want) = &session.status {
-        let got = played.editor.status();
+        let got = editor.status();
         if &got != want {
             problems.push(format!("the status bar says {got:?}, expected {want:?}"));
+        }
+    }
+    if let Some(want) = &session.name
+        && &editor.name() != want
+    {
+        problems.push(format!(
+            "the name is {:?}, expected {want:?}",
+            editor.name()
+        ));
+    }
+    if let Some(want) = &session.file {
+        let got = editor.title();
+        if &got != want {
+            problems.push(format!("the file is {got:?}, expected {want:?}"));
+        }
+    }
+    if let Some(want) = &session.actions {
+        let got: Vec<String> = played.actions.iter().map(|a| format!("{a:?}")).collect();
+        if &got != want {
+            problems.push(format!(
+                "the window was asked to {got:?}, expected {want:?}"
+            ));
+        }
+    }
+    for (id, on) in session
+        .on
+        .iter()
+        .map(|id| (id, true))
+        .chain(session.off.iter().map(|id| (id, false)))
+    {
+        if played.window.state(id).checked != on {
+            problems.push(format!("{id} is {}, expected {}", !on, on));
+        }
+    }
+    for (stretch, key, want) in &session.props {
+        let Some(id) = document.paragraphs().into_iter().find(|&id| {
+            document
+                .paragraph(id)
+                .is_some_and(|p| p.text.contains(stretch.as_str()))
+        }) else {
+            problems.push(format!("{stretch:?} isn't in the document"));
+            continue;
+        };
+        let got = document
+            .paragraph(id)
+            .and_then(|p| p.props.get(key.as_str()))
+            .map(|v| match v {
+                Value::Text(t) => t.clone(),
+                Value::Int(n) => n.to_string(),
+                Value::Bool(b) => b.to_string(),
+            });
+        if &got != want {
+            problems.push(format!("{stretch:?}'s {key} is {got:?}, expected {want:?}"));
         }
     }
     problems

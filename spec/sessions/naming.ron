@@ -1,0 +1,25 @@
+// A new document is named after its first heading or line until it's
+// named by hand (project owner, 2026-10-23, review a23vvez8): the title bar
+// shows the name as it's typed, and the file takes it once the caret
+// leaves. Clicking the name renames it by hand, and then it keeps its name.
+(
+    size: (1280, 800),
+    events: [
+        Command("style-heading-1"),
+        Type("Trip notes"),
+        Name("Trip notes"),
+        Key("Enter"),
+        Type("Day one"),
+        // The name, in the title bar: typing replaces it.
+        Click(640, 20),
+        Type("Travel"),
+        Key("Enter"),
+        // The heading changes, and the name doesn't.
+        Key("Primary+Home"),
+        Type("Our "),
+        Key("Down"),
+    ],
+    expect: [("Heading 1", "Our Trip notes"), ("Body", "Day one")],
+    name: Some("Travel"),
+    file: Some("Travel"),
+)

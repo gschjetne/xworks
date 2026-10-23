@@ -1,6 +1,6 @@
 //! What every window shares: fonts, hyphenation patterns, styles,
-//! commands, the chrome's look, where documents live, and the language
-//! they're made in.
+//! commands, the chrome's look and icons, where documents live, the
+//! documents opened lately, and the language they're made in.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
@@ -10,7 +10,9 @@ use chrome::Commands;
 use serde::Deserialize;
 use story::StyleSheet;
 use text::{FontSpec, Fonts, Hyphenation, Hyphenator, Language};
-use toolkit::{Theme, ThemeSpec};
+use toolkit::{Colors, Icons, Sizes};
+
+use crate::recent::Recent;
 
 /// Why resources couldn't be loaded.
 #[derive(Debug, thiserror::Error)]
@@ -49,10 +51,18 @@ pub struct Resources {
     pub page: PageStyle,
     /// The commands and menus.
     pub commands: Commands,
-    /// The chrome's look.
-    pub theme: Theme,
-    /// Where new documents are made and Open looks.
+    /// The chrome's type and sizes (`spec/themes/chrome.ron`).
+    pub sizes: Sizes,
+    /// The light look's colours, and the dark look's.
+    pub light: Colors,
+    /// The dark look's colours.
+    pub dark: Colors,
+    /// Lucide's icons, for the chrome.
+    pub icons: Arc<Icons>,
+    /// Where new documents are made.
     pub documents: PathBuf,
+    /// The documents opened lately, shared by every window.
+    pub recent: Arc<Recent>,
     /// Whether shortcuts read as on a Mac.
     pub mac: bool,
     /// How large a picture may be.
@@ -159,7 +169,10 @@ impl Resources {
             path: commands_path,
             message: e.to_string(),
         })?;
-        let theme: ThemeSpec = spec(&root.join("spec/themes/m1.ron"))?;
+        let sizes: Sizes = spec(&root.join("spec/themes/chrome.ron"))?;
+        let light: Colors = spec(&root.join("spec/themes/light.ron"))?;
+        let dark: Colors = spec(&root.join("spec/themes/dark.ron"))?;
+        let icons = read_icons(&root.join("icons/lucide"))?;
         let pictures = spec(&root.join("spec/pictures.ron"))?;
         let patterns: PatternSpec = spec(&root.join("spec/text/hyphenation.ron"))?;
         Ok(Resources {
@@ -168,8 +181,12 @@ impl Resources {
             sheet,
             page: PageStyle::from_spec(&page.page),
             commands,
-            theme: Theme::from_spec(&theme),
+            sizes,
+            light,
+            dark,
+            icons: Arc::new(icons),
             documents,
+            recent: Arc::new(Recent::default()),
             mac,
             pictures,
             language: Language::und(),
@@ -261,6 +278,39 @@ impl Resources {
         // Only this call, holding `tried`, sets it.
         let _ = self.on_demand.loaded.set(Arc::new(all));
         Ok(true)
+    }
+}
+
+/// Lucide's icons in `dir`, by name.
+fn read_icons(dir: &Path) -> Result<Icons, Error> {
+    let entries = std::fs::read_dir(dir).map_err(|source| Error::Io {
+        path: dir.to_path_buf(),
+        source,
+    })?;
+    let mut svgs = Vec::new();
+    for entry in entries.filter_map(Result::ok) {
+        let path = entry.path();
+        if path.extension().is_some_and(|e| e == "svg")
+            && let Some(name) = path.file_stem()
+        {
+            svgs.push((name.to_string_lossy().into_owned(), read(&path)?));
+        }
+    }
+    let (icons, bad) = Icons::from_svgs(svgs);
+    match bad.first() {
+        Some((name, why)) => Err(Error::Spec {
+            path: dir.join(format!("{name}.svg")),
+            message: why.clone(),
+        }),
+        None => Ok(icons),
+    }
+}
+
+impl Resources {
+    /// The chrome's look, dark or light.
+    pub fn theme(&self, dark: bool) -> toolkit::Theme {
+        let colors = if dark { self.dark } else { self.light };
+        toolkit::Theme::new(self.sizes.clone(), colors)
     }
 }
 

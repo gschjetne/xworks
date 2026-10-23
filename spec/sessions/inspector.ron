@@ -1,0 +1,37 @@
+// The inspector, at 1280 by 800: a style chosen from its list, a space
+// and a size typed, the size in another unit, Bold toggled, a line height
+// chosen, and a tab stop added, all on the selection.
+(
+    size: (1280, 800),
+    events: [
+        Type("Inspected"),
+        Key("Primary+A"),
+        Command("toggle-inspector"),
+        // Style: Heading 2, from its list.
+        Click(1150, 136),
+        Click(1100, 222),
+        // Space above.
+        Click(1110, 204),
+        Type("12"),
+        Key("Enter"),
+        // Size, in centimetres.
+        Click(1110, 346),
+        Type("0.5 cm"),
+        Key("Enter"),
+        // Bold.
+        Click(1194, 346),
+        // Line height: one and a half times the font.
+        Click(1150, 238),
+        Click(1100, 376),
+        // Add a tab stop: at the first default stop.
+        Click(1010, 452),
+    ],
+    expect: [("Heading 2", "Inspected")],
+    marks: [("Inspected", ["bold", "size"])],
+    props: [
+        ("Inspected", "space-before", Some("152400")),
+        ("Inspected", "line-height", Some("1500")),
+        ("Inspected", "tabs", Some("start 450000")),
+    ],
+    on: ["toggle-inspector", "bold"],
+)
