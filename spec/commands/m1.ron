@@ -84,6 +84,11 @@
         (id: "list-numbers", title: "Numbered List", shortcut: Some("Primary+Shift+7")),
         (id: "quote", title: "Quote", shortcut: Some("Primary+Shift+9")),
         (id: "insert-table", title: "Table", shortcut: Some("Primary+Shift+T")),
+
+        // M2's stage 7, without places in the menus until the designed
+        // chrome gives them some. A picture comes from a file chosen in
+        // the system's dialog, and goes in the text at the caret.
+        (id: "insert-picture", title: "Picture…", shortcut: None),
     ],
     menus: [
         (title: "File", items: ["new", "open", "-", "save-version", "-", "export-pdf", "print", "-", "quit"]),

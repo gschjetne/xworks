@@ -18,6 +18,7 @@ use toolkit::{List, MenuBar, MenuHit};
 
 use crate::{Resources, blocks};
 
+mod pictures;
 mod units;
 
 use units::Unit;
@@ -280,6 +281,7 @@ impl Editor {
             opened.document,
             opened.history,
         );
+        editor.load_pictures(story::pictures(&editor.document));
         if let Some(why) = editor.store.read_only() {
             editor.message = format!("Read-only: {why}");
         }
@@ -356,6 +358,12 @@ impl Editor {
     /// The document.
     pub fn document(&self) -> &Document {
         &self.document
+    }
+
+    /// What the status bar says of the last thing done, such as why the
+    /// document is read-only; empty once all is saved.
+    pub fn message(&self) -> &str {
+        &self.message
     }
 
     /// The selection: where it started and where it ends, which is where
@@ -825,7 +833,9 @@ impl Editor {
         self.pending.clear();
     }
 
-    /// The selected text, paragraphs ending in newlines but the last.
+    /// The selected text, paragraphs ending in newlines but the last, as
+    /// the clipboard takes it: plain text, without its pictures'
+    /// characters.
     fn selected_text(&self) -> String {
         let (start, end) = self.ordered();
         let ids = self.ids();
@@ -839,7 +849,11 @@ impl Editor {
             } else {
                 text.len()
             };
-            out.push_str(&text[from..to.max(from)]);
+            out.extend(
+                text[from..to.max(from)]
+                    .chars()
+                    .filter(|&c| c != story::OBJECT),
+            );
             if i < b {
                 out.push('\n');
             }
@@ -1063,10 +1077,12 @@ impl Editor {
             Ok(_) => self.message.clear(),
             Err(e) => self.message = format!("Couldn't save: {e}"),
         }
+        let placed = Editor::pictures_in(&t.ops);
         if !(continuing && self.history.continue_last(t.clone())) {
             self.history.push(t);
         }
         self.relayout(false);
+        self.load_pictures(placed);
         true
     }
 
@@ -1144,6 +1160,10 @@ impl Editor {
             }
             pos += run.len;
         }
+        // Text typed after a picture is text.
+        for key in keys::PICTURES {
+            props.remove(key);
+        }
         for (k, v) in &self.pending {
             match v {
                 Value::Bool(false) => {
@@ -1158,9 +1178,10 @@ impl Editor {
     }
 
     fn insert_text(&mut self, text: &str) {
+        // A picture's character comes only with its picture.
         let text: String = text
             .chars()
-            .filter(|&c| !c.is_control() || c == '\u{2028}' || c == '\t')
+            .filter(|&c| (!c.is_control() || c == '\u{2028}' || c == '\t') && c != story::OBJECT)
             .collect();
         if text.is_empty() {
             return;
@@ -1390,7 +1411,7 @@ impl Editor {
             }
             let line: String = line
                 .chars()
-                .filter(|&c| !c.is_control() || c == '\t')
+                .filter(|&c| (!c.is_control() || c == '\t') && c != story::OBJECT)
                 .collect();
             if line.is_empty() {
                 continue;
@@ -1595,6 +1616,7 @@ impl Editor {
         let caret = self.after(ops).unwrap_or_else(|| self.document_edge(false));
         self.go(caret, false);
         self.message = format!("{} {}", if redo { "Redid" } else { "Undid" }, t.name);
+        self.load_pictures(Editor::pictures_in(ops));
     }
 
     // ---- commands
@@ -1607,7 +1629,7 @@ impl Editor {
             "redo" => writable && self.history.redo_name().is_some(),
             "cut" | "copy" => !self.collapsed(),
             "save-version" | "paste" | "bold" | "italic" | "code" | "list-bullets"
-            | "list-numbers" | "quote" | "insert-table" => writable,
+            | "list-numbers" | "quote" | "insert-table" | "insert-picture" => writable,
             _ if id.starts_with("language-") || id.starts_with("align-") => writable,
             _ => true,
         };
@@ -1690,6 +1712,7 @@ impl Editor {
                 }
             }
             "paste" => effects.push(Effect::Paste),
+            "insert-picture" => effects.push(Effect::Choose(Choice::Picture)),
             "select-all" => {
                 self.anchor = self.document_edge(false);
                 self.focus = self.document_edge(true);
@@ -1853,8 +1876,10 @@ impl Editor {
                 self.paste(&text);
                 self.reveal();
             }
-            // Nothing asks for a file yet: stages 5 and 7 of M2 do.
-            Event::Chosen(..) => {}
+            Event::Chosen(choice, path) => {
+                self.chosen(choice, path.as_deref());
+                self.reveal();
+            }
             Event::Resize { width, height } => {
                 self.width = px(width).max(PIXEL);
                 self.height = px(height).max(PIXEL);
