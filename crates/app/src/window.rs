@@ -97,6 +97,23 @@ fn units(v: f64) -> i64 {
     (v * PIXEL as f64).round() as i64
 }
 
+/// Cut, Copy and Paste in a small field, by their shortcuts.
+fn clipboard(field: &mut Field, key: Key, modifiers: Modifiers) -> Option<Vec<Effect>> {
+    if !modifiers.primary || modifiers.alt || modifiers.shift {
+        return None;
+    }
+    match key {
+        Key::Char('c') => Some(vec![Effect::Copy(field.selected().to_string())]),
+        Key::Char('x') => {
+            let cut = field.selected().to_string();
+            field.insert("");
+            Some(vec![Effect::Copy(cut)])
+        }
+        Key::Char('v') => Some(vec![Effect::Paste]),
+        _ => None,
+    }
+}
+
 /// How far a ruler's marker snaps to: a quarter of its unit.
 fn snap(position: i64, unit: i64) -> i64 {
     let step = (unit / 4).max(1);
@@ -535,6 +552,10 @@ impl Window {
         let Some(palette) = &mut self.palette else {
             return Vec::new();
         };
+        if let Some(effects) = clipboard(&mut palette.field, key, modifiers) {
+            self.refind();
+            return effects;
+        }
         match key {
             Key::Down => {
                 palette.selected = (palette.selected + 1).min(palette.found.len().saturating_sub(1))
@@ -578,6 +599,14 @@ impl Window {
 
     fn field_key(&mut self, key: Key, modifiers: Modifiers) -> Option<Vec<Effect>> {
         let mac = self.res.mac;
+        if let Some(field) = self
+            .renaming
+            .as_mut()
+            .or(self.editing.as_mut().map(|(_, f)| f))
+            && let Some(effects) = clipboard(field, key, modifiers)
+        {
+            return Some(effects);
+        }
         if self.renaming.is_some() {
             let ty = self.kit().ty(self.res.sizes.text, 500);
             let layout = self.kit().layout(self.renaming.as_ref()?.text(), ty);
