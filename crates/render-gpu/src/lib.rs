@@ -22,6 +22,7 @@
 //!   [`MOST_IMAGES`] at once, so the atlas never runs out of room: each
 //!   image fits a page of it, and there are as many pages as images.
 
+use std::borrow::Cow;
 use std::collections::HashMap;
 use std::sync::Arc;
 
@@ -711,12 +712,24 @@ impl Canvas {
             self.format,
             wgpu::TextureFormat::Bgra8Unorm | wgpu::TextureFormat::Bgra8UnormSrgb
         );
-        let mut pixels = Vec::with_capacity((w * h * 4) as usize);
-        for row in rgba.chunks_exact(rect.width as usize * 4).take(h as usize) {
-            for &[r, g, b, a] in row[..w as usize * 4].as_chunks::<4>().0 {
-                pixels.extend_from_slice(&if bgra { [b, g, r, a] } else { [r, g, b, a] });
+        // Whole rows of RGBA go as they are; others are copied a row at a
+        // time, and their red and blue swapped in place for BGRA: not a
+        // pixel at a time, which costs milliseconds on a whole window.
+        let (row, inside) = (rect.width as usize * 4, w as usize * 4);
+        let pixels: Cow<'_, [u8]> = if !bgra && row == inside {
+            Cow::Borrowed(&rgba[..row * h as usize])
+        } else {
+            let mut pixels = Vec::with_capacity(inside * h as usize);
+            for line in rgba.chunks_exact(row).take(h as usize) {
+                pixels.extend_from_slice(&line[..inside]);
             }
-        }
+            if bgra {
+                for pixel in pixels.as_chunks_mut::<4>().0 {
+                    pixel.swap(0, 2);
+                }
+            }
+            Cow::Owned(pixels)
+        };
         device.queue.write_texture(
             wgpu::TexelCopyTextureInfo {
                 texture: &self.texture,

@@ -233,3 +233,66 @@ fn a_canvas_drawn_where_it_changed_shows_the_new_page() {
     println!("the canvas is {worst} levels from the new page drawn whole");
     assert!(worst <= 1, "{worst} levels apart");
 }
+
+/// What render-cpu draws is written into a canvas as it is, in either of
+/// the formats windows' frames have, whole or where it changed, and a
+/// rectangle reaching past the canvas is cut at its edge.
+#[test]
+#[ignore = "needs a GPU: on WSL, run the Windows build (CLAUDE.md)"]
+fn render_cpus_pixels_are_written_as_they_are() {
+    let instance =
+        wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    let device = render_gpu::open(&instance, None).expect("a GPU");
+    let (w, h) = (37u32, 23u32);
+    let pixel = |x: u32, y: u32, n: u32| {
+        [
+            (x * 7 + n) as u8,
+            (y * 11 + n) as u8,
+            (x + y + n) as u8,
+            (200 + n) as u8,
+        ]
+    };
+    let rect = |x, y, width, height| scene::PixelRect {
+        x,
+        y,
+        width,
+        height,
+    };
+    for format in [
+        wgpu::TextureFormat::Rgba8Unorm,
+        wgpu::TextureFormat::Bgra8Unorm,
+    ] {
+        let mut canvas = render_gpu::Canvas::new(&device, w as u16, h as u16, format);
+        let whole: Vec<u8> = (0..h)
+            .flat_map(|y| (0..w).flat_map(move |x| pixel(x, y, 0)))
+            .collect();
+        canvas.write(&device, rect(0, 0, w, h), &whole);
+        // A part, 10 by 5 from (30, 4): only 7 of its columns are inside.
+        let part: Vec<u8> = (0..5)
+            .flat_map(|y| (0..10).flat_map(move |x| pixel(x, y, 1)))
+            .collect();
+        canvas.write(&device, rect(30, 4, 10, 5), &part);
+        let mut expected = whole.clone();
+        for y in 0..5 {
+            for x in 0..7 {
+                let at = (((4 + y) * w + 30 + x) * 4) as usize;
+                expected[at..at + 4].copy_from_slice(&pixel(x, y, 1));
+            }
+        }
+        if format == wgpu::TextureFormat::Bgra8Unorm {
+            for p in expected.as_chunks_mut::<4>().0 {
+                p.swap(0, 2);
+            }
+        }
+        let got = canvas.read(&device);
+        let first = got.iter().zip(&expected).position(|(a, b)| a != b);
+        assert!(
+            first.is_none(),
+            "{format:?} on {}: byte {first:?} of {}: got {:?}, expected {:?}",
+            device.adapter.get_info().name,
+            got.len(),
+            first.map(|i| &got[i / 4 * 4..i / 4 * 4 + 4]),
+            first.map(|i| &expected[i / 4 * 4..i / 4 * 4 + 4]),
+        );
+    }
+}
