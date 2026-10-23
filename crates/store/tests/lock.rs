@@ -211,3 +211,26 @@ fn a_moved_document_takes_its_lock_along() {
     let there = Store::open(&moved).expect("it opens");
     assert_eq!(there.store.read_only(), None);
 }
+
+/// The lock file is hidden (project owner, 2026-10-23, review k07a0fw7):
+/// a dot before its name, and on Windows the hidden attribute too.
+#[test]
+fn the_lock_file_is_hidden() {
+    let dir = scratch("hidden");
+    let path = dir.join("Report.xw");
+    assert_eq!(store::lock_path(&path), dir.join(".Report.xw-lock"));
+    let held = Store::create(&path, &Document::new(), "story").expect("created");
+    let lock = store::lock_path(&path);
+    assert!(lock.exists(), "locked while open");
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt;
+        const HIDDEN: u32 = 0x2;
+        let attributes = std::fs::metadata(&lock)
+            .expect("the lock file")
+            .file_attributes();
+        assert_ne!(attributes & HIDDEN, 0, "hidden on Windows");
+    }
+    drop(held);
+    assert!(!lock.exists());
+}

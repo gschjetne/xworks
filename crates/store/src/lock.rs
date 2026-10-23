@@ -1,7 +1,9 @@
 //! A document open in one program at a time (project owner, 2026-10-23,
 //! review a23vvez8): the program that has it open to write holds a lock
-//! on a file beside it, its name and `-lock`, as SQLite's own files beside
-//! it are its name and `-wal` or `-shm`.
+//! on a hidden file beside it, a dot, its name and `-lock`, as SQLite's
+//! own files beside it are its name and `-wal` or `-shm`. The dot hides it
+//! on Linux and macOS, and on Windows it's made hidden too (project owner,
+//! 2026-10-23, review k07a0fw7), so it doesn't clutter the folder.
 //!
 //! The lock is the standard library's (`File::try_lock`): `flock` on
 //! Linux and macOS, `LockFileEx` on Windows. The system lets it go when
@@ -20,14 +22,12 @@ use std::fs::{File, OpenOptions, TryLockError};
 use std::io::Write as _;
 use std::path::{Path, PathBuf};
 
-/// The lock file of the document at `document`: beside it, its name and
-/// `-lock`. A document renamed or moved while it's open takes its lock
-/// file along: [`Lock::moved`].
+/// The lock file of the document at `document`: beside it, hidden, a dot,
+/// its name and `-lock`. A document renamed or moved while it's open
+/// takes its lock file along: [`Lock::moved`].
 pub fn lock_path(document: &Path) -> PathBuf {
-    let mut name = document
-        .file_name()
-        .map(|n| n.to_os_string())
-        .unwrap_or_default();
+    let mut name = std::ffi::OsString::from(".");
+    name.push(document.file_name().unwrap_or_default());
     name.push("-lock");
     document.with_file_name(name)
 }
@@ -57,13 +57,15 @@ pub(crate) fn acquire(document: &Path) -> Acquired {
     // An orphan, a file its holder deleted after this program opened it,
     // is tried again; three in a row means something else is at work.
     for _ in 0..3 {
-        let Ok(file) = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(&path)
-        else {
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create(true).truncate(false);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            // FILE_ATTRIBUTE_HIDDEN, as the dot hides it elsewhere.
+            options.attributes(0x2);
+        }
+        let Ok(file) = options.open(&path) else {
             return Acquired::Unavailable;
         };
         match file.try_lock() {
