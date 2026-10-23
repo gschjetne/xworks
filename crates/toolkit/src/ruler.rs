@@ -1,8 +1,10 @@
-//! The ruler over a text column: measured every half unit and numbered
-//! every whole one, with the paragraph's indents above and below and its
-//! tab stops along its foot, which a person sets and drags.
+//! The ruler over a page's text column: across the window, marked from
+//! the page's one edge to the other in its unit and numbered out from the
+//! column's start (`chrome::Marks`), with the paragraph's indents above
+//! and below and its tab stops along its foot, which a person sets and
+//! drags.
 
-use chrome::{Ruler, StopKind};
+use chrome::{Mark, Ruler, StopKind};
 use scene::Item;
 use text::units::PIXEL;
 
@@ -108,38 +110,36 @@ impl RulerView {
             Rect::new(m.start, top + three, m.width, h - 2 * three),
             c.field,
         );
-        // Ticks along the foot every half unit, and each whole one
-        // numbered above its tick.
-        let half = m.unit.units() / 2;
+        // The unit's marks from the page's one edge to the other: numbers
+        // out from the column's start both ways, and ticks up from the
+        // foot between them.
         let number = kit.ty(s.tiny, 400);
-        let mut n = 1;
-        while half > 0 && n * half < m.width - PIXEL {
-            let x = sharp(m.start + n * half);
-            if n % 2 == 0 {
-                let label = (n / 2).to_string();
-                let w = kit.width(&label, number);
-                kit.text(
-                    &mut out,
-                    &label,
-                    x - w / 2 + PIXEL / 2,
-                    top + three,
-                    px(13.0),
-                    number,
-                    c.secondary,
-                );
-                fill(
-                    &mut out,
-                    Rect::new(x, top + h - px(8.0), PIXEL, px(4.0)),
-                    c.secondary,
-                );
-            } else {
-                fill(
-                    &mut out,
-                    Rect::new(x, top + h - px(6.0), PIXEL, px(2.0)),
-                    c.secondary,
-                );
+        let from = m.page_start - m.start;
+        for (at, mark) in m.unit.marks().between(from, from + m.page_width) {
+            let x = sharp(m.start + at);
+            match mark {
+                Mark::Number(n) => {
+                    let label = n.to_string();
+                    let w = kit.width(&label, number);
+                    kit.text(
+                        &mut out,
+                        &label,
+                        x - w / 2 + PIXEL / 2,
+                        top + three,
+                        px(13.0),
+                        number,
+                        c.secondary,
+                    );
+                }
+                Mark::Tick(length) => {
+                    let tall = px(2.0) * i64::from(length);
+                    fill(
+                        &mut out,
+                        Rect::new(x, top + h - px(4.0) - tall, PIXEL, tall),
+                        c.secondary,
+                    );
+                }
             }
-            n += 1;
         }
         // Indents: the first line's above, the start and end below.
         let size = px(4.5);

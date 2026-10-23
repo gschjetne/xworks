@@ -45,7 +45,7 @@ use serde::Deserialize;
 
 pub use inspector::{Choice, Control, ControlKind, Inspector, InspectorTab, Row, Section, Segment};
 pub use length::{Length, Unit};
-pub use ruler::{Indents, Ruler, Stop, StopKind};
+pub use ruler::{Indents, Mark, Marks, Ruler, Stop, StopKind};
 
 /// The commands and menus as `spec/commands/` gives them.
 #[derive(Clone, Debug, Deserialize)]

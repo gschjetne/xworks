@@ -236,8 +236,9 @@ impl Editor {
         Vec::new()
     }
 
-    /// The ruler over the caret's paragraph: the text's column, the
-    /// paragraph's place in it, and its indents and tab stops.
+    /// The ruler over the caret's paragraph: the page, or the draft's
+    /// column, which is its page; the text's column, the paragraph's
+    /// place in it, and its indents and tab stops.
     pub(super) fn ruler_model(&self) -> Ruler {
         let style = self.page_style();
         let (x, _) = self.page_origin(0);
@@ -247,6 +248,8 @@ impl Editor {
         let paragraph = self.paragraph(self.focus.paragraph);
         let own = story::indents(paragraph);
         Ruler {
+            page_start: x,
+            page_width: style.width,
             start,
             width: style.body_width(),
             origin: start + laid.place.indent + laid.inset,

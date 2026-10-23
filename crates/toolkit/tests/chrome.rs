@@ -207,30 +207,8 @@ fn the_ruler_hits_its_stops_and_indents() {
         icons: icons(),
         labels: &labels,
     };
+    let model = ruler_model(Unit::Centimetre);
     let cm = Unit::Centimetre.units();
-    let model = Ruler {
-        start: px(100),
-        width: 15 * cm,
-        origin: px(100),
-        extent: 15 * cm,
-        unit: Unit::Centimetre,
-        indents: Some(Indents {
-            start: cm,
-            end: 0,
-            first: cm,
-        }),
-        stops: vec![
-            Stop {
-                position: 5 * cm,
-                kind: StopKind::Start,
-            },
-            Stop {
-                position: 9 * cm,
-                kind: StopKind::Decimal('.'),
-            },
-        ],
-        enabled: true,
-    };
     let ruler = RulerView::new(&kit, &model, px(40), px(1000));
     let foot = px(40 + 20);
     let head = px(40 + 6);
@@ -249,6 +227,108 @@ fn the_ruler_hits_its_stops_and_indents() {
     assert_eq!(ruler.hit(px(50), head), Some(RulerHit::Bar));
     assert_eq!(ruler.hit(px(50), px(10)), None);
     assert!(ruler.draw(&kit).len() > 40);
+}
+
+/// A ruler over a column 15 cm wide from 100 pixels, on a page 2.5 cm
+/// wider each side, with its first line indented 1 cm, and stops at 5 cm
+/// and 9 cm, measured in `unit`.
+fn ruler_model(unit: Unit) -> Ruler {
+    let cm = Unit::Centimetre.units();
+    Ruler {
+        page_start: px(100) - 5 * cm / 2,
+        page_width: 20 * cm,
+        start: px(100),
+        width: 15 * cm,
+        origin: px(100),
+        extent: 15 * cm,
+        unit,
+        indents: Some(Indents {
+            start: cm,
+            end: 0,
+            first: cm,
+        }),
+        stops: vec![
+            Stop {
+                position: 5 * cm,
+                kind: StopKind::Start,
+            },
+            Stop {
+                position: 9 * cm,
+                kind: StopKind::Decimal('.'),
+            },
+        ],
+        enabled: true,
+    }
+}
+
+/// The ruler is marked in its unit from the page's one edge to the other,
+/// margins too, and numbered out from the column's start both ways:
+/// across the window, nothing marks it beyond the page.
+#[test]
+fn the_ruler_marks_the_page_in_its_unit() {
+    let theme = theme("light");
+    let labels = Labels::new();
+    let kit = Kit {
+        fonts: fonts(),
+        theme: &theme,
+        icons: icons(),
+        labels: &labels,
+    };
+    for unit in [Unit::Centimetre, Unit::Inch, Unit::Pica] {
+        let model = ruler_model(unit);
+        let (left, right) = (model.page_start, model.page_start + model.page_width);
+        let marks = unit
+            .marks()
+            .between(left - model.start, right - model.start);
+        let numbers = marks
+            .iter()
+            .filter(|(_, m)| matches!(m, chrome::Mark::Number(_)))
+            .count();
+        let drawn = RulerView::new(&kit, &model, px(40), px(1000)).draw(&kit);
+        // The ticks: hairlines in the secondary ink.
+        let ticks: Vec<scene::Rect> = drawn
+            .iter()
+            .filter(|item| {
+                matches!(item, scene::Item::Fill { color, .. } if *color == theme.colors.secondary)
+            })
+            .filter_map(scene::Item::bounds)
+            .filter(|r| r.width == PIXEL)
+            .collect();
+        assert_eq!(ticks.len(), marks.len() - numbers, "{unit:?}");
+        assert!(
+            ticks.iter().all(|r| r.x >= left && r.x <= right),
+            "{unit:?}: ticked beyond the page"
+        );
+        assert!(
+            ticks.iter().any(|r| r.x < model.start),
+            "{unit:?}: the margin isn't ticked"
+        );
+        // The numbers, each its own run of glyphs.
+        let glyphs = drawn
+            .iter()
+            .filter(|item| matches!(item, scene::Item::Glyphs(_)))
+            .count();
+        assert_eq!(glyphs, numbers, "{unit:?}");
+    }
+    // Twenty centimetres: from 2 in the left margin to 17 at the page's
+    // right edge, and numbered out both ways from the column's start.
+    let marks = Unit::Centimetre.marks().between(
+        -5 * Unit::Centimetre.units() / 2,
+        35 * Unit::Centimetre.units() / 2,
+    );
+    let numbers: Vec<i64> = marks
+        .iter()
+        .filter_map(|(_, m)| match m {
+            chrome::Mark::Number(n) => Some(*n),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        numbers,
+        [
+            2, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17
+        ]
+    );
 }
 
 fn inspector() -> Inspector {
