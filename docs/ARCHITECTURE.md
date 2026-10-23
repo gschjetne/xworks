@@ -566,7 +566,10 @@ rather than invent it.
     Linux;
   - every command reachable from the palette;
   - remapping later, as shortcuts are data;
-  - Vim motions as an option later, not a priority now.
+  - Vim motions as an option later, not a priority now;
+  - moving by word as each platform does: Ctrl+Right stops at the next
+    word's start on Windows and Linux, Option+Right at the word's end on
+    a Mac (project owner, 2026-10-23, review dcn5ejrd).
 - **The look:**
   - Inter, bundled, for the interface, with Noto for scripts it lacks;
   - compact rows of 24 to 28 px, for mouse and keyboard;
@@ -581,6 +584,20 @@ rather than invent it.
   menus, the document's name, the contextual buttons and the window's own
   buttons (project owner, 2026-10-22, review 3ce247c2). The macOS port
   uses AppKit's unified title bar and toolbar instead.
+
+Settled for M2's stages 5 and 7 (project owner, 2026-10-23, review
+a23vvez8):
+
+- **Files are opened and saved through the system's own dialogs** (rfd):
+  portals on Linux, the common dialogs on Windows.
+- **A new document is named after its first heading or line** until it's
+  named by hand; with continuous saving there's no Save As moment to ask.
+- **A document is never open twice.** If this xWorks has it open, its
+  window comes forward; if another program has it, it opens read-only and
+  says why.
+- **xWorks keeps the last few minutes of what a person does,** in memory,
+  as a session, and writes it out when asked or when xWorks fails, for
+  bug reports. It holds the keys pressed, and so the document's text.
 
 The owner approved mockups of all this as goldens (`mockup-pages`,
 `mockup-pages-dark`, `mockup-draft-dark` and `mockup-palette`, drawn by
@@ -640,7 +657,11 @@ a hard break sit at the start.
   each language's exceptions and minimums (`spec/text/hyphenation.ron`).
   Styles hyphenate where their lines are justified, unless they say
   otherwise; ragged lines that do hyphenate only where a line would
-  otherwise leave a tenth of it empty. Soft hyphens always break.
+  otherwise leave a tenth of it empty (project owner, 2026-10-23, review
+  dcn5ejrd). Soft hyphens always break.
+- **Ligatures** are a style's to set, class by class: standard,
+  contextual, discretionary and historical (project owner, 2026-10-23,
+  review dcn5ejrd). Code sets none, so it shows exactly what was typed.
 - **The hyphen a break adds** is U+2010 where the face of the letter
   before it has it, and the hyphen-minus otherwise, shaped in that face.
   It's no character of the text: it's part of the letter's cell, so the
@@ -799,7 +820,9 @@ a fuzz target.
   an image's last two texels at its right and bottom edges, where
   vello_cpu holds the edge.
 - **render-pdf writes images as figures**, with their alternative text,
-  from the same sRGB pixels the screen draws.
+  from the same sRGB pixels the screen draws. An sRGB JPEG is to pass
+  through unchanged instead, keeping its size (project owner, 2026-10-23,
+  review dcn5ejrd).
 - **Underline and strikethrough** are fills that `text` places from each
   run's font's own `post` and `OS/2` tables, as long as its glyphs but for
   the spaces hanging at a line's end. As fills they're decoration in PDF,
