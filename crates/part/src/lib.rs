@@ -157,6 +157,8 @@ pub struct Look {
     pub tint: Color,
     /// Links on the desk.
     pub accent: Color,
+    /// Whether the caret shows: a host blinking it hides it now and then.
+    pub caret: bool,
 }
 
 /// A part's accessibility tree: its nodes, the one at its root, and the

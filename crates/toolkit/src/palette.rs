@@ -113,7 +113,13 @@ impl PaletteView {
         let layout = kit.layout(field.text(), typed);
         let x = f.x + px(44.0);
         let y = f.y + (f.height - layout.height) / 2;
-        field.draw(&mut out, &layout, (x, y), c.ink, c.selection);
+        field.draw(
+            &mut out,
+            &layout,
+            (x, y),
+            kit.caret.then_some(c.ink),
+            c.selection,
+        );
         kit.text(&mut out, field.text(), x, f.y, f.height, typed, c.ink);
         if !self.rows.is_empty() {
             fill(

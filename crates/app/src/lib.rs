@@ -11,6 +11,8 @@
 //!   draws it as a display list, which the shell renders.
 //! - [`Editor`]: the document's story, edited, on pages or as a draft: the
 //!   first part behind the canvas contract (`part`).
+//! - [`Blink`]: the caret's blinking, at the system's rate, which the
+//!   shell times; headless, the caret always shows.
 //! - [`Recent`]: the documents opened lately.
 //! - [`Settings`]: what the person chose that's kept between runs, such as
 //!   the unit the ruler and the inspector measure in.
@@ -30,6 +32,7 @@
 //! - The same events give the same document and the same frames, so scripted
 //!   sessions can be played headless and compared.
 
+mod blink;
 mod blocks;
 mod editor;
 pub mod picture;
@@ -41,6 +44,7 @@ mod settings;
 mod view;
 mod window;
 
+pub use blink::{Blink, BlinkRate, Blinking};
 pub use editor::{
     Choice, Edge, Editor, EditorError, Effect, Event, PointerShape, Position, View, WindowAction,
 };

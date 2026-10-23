@@ -84,6 +84,7 @@ fn the_title_bar_hits_what_it_draws() {
         theme: &theme,
         icons: icons(),
         labels: &labels,
+        caret: true,
     };
     let state = |_: &str| CommandState {
         enabled: true,
@@ -175,6 +176,7 @@ fn popups_hit_their_rows_and_stay_in_the_window() {
         theme: &theme,
         icons: icons(),
         labels: &labels,
+        caret: true,
     };
     let state = |id: &str| CommandState {
         enabled: id != "redo",
@@ -206,6 +208,7 @@ fn the_ruler_hits_its_stops_and_indents() {
         theme: &theme,
         icons: icons(),
         labels: &labels,
+        caret: true,
     };
     let model = ruler_model(Unit::Centimetre);
     let cm = Unit::Centimetre.units();
@@ -273,6 +276,7 @@ fn the_ruler_marks_the_page_in_its_unit() {
         theme: &theme,
         icons: icons(),
         labels: &labels,
+        caret: true,
     };
     for unit in [Unit::Centimetre, Unit::Inch, Unit::Pica] {
         let model = ruler_model(unit);
@@ -435,6 +439,7 @@ fn the_inspector_hits_its_controls() {
         theme: &theme,
         icons: icons(),
         labels: &labels,
+        caret: true,
     };
     let model = inspector();
     let view = InspectorView::new(&kit, &model, 0, px(1280), px(40), px(774));
@@ -492,6 +497,7 @@ fn the_palette_hits_what_it_found() {
         theme: &theme,
         icons: icons(),
         labels: &labels,
+        caret: true,
     };
     let found = commands().find("head", false, |_| true);
     assert!(found.len() >= 3);
@@ -518,6 +524,7 @@ fn fields_edit_as_documents_do() {
         theme: &theme,
         icons: icons(),
         labels: &labels,
+        caret: true,
     };
     let ty = kit.ty(theme.sizes.value, 400);
     let mut field = Field::new("A walking skeleton");

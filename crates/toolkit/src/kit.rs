@@ -260,6 +260,8 @@ pub struct Kit<'a> {
     pub icons: &'a Icons,
     /// The labels laid out so far.
     pub labels: &'a Labels,
+    /// Whether carets show: a blinking caret is gone now and then.
+    pub caret: bool,
 }
 
 /// `n` pixels, in layout units.

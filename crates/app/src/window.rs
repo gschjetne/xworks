@@ -94,6 +94,9 @@ pub struct Window {
     shape: PointerShape,
     /// What records what's done in the window, if anything does.
     recorder: Option<Recorder>,
+    /// Whether carets show: a shell blinking them hides them now and then
+    /// ([`crate::Blink`]); headless, they always show.
+    caret: bool,
 }
 
 /// Layout units from the logical pixels events carry.
@@ -239,6 +242,7 @@ impl Window {
             pointer: (0, 0),
             shape: PointerShape::Arrow,
             recorder: None,
+            caret: true,
         }
     }
 
@@ -262,6 +266,18 @@ impl Window {
         self.inspector
     }
 
+    /// Shows carets, or hides them, as a blinking caret is gone now and
+    /// then: the document's and a field's being typed in. It isn't an
+    /// event: nothing records it, and only the carets draw differently.
+    pub fn show_caret(&mut self, shown: bool) {
+        self.caret = shown;
+    }
+
+    /// Whether carets show.
+    pub fn caret_shown(&self) -> bool {
+        self.caret
+    }
+
     /// The window is closing: the document takes the name its text gives
     /// it, if it isn't named by hand.
     pub fn close(&mut self) {
@@ -276,6 +292,7 @@ impl Window {
             theme: &self.theme,
             icons: &self.res.icons,
             labels: &self.res.labels,
+            caret: self.caret,
         }
     }
 
@@ -1322,7 +1339,10 @@ impl Window {
         let mut page = Page::new(self.width, self.height);
         // The document, in its area.
         let area = self.area();
-        let look = crate::editor::view_look(&self.res, self.dark);
+        let look = part::Look {
+            caret: self.caret,
+            ..crate::editor::view_look(&self.res, self.dark)
+        };
         let mut frame = Page::new(area.width, area.height);
         frame.items = self.editor.frame(&look);
         page.place(&frame, Point::new(area.x, area.y));

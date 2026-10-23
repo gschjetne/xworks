@@ -371,7 +371,13 @@ impl InspectorView {
                         Some(field) => {
                             let layout = kit.layout(field.text(), value);
                             let y = rect.y + (rect.height - layout.height) / 2;
-                            field.draw(&mut out, &layout, (x, y), c.ink, c.selection);
+                            field.draw(
+                                &mut out,
+                                &layout,
+                                (x, y),
+                                kit.caret.then_some(c.ink),
+                                c.selection,
+                            );
                             kit.text(&mut out, field.text(), x, rect.y, rect.height, value, ink);
                         }
                         None => {

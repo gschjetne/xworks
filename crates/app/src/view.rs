@@ -92,7 +92,7 @@ pub(crate) fn draw(editor: &Editor, look: &Look) -> Page {
         let layout = &parts.paragraphs[k].layout;
         highlight(editor, &mut out, k, layout, from..to, ink, true);
     }
-    if let Some((x, top, bottom)) = parts.caret {
+    if let Some((x, top, bottom)) = parts.caret.filter(|_| look.caret) {
         out.items.push(Item::Fill {
             path: Path::rect(x - PIXEL / 2, top, PIXEL * 3 / 2, bottom - top),
             color: ink,

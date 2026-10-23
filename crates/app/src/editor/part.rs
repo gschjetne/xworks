@@ -20,6 +20,7 @@ pub(crate) fn view_look(res: &Resources, dark: bool) -> Look {
         line: c.line,
         tint: c.hover,
         accent: c.accent,
+        caret: true,
     }
 }
 

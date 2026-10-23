@@ -328,3 +328,43 @@ fn lengths_show_in_the_unit_chosen() {
     window.update(key(Key::Enter, false));
     assert_eq!(tabs_of(&window), before);
 }
+
+/// A blink costs only the caret: the window draws again only what changed
+/// (scene::redraw), and a caret gone or back changes its own few pixels,
+/// the document's, and a field's being typed in, such as the palette's.
+#[test]
+fn a_blink_changes_only_the_caret() {
+    let mut window = window("app-blink");
+    window.update(Event::Text("Blinking".to_string()));
+    assert!(window.caret_shown(), "headless, the caret shows");
+    let (x, top, bottom) = {
+        use part::Part;
+        window.editor().caret().expect("a caret")
+    };
+    let shown = window.view();
+    window.show_caret(false);
+    let gone = window.view();
+    let changed = scene::changed(&shown, &gone);
+    assert_eq!(changed.len(), 1, "{changed:?}");
+    let caret = changed[0];
+    // The caret, a pixel and a half wide, where the editor says it is,
+    // below the title bar and the ruler.
+    assert_eq!(caret.width, 3 * text::units::PIXEL / 2);
+    assert_eq!(caret.height, bottom - top);
+    assert_eq!(caret.x, x - text::units::PIXEL / 2);
+    assert!(caret.y > top, "{caret:?} for {top}");
+    let pixels: u64 = scene::redraw(&shown, &gone, 96.0, 900, 700)
+        .iter()
+        .map(|r| u64::from(r.width) * u64::from(r.height))
+        .sum();
+    // A few pixels of the window's 630 000: the caret's, and a pixel
+    // round it for anti-aliasing.
+    assert!(pixels < 200, "{pixels} pixels drawn again");
+
+    // With the palette open, its field's caret blinks with the document's.
+    window.show_caret(true);
+    window.update(Event::Command("command-palette".to_string()));
+    let shown = window.view();
+    window.show_caret(false);
+    assert_eq!(scene::changed(&shown, &window.view()).len(), 2);
+}

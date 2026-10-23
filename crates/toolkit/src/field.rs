@@ -165,17 +165,20 @@ impl Field {
         }
     }
 
-    /// Draws the selection, or the caret, for the text laid out as
-    /// `layout` from (`x`, `y`).
+    /// Draws the selection, or the caret in `caret` if it shows, for the
+    /// text laid out as `layout` from (`x`, `y`).
     pub fn draw(
         &self,
         out: &mut Vec<Item>,
         layout: &Layout,
         (x, y): (i64, i64),
-        caret: Color,
+        caret: Option<Color>,
         selection: Color,
     ) {
         if self.anchor == self.focus {
+            let Some(caret) = caret else {
+                return;
+            };
             let c = layout.caret(Cursor::downstream(self.focus));
             out.push(Item::Fill {
                 path: Path::rect(

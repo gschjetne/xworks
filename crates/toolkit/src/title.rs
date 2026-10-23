@@ -223,7 +223,13 @@ impl TitleBar {
                     field_box(&mut out, c, rect, r - PIXEL);
                     let x = rect.x + px(12.0);
                     let y = (self.height - layout.height) / 2;
-                    field.draw(&mut out, &layout, (x, y), c.ink, c.selection);
+                    field.draw(
+                        &mut out,
+                        &layout,
+                        (x, y),
+                        kit.caret.then_some(c.ink),
+                        c.selection,
+                    );
                     kit.text(&mut out, field.text(), x, 0, self.height, name_ty, c.ink);
                 }
                 None => {
