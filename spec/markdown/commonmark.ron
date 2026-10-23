@@ -1,0 +1,18 @@
+// CommonMark's own examples (docs/ROADMAP.md, M2 stage 6): every example
+// of the spec pulldown-cmark 0.13 follows, 0.31.2, as the spec's site
+// gives them in JSON, each a piece of Markdown and the HTML it means. The
+// Markdown crate's tests read each, write it back and read that again
+// (crates/markdown/tests/commonmark.rs).
+//
+// The spec is under CC-BY-SA 4.0, so it isn't committed (CLAUDE.md, rule
+// 10): `cargo run -p fetch-fonts` downloads it into commonmark/, beside the
+// fonts, and checks it against its hash. CI does the same.
+(
+    files: [
+        (
+            file: "spec-0.31.2.json",
+            url: "https://spec.commonmark.org/0.31.2/spec.json",
+            sha256: "d431b29d97b6f73e69d547109cf5081578fac931e72afe95639ebe766c1b2a20",
+        ),
+    ],
+)

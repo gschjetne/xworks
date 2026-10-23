@@ -51,6 +51,19 @@ pub enum Error {
         /// Where it should be.
         path: PathBuf,
     },
+    /// A file fetched by hash, such as CommonMark's examples, hasn't been
+    /// fetched.
+    #[error("{path} is missing; fetch it with the fonts, `cargo run -p fetch-fonts`")]
+    MissingFetched {
+        /// Where it should be.
+        path: PathBuf,
+    },
+    /// A JSON file isn't what it should be.
+    #[error("{path} isn't the JSON it should be")]
+    Json {
+        /// The file.
+        path: PathBuf,
+    },
     /// An image couldn't be encoded as PNG.
     #[error("encoding PNG: {0}")]
     Png(#[from] png::EncodingError),

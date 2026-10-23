@@ -3,3 +3,5 @@ target/
 fonts/
 # The hyphenation patterns, fetched with the fonts (spec/text/hyphenation.ron).
 hyphenation/
+# CommonMark's examples, fetched with the fonts (spec/markdown/commonmark.ron).
+commonmark/

@@ -7,6 +7,8 @@
 //! - [`fonts`]: the bundled fonts, as `spec/text/fonts.ron` lists them.
 //! - [`pdf`]: a PDF's text read back through its fonts' ToUnicode maps
 //!   and its `/ActualText`, a second reader beside pdf-extract.
+//! - [`commonmark`]: CommonMark's own examples, as
+//!   `spec/markdown/commonmark.ron` lists them.
 //! - [`hyphenation`]: the hyphenation patterns, as
 //!   `spec/text/hyphenation.ron` lists them.
 //! - [`specs`]: the RON files in a directory of `spec/`, for tests to read.
@@ -21,6 +23,7 @@
 //!   bytes.
 //! - The same pixels always give the same hash, on every platform.
 
+pub mod commonmark;
 mod error;
 pub mod fonts;
 pub mod golden;
@@ -51,6 +54,36 @@ pub fn workspace_root() -> PathBuf {
 /// sorted by name.
 pub fn specs(dir: &str) -> Result<Vec<(String, String)>, Error> {
     files(&workspace_root().join("spec").join(dir), "ron")
+}
+
+/// The files in `spec/DIR` with the extension `extension`, as names (with
+/// it) and their bytes as they are, sorted by name: for files whose bytes
+/// matter, such as Markdown kept byte for byte.
+pub fn spec_bytes(dir: &str, extension: &str) -> Result<Vec<(String, Vec<u8>)>, Error> {
+    let dir = workspace_root().join("spec").join(dir);
+    let entries = std::fs::read_dir(&dir).map_err(|source| Error::Io {
+        path: dir.clone(),
+        source,
+    })?;
+    let mut out = Vec::new();
+    for entry in entries {
+        let path = entry
+            .map_err(|source| Error::Io {
+                path: dir.clone(),
+                source,
+            })?
+            .path();
+        if path.extension().is_some_and(|e| e == extension) {
+            let name = path
+                .file_name()
+                .map(|s| s.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let bytes = std::fs::read(&path).map_err(|source| Error::Io { path, source })?;
+            out.push((name, bytes));
+        }
+    }
+    out.sort();
+    Ok(out)
 }
 
 /// Lucide's icons in `icons/lucide/`, as names (without `.svg`) and SVG,

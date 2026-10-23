@@ -1,6 +1,8 @@
 //! `fetch-fonts`: downloads the fonts `spec/text/fonts.ron` lists into
-//! `fonts/`, and the hyphenation patterns `spec/text/hyphenation.ron`
-//! lists into `hyphenation/`, and checks each against its hash.
+//! `fonts/`, the hyphenation patterns `spec/text/hyphenation.ron` lists
+//! into `hyphenation/`, and CommonMark's examples
+//! `spec/markdown/commonmark.ron` lists into `commonmark/`, and checks each
+//! against its hash.
 //!
 //! ```text
 //! fetch-fonts           fetch what's missing or wrong, check the rest
@@ -18,7 +20,7 @@ use std::process::Command;
 use anyhow::{Context, bail};
 use sha2::{Digest, Sha256};
 use testkit::fonts::{self, FontFile};
-use testkit::hyphenation;
+use testkit::{commonmark, hyphenation};
 
 fn main() -> anyhow::Result<()> {
     let check_only = match std::env::args().nth(1).as_deref() {
@@ -39,6 +41,12 @@ fn main() -> anyhow::Result<()> {
     let fetched = fetch_all(&dir, &hyphenation::manifest()?.files, check_only)?;
     println!(
         "{}: the hyphenation patterns, checked ({fetched} fetched)",
+        dir.display()
+    );
+    let dir = commonmark::dir();
+    let fetched = fetch_all(&dir, &commonmark::manifest()?.files, check_only)?;
+    println!(
+        "{}: CommonMark's examples, checked ({fetched} fetched)",
         dir.display()
     );
     Ok(())
