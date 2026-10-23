@@ -996,9 +996,15 @@ impl ApplicationHandler<UserEvent> for Shell {
                 }
             }
             WindowEvent::Resized(size) => {
-                if let Some(gpu) = &self.gpu {
-                    win.config.width = size.width.max(1);
-                    win.config.height = size.height.max(1);
+                let (width, height) = (size.width.max(1), size.height.max(1));
+                // A window says its size as it's shown, which its surface
+                // has already: making its frames again costs a few
+                // milliseconds at the start, and a software GPU's memory.
+                if let Some(gpu) = &self.gpu
+                    && (win.config.width, win.config.height) != (width, height)
+                {
+                    win.config.width = width;
+                    win.config.height = height;
                     win.surface.configure(&gpu.device, &win.config);
                 }
                 let logical = size.to_logical::<f64>(scale);
