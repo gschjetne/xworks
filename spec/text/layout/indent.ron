@@ -1,0 +1,16 @@
+// A first line indented 24 points: it starts there, and is that much
+// narrower, so less fits on it ("and" would, unindented); the lines
+// after it start at the edge.
+(
+    text: "An indented first line, and the lines after it at the margin, as the ruler sets them.",
+    style: (family: "Source Serif 4", language: "en"),
+    width: 150,
+    indent: 24,
+    lines: [
+        (text: "An indented first line, "),
+        (text: "and the lines after it at the "),
+        (text: "margin, as the ruler sets "),
+        (text: "them."),
+    ],
+    positions: [("0>", 304800), ("24>", 0)],
+)

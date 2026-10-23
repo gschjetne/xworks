@@ -94,6 +94,7 @@ impl Column<'_> {
                 hyphenate: self.hyphenate,
                 hyphenation: Some(hyphenation()),
                 tabs: self.tabs,
+                ..Setting::default()
             },
         );
         page.items

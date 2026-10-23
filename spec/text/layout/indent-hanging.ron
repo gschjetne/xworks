@@ -1,0 +1,16 @@
+// A first line hanging 12 points out past the start edge, as a negative
+// indent sets it: it starts there and is that much wider. In a
+// right-to-left paragraph, it reaches past the right edge, and holds a
+// word ("ארוך") it wouldn't unindented.
+(
+    text: "שלום עולם, זהו טקסט ארוך מספיק כדי לשבור אותו לשורות.",
+    style: (family: "Noto Serif", language: "he"),
+    width: 120,
+    indent: -12,
+    paragraph: Rtl,
+    lines: [
+        (text: "שלום עולם, זהו טקסט ארוך "),
+        (text: "מספיק כדי לשבור אותו "),
+        (text: "לשורות."),
+    ],
+)

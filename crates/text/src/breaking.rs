@@ -281,8 +281,34 @@ fn is_cjk(c: char) -> bool {
 /// a word is hyphenated: a tenth.
 const HYPHENATION_ZONE: i64 = 10;
 
+/// How wide a paragraph's lines are: its first, which an indent may make
+/// narrower or wider, and the rest.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct Widths {
+    /// The first line's.
+    pub first: i64,
+    /// Every other line's.
+    pub rest: i64,
+}
+
+impl Widths {
+    /// The width of the line starting at `start`.
+    fn at(self, start: usize) -> i64 {
+        if start == 0 { self.first } else { self.rest }
+    }
+
+    /// The same width for every line.
+    #[cfg(test)]
+    fn all(width: i64) -> Widths {
+        Widths {
+            first: width,
+            rest: width,
+        }
+    }
+}
+
 /// Lines first fit: each ends at the last place it may that fits
-/// `width`, by `measure` (of a line, and whether it ends in a hyphen),
+/// `widths`, by `measure` (of a line, and whether it ends in a hyphen),
 /// and a word is hyphenated only where the line would otherwise leave
 /// more than a tenth of it empty. A word too wide for a line on its own
 /// is broken between graphemes.
@@ -290,13 +316,17 @@ pub(crate) fn first_fit(
     text: &str,
     graphemes: &[usize],
     candidates: &[Candidate],
-    width: i64,
+    widths: Widths,
     measure: impl Fn(Range<usize>, bool) -> i64,
 ) -> Vec<(Range<usize>, Kind)> {
-    let fits = |range: Range<usize>, kind: Kind| measure(range, kind.shows_hyphen()) <= width;
+    let fits = |range: Range<usize>, kind: Kind| {
+        let width = widths.at(range.start);
+        measure(range, kind.shows_hyphen()) <= width
+    };
     let mut lines = Vec::new();
     let (mut start, mut next) = (0, 0);
     loop {
+        let width = widths.at(start);
         // The last place that fits, and the last that isn't a hyphenation
         // point.
         let mut plain: Option<usize> = None;
@@ -444,7 +474,7 @@ struct Best {
 const STATES: usize = 6;
 
 /// Lines broken by Knuth and Plass's algorithm: the breaks that give the
-/// paragraph the least demerits, each line within `width` by `measure`,
+/// paragraph the least demerits, each line within `widths` by `measure`,
 /// stretching by the `glue` on it. The last line, and lines ending at a
 /// hard break, don't stretch.
 ///
@@ -458,11 +488,12 @@ pub(crate) fn knuth_plass(
     text: &str,
     graphemes: &[usize],
     candidates: &[Candidate],
-    width: i64,
+    widths: Widths,
     measure: impl Fn(Range<usize>, bool) -> i64,
     stretch: impl Fn(Range<usize>) -> i64,
 ) -> Vec<(Range<usize>, Kind)> {
     // Places inside words too wide for any line, so every line can fit.
+    let width = widths.first.min(widths.rest);
     let mut all: Vec<Candidate> = Vec::with_capacity(candidates.len());
     let mut previous = 0;
     for &c in candidates {
@@ -482,8 +513,11 @@ pub(crate) fn knuth_plass(
     all.sort_by_key(|c| c.offset);
     all.dedup_by_key(|c| c.offset);
 
-    let path = pass(&all, width, TOLERANCE, 0, &measure, &stretch)
-        .or_else(|| pass(&all, width, WORST, width / EMERGENCY, &measure, &stretch))
+    let path = pass(&all, widths, TOLERANCE, 0, &measure, &stretch)
+        .or_else(|| {
+            let emergency = widths.rest / EMERGENCY;
+            pass(&all, widths, WORST, emergency, &measure, &stretch)
+        })
         .unwrap_or_default();
     let mut lines = Vec::with_capacity(path.len() + 1);
     let mut start = 0;
@@ -509,7 +543,7 @@ pub(crate) fn knuth_plass(
 /// lines end at, by index, or `None` if no paragraph is possible.
 fn pass(
     candidates: &[Candidate],
-    width: i64,
+    widths: Widths,
     tolerance: i64,
     emergency: i64,
     measure: &impl Fn(Range<usize>, bool) -> i64,
@@ -535,9 +569,19 @@ fn pass(
                 break;
             }
             let start = offset(i);
+            let width = widths.at(start);
             let natural = measure(start..end, c.kind.shows_hyphen());
             let single = i + 1 == j;
             if natural > width && !single {
+                // A first line hanging past the edge is wider than the
+                // rest: one from the paragraph's start may still fit.
+                if i > 0
+                    && widths.first > widths.rest
+                    && !candidates[..i].iter().any(|c| c.kind == Kind::Mandatory)
+                {
+                    i = 1;
+                    continue;
+                }
                 break;
             }
             if best[i].iter().all(Option::is_none) {
@@ -712,7 +756,14 @@ mod tests {
                     least = Some(least.map_or(d, |l: i64| l.min(d)));
                 }
             }
-            let lines = knuth_plass(&text, &graphemes, &candidates, width, measure, spaces);
+            let lines = knuth_plass(
+                &text,
+                &graphemes,
+                &candidates,
+                Widths::all(width),
+                measure,
+                spaces,
+            );
             let ends: Vec<usize> = lines.iter().map(|(r, _)| r.end).collect();
             if let Some(least) = least {
                 assert_eq!(demerits(&text, &ends, width), Some(least), "{text:?}");
@@ -726,7 +777,14 @@ mod tests {
         let graphemes: Vec<usize> = (0..=text.len()).collect();
         let measure = |r: Range<usize>, _: bool| text[r].trim_end().len() as i64 * 10;
         let spaces = |r: Range<usize>| text[r].trim_end().matches(' ').count() as i64 * 5;
-        let lines = knuth_plass(&text, &graphemes, &candidates, 200, measure, spaces);
+        let lines = knuth_plass(
+            &text,
+            &graphemes,
+            &candidates,
+            Widths::all(200),
+            measure,
+            spaces,
+        );
         let mut at = 0;
         for (range, _) in &lines {
             assert_eq!(range.start, at);

@@ -61,6 +61,11 @@ One paragraph each, laid out and checked against what's written:
     // halfway between the carets at two cursors.
     positions: [("2>", 762000)],
     middles: [("19>", "25<", 2794000)],
+    // Optional: each line this many thousandths of its largest font size
+    // tall, and the first line indented from the start edge this many
+    // points (negative hangs it out).
+    line_height: Some(1500),
+    indent: 24,
 )
 ```
 
@@ -68,8 +73,9 @@ A line may also say whether it ends in a hyphen that isn't in the text,
 `hyphen: true`.
 
 `by` is `Right` or `Left` (on screen), `Next` or `Previous` (in the
-text's order, a grapheme at a time), or `NextWord`, `PreviousWord`,
-`NextSentence` or `PreviousSentence`.
+text's order, a grapheme at a time), or `NextWord` (to a word's end, as
+on a Mac), `NextWordStart` (to the next word's start, as on Windows and
+Linux), `PreviousWord`, `NextSentence` or `PreviousSentence`.
 
 Besides what a case states, every case is checked for what holds of all
 layouts: lines cover the text in order, fit the width unless a single

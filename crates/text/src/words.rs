@@ -2,9 +2,11 @@
 //! where the caret moves by them, and what a double or a triple click
 //! selects.
 //!
-//! Moving by words goes the same way on every platform: forward to the end
-//! of a word, back to its start, so a word selected by moving over it has
-//! no space after it. Sentences are the same, but a sentence selected
+//! Moving by words goes back to a word's start on every platform, and
+//! forward as each platform does (project owner, 2026-10-23, review
+//! dcn5ejrd): on a Mac to the end of a word, so a word selected by moving
+//! over it has no space after it ([`Layout::next_word`]); on Windows and
+//! Linux to the next word's start ([`Layout::next_word_start`]). Sentences are the same, but a sentence selected
 //! whole takes the spaces after it, so deleting it leaves one space
 //! between its neighbours.
 
@@ -36,6 +38,24 @@ impl Layout {
             .map(|w| w.range.end)
             .find(|&end| end > at);
         self.forward_to(at, end)
+    }
+
+    /// The cursor at the start of the next word after `cursor`, in the
+    /// text's order, past the spaces and punctuation after the word it's
+    /// in; at the text's end if no word follows, and `None` there. A word
+    /// starting a line is reached at that line's start.
+    pub fn next_word_start(&self, cursor: Cursor) -> Option<Cursor> {
+        let at = self.normalize(cursor).offset;
+        let start = self
+            .words()
+            .into_iter()
+            .filter(|w| w.word_like)
+            .map(|w| w.range.start)
+            .find(|&start| start > at);
+        match start {
+            Some(start) => Some(self.normalize(Cursor::downstream(start))),
+            None => self.forward_to(at, None),
+        }
     }
 
     /// The cursor at the start of the word `cursor` is in or after, in

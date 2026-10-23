@@ -38,6 +38,11 @@ struct Case {
     middles: Vec<(String, String, i64)>,
     #[serde(default)]
     units: Vec<(String, Unit, usize, usize)>,
+    /// How tall each line is, in thousandths of its largest font size.
+    line_height: Option<i64>,
+    /// How far the first line is indented from the start edge, in points.
+    #[serde(default)]
+    indent: f64,
 }
 
 #[derive(Debug, Deserialize)]
@@ -115,6 +120,7 @@ enum Move {
     Next,
     Previous,
     NextWord,
+    NextWordStart,
     PreviousWord,
     NextSentence,
     PreviousSentence,
@@ -197,6 +203,8 @@ fn lay_out(case: &Case) -> Layout {
             hyphenate: case.hyphenate,
             hyphenation: Some(hyphenation()),
             tabs: tabs.as_ref(),
+            line_height: case.line_height,
+            indent: points(case.indent),
         },
     )
 }
@@ -330,6 +338,7 @@ fn step(layout: &Layout, at: Cursor, by: Move) -> Option<Cursor> {
         Move::Next => layout.next(at),
         Move::Previous => layout.previous(at),
         Move::NextWord => layout.next_word(at),
+        Move::NextWordStart => layout.next_word_start(at),
         Move::PreviousWord => layout.previous_word(at),
         Move::NextSentence => layout.next_sentence(at),
         Move::PreviousSentence => layout.previous_sentence(at),
@@ -417,6 +426,11 @@ fn invariants(case: &Case, layout: &Layout) -> Vec<String> {
     }
 
     for (i, line) in layout.lines.iter().enumerate() {
+        // The first line starts its indent in from the start edge, and is
+        // that much narrower.
+        let indent = if i == 0 { points(case.indent) } else { 0 };
+        let rtl = layout.direction() == Direction::Rtl;
+        let (start, width) = (if rtl { 0 } else { indent }, width - indent);
         // Each fits, unless it's one character too wide on its own.
         let graphemes = locale::graphemes(&text[line.range.clone()]).len() - 1;
         if line.width > width && graphemes > 1 {
@@ -440,8 +454,7 @@ fn invariants(case: &Case, layout: &Layout) -> Vec<String> {
             x += run.width;
         }
         // Aligned as asked: the line's text, less spaces hanging at its end.
-        let rtl = layout.direction() == Direction::Rtl;
-        let (left, right) = (line.x, width - (line.x + line.width));
+        let (left, right) = (line.x - start, width - (line.x - start + line.width));
         let aligned = match (&case.align, rtl) {
             (AlignSpec::Start | AlignSpec::Justify, false) | (AlignSpec::End, true) => left == 0,
             (AlignSpec::Start | AlignSpec::Justify, true) | (AlignSpec::End, false) => right == 0,

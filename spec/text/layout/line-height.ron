@@ -1,0 +1,14 @@
+// A paragraph set with its lines one and a half times its size apart:
+// each line is 18 points tall at 12 points, whatever its fonts' own ascent
+// and descent, and the lines stack.
+(
+    text: "Lines set one and a half times their size apart, as the inspector's line height sets them.",
+    style: (family: "Source Serif 4", size: 12, language: "en"),
+    width: 200,
+    line_height: Some(1500),
+    lines: [
+        (text: "Lines set one and a half times their ", height: 228600),
+        (text: "size apart, as the inspector's line ", height: 228600),
+        (text: "height sets them.", height: 228600),
+    ],
+)

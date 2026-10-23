@@ -1,0 +1,26 @@
+// On Windows and Linux, moving forward by words stops at the next word's
+// start, past the spaces and punctuation after the word it leaves (project
+// owner, 2026-10-23, review dcn5ejrd); at the text's end where no word
+// follows. Back is the same as everywhere: to a word's start. A word
+// starting a line the text wraps to is reached at that line's start.
+(
+    text: "The cat's toy, it seems, is lost. Is it? Yes.",
+    style: (family: "Source Serif 4", language: "en"),
+    width: 150,
+    lines: [
+        (text: "The cat's toy, it seems, is "),
+        (text: "lost. Is it? Yes."),
+    ],
+    carets: [
+        (
+            from: "0>",
+            by: NextWordStart,
+            visits: ["4>", "10>", "15>", "18>", "25>", "28>", "34>", "37>", "41>", "45<"],
+        ),
+        (
+            from: "45<",
+            by: PreviousWord,
+            visits: ["41>", "37>", "34>", "28>", "25>", "18>", "15>", "10>", "4>", "0>"],
+        ),
+    ],
+)

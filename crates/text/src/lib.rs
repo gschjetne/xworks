@@ -11,8 +11,8 @@
 //!   stretched. Each line is ordered for display by the bidi algorithm.
 //! - [`Hyphenator`] and [`Hyphenation`]: hyphenation by Liang's
 //!   algorithm, from TeX's pattern files as they ship; a [`Setting`] says
-//!   whether a paragraph's words are hyphenated, and where its [`Tabs`]
-//!   are.
+//!   whether a paragraph's words are hyphenated, where its [`Tabs`] are,
+//!   how tall its lines are and how far its first line is indented.
 //! - [`Layout::paint`]: the paragraph as display-list glyph runs (`scene`),
 //!   each glyph with the text it shows.
 //! - [`Layout`]'s editing queries ([`Cursor`], [`Caret`]): where the

@@ -144,8 +144,10 @@ pub struct Paragraph<'a> {
 }
 
 /// How a paragraph is set beyond its text and styles: whether its words
-/// are hyphenated, and where its tabs go. The default hyphenates nothing
-/// but at soft hyphens, and makes tabs as wide as spaces.
+/// are hyphenated, where its tabs go, how tall its lines are, and how far
+/// its first line is indented. The default hyphenates nothing but at soft
+/// hyphens, makes tabs as wide as spaces, lines as tall as their fonts,
+/// and indents nothing.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Setting<'a> {
     /// Whether words may be hyphenated at lines' ends, by their language's
@@ -155,6 +157,16 @@ pub struct Setting<'a> {
     pub hyphenation: Option<&'a Hyphenation>,
     /// The tab stops.
     pub tabs: Option<&'a Tabs>,
+    /// How tall each line is, in thousandths of the largest font size on
+    /// it: 1 500 is one and a half times the font. The space it adds to
+    /// the fonts' own ascent and descent, or takes from them, is split
+    /// evenly above and below the text. `None` makes lines as tall as
+    /// their fonts.
+    pub line_height: Option<i64>,
+    /// How far the first line starts in from the paragraph's start edge,
+    /// in layout units, and so how much narrower it is; negative hangs it
+    /// out past the edge.
+    pub indent: i64,
 }
 
 /// A paragraph laid out: its lines, top to bottom. Positions are in layout
@@ -363,24 +375,29 @@ pub fn layout_with(fonts: &Fonts, paragraph: &Paragraph<'_>, setting: &Setting<'
         breaking::candidates(text, &graphemes, &spans, hyphenation, &mut unhyphenated);
     let measure = |range: Range<usize>, hyphen: bool| shaping.measure(range, hyphen);
     let justify = paragraph.align == Align::Justify;
+    let widths = breaking::Widths {
+        first: paragraph.width.saturating_sub(setting.indent),
+        rest: paragraph.width,
+    };
     let lines_at = if justify {
-        breaking::knuth_plass(
-            text,
-            &graphemes,
-            &candidates,
-            paragraph.width,
-            measure,
-            |range| shaping.stretch(range),
-        )
+        breaking::knuth_plass(text, &graphemes, &candidates, widths, measure, |range| {
+            shaping.stretch(range)
+        })
     } else {
-        breaking::first_fit(text, &graphemes, &candidates, paragraph.width, measure)
+        breaking::first_fit(text, &graphemes, &candidates, widths, measure)
     };
     let count = lines_at.len();
     let mut lines = Vec::with_capacity(count);
     let mut top = 0;
     for (k, (range, kind)) in lines_at.into_iter().enumerate() {
         let stretch = justify && k + 1 < count && kind != Kind::Mandatory;
-        let line = build_line(&shaping, &bidi, &graphemes, range, kind, stretch, top);
+        let indent = if k == 0 { setting.indent } else { 0 };
+        let mut line = build_line(
+            &shaping, &bidi, &graphemes, range, kind, stretch, top, indent,
+        );
+        if let Some(per_mille) = setting.line_height {
+            set_line_height(&mut line, paragraph, per_mille);
+        }
         top += line.height;
         lines.push(line);
     }
@@ -718,6 +735,27 @@ struct Piece {
     glyphs: Vec<Shaped>,
 }
 
+/// Makes `line` `per_mille` thousandths of its largest font size tall,
+/// the difference from its fonts' height split evenly above and below.
+fn set_line_height(line: &mut Line, paragraph: &Paragraph<'_>, per_mille: i64) {
+    let size = line.runs.iter().map(|r| r.size).max().unwrap_or_else(|| {
+        paragraph.spans[span_at(paragraph.spans, line.range.start)]
+            .style
+            .size
+    });
+    let per_mille = per_mille.clamp(100, 10_000);
+    let height = (size.saturating_mul(per_mille) + 500).div_euclid(1000);
+    let extra = height - line.height;
+    let above = extra.div_euclid(2);
+    line.ascent += above;
+    line.descent += extra - above;
+    line.height = height;
+    line.baseline = line.top + line.ascent;
+}
+
+/// Line `range`, at `top`, as wide as the paragraph less `indent`, which
+/// it starts in from the paragraph's start edge.
+#[allow(clippy::too_many_arguments, reason = "a line's place and its text")]
 fn build_line(
     shaping: &Shaping<'_>,
     bidi: &Bidi<'_>,
@@ -726,8 +764,10 @@ fn build_line(
     kind: Kind,
     stretch: bool,
     top: i64,
+    indent: i64,
 ) -> Line {
     let (fonts, paragraph) = (shaping.fonts, shaping.paragraph);
+    let room = paragraph.width.saturating_sub(indent);
     let text = paragraph.text;
     let levels = bidi.line_levels(range.clone());
     let level_at = |offset: usize| levels[offset - range.start];
@@ -809,24 +849,21 @@ fn build_line(
         .map(|g| g.advance)
         .sum();
     let mut width = total - hang;
-    if stretch && width < paragraph.width {
-        width += justify(
-            &mut pieces,
-            shaping,
-            range.start,
-            end,
-            paragraph.width - width,
-        );
+    if stretch && width < room {
+        width += justify(&mut pieces, shaping, range.start, end, room - width);
     }
-    // Left to right, aligned.
+    // Left to right, aligned in the room the line has: from its indent
+    // to the far edge.
     let order = locale::visual_order(&pieces.iter().map(|p| p.level).collect::<Vec<_>>());
     let rtl = bidi.paragraph_level() % 2 == 1;
-    let free = paragraph.width - width;
-    let text_x = match (paragraph.align, rtl) {
-        (Align::Start | Align::Justify, false) | (Align::End, true) => 0,
-        (Align::Start | Align::Justify, true) | (Align::End, false) => free,
-        (Align::Center, _) => free.div_euclid(2),
-    };
+    let free = room - width;
+    let left = if rtl { 0 } else { indent };
+    let text_x = left
+        + match (paragraph.align, rtl) {
+            (Align::Start | Align::Justify, false) | (Align::End, true) => 0,
+            (Align::Start | Align::Justify, true) | (Align::End, false) => free,
+            (Align::Center, _) => free.div_euclid(2),
+        };
     // Hanging spaces are at the line's end: the right in a left-to-right
     // paragraph, the left in a right-to-left one.
     let mut pen = if rtl { text_x - hang } else { text_x };
