@@ -304,7 +304,11 @@ fn main() -> anyhow::Result<()> {
         res.recent = Arc::new(app::Recent::load(config.join("recent.ron")));
     }
     let recordings = Recordings::default();
-    write_when_failing(recordings.clone(), recorder::folder(&res.documents));
+    write_when_failing(
+        recordings.clone(),
+        recorder::folder(&res.documents),
+        res.recent.clone(),
+    );
     mark(&mut measuring, "resources");
     let mut shell = Shell {
         res: Arc::new(res),
@@ -325,17 +329,21 @@ fn main() -> anyhow::Result<()> {
         recordings,
     };
     event_loop.run_app(&mut shell)?;
+    // The documents opened lately, written to their file.
+    shell.res.recent.flush();
     Ok(())
 }
 
 /// When xWorks fails, writes what was done in each window over the last
 /// few minutes, as sessions for a bug report, to `folder`, which is in the
 /// documents folder, and says where (project owner, 2026-10-23, review
-/// a23vvez8). Nothing is sent anywhere.
-fn write_when_failing(recordings: Recordings, folder: PathBuf) {
+/// a23vvez8). Nothing is sent anywhere. The documents opened lately are
+/// written to their file too.
+fn write_when_failing(recordings: Recordings, folder: PathBuf, recent: Arc<app::Recent>) {
     let previous = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         previous(info);
+        recent.flush();
         for path in recordings.write_all(&folder, &format!("xWorks failed: {info}")) {
             eprintln!(
                 "xworks: what was done in the last few minutes is in {}",

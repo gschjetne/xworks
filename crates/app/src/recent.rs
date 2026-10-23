@@ -1,8 +1,13 @@
 //! The documents opened lately, newest first, for File, Open Recent: kept
 //! in a file the shell names, and shared by every window.
+//!
+//! Nothing touches the file while xWorks starts: it's read the first time
+//! the list is asked for, as when File, Open Recent opens, and written
+//! when xWorks ends or fails ([`Recent::flush`]). What's added before it's
+//! read comes first, and what it held follows.
 
 use std::path::{Path, PathBuf};
-use std::sync::{Mutex, PoisonError};
+use std::sync::{Mutex, MutexGuard, PoisonError, TryLockError};
 
 /// How many documents are kept.
 pub(crate) const KEPT: usize = 10;
@@ -12,30 +17,60 @@ pub(crate) const KEPT: usize = 10;
 pub struct Recent {
     /// Where the list is kept, if anywhere.
     file: Option<PathBuf>,
-    paths: Mutex<Vec<PathBuf>>,
+    list: Mutex<List>,
+}
+
+#[derive(Debug, Default)]
+struct List {
+    paths: Vec<PathBuf>,
+    /// Whether the file has been read into the list.
+    read: bool,
+    /// Whether the list has changed since the file was written.
+    changed: bool,
 }
 
 impl Recent {
-    /// The list kept in `file`: empty if there's none yet, or it can't be
-    /// read.
+    /// The list kept in `file`, read when it's first asked for: empty if
+    /// there's none yet or it can't be read.
     pub fn load(file: PathBuf) -> Recent {
-        let paths = std::fs::read_to_string(&file)
-            .ok()
-            .and_then(|text| ron::from_str::<Vec<PathBuf>>(&text).ok())
-            .unwrap_or_default();
         Recent {
             file: Some(file),
-            paths: Mutex::new(paths.into_iter().take(KEPT).collect()),
+            list: Mutex::default(),
         }
     }
 
-    /// The documents, newest first, those that are gone left out.
+    /// The list, its file read into it if it hasn't been.
+    fn lock(&self) -> MutexGuard<'_, List> {
+        self.read(self.list.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    /// `list` with its file read into it if it hasn't been: documents that
+    /// are gone are left out of what the file held.
+    fn read<'a>(&self, mut list: MutexGuard<'a, List>) -> MutexGuard<'a, List> {
+        if !list.read {
+            list.read = true;
+            let kept: Vec<PathBuf> = self
+                .file
+                .as_ref()
+                .and_then(|file| std::fs::read_to_string(file).ok())
+                .and_then(|text| ron::from_str::<Vec<PathBuf>>(&text).ok())
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|p| p.is_file())
+                .collect();
+            for path in kept {
+                if !list.paths.contains(&path) {
+                    list.paths.push(path);
+                }
+            }
+            list.paths.truncate(KEPT);
+        }
+        list
+    }
+
+    /// The documents, newest first.
     pub fn paths(&self) -> Vec<PathBuf> {
-        self.lock()
-            .iter()
-            .filter(|p| p.is_file())
-            .cloned()
-            .collect()
+        self.lock().paths.clone()
     }
 
     /// Puts `path` first, as it's opened.
@@ -56,22 +91,38 @@ impl Recent {
         });
     }
 
-    fn lock(&self) -> std::sync::MutexGuard<'_, Vec<PathBuf>> {
-        self.paths.lock().unwrap_or_else(PoisonError::into_inner)
+    /// Changes the list, without reading its file, which comes later.
+    fn change(&self, change: impl FnOnce(&mut Vec<PathBuf>)) {
+        let mut list = self.list.lock().unwrap_or_else(PoisonError::into_inner);
+        change(&mut list.paths);
+        list.changed = true;
     }
 
-    /// Changes the list and writes it to its file, if it has one; where
-    /// it can't be written, it's kept for this run.
-    fn change(&self, change: impl FnOnce(&mut Vec<PathBuf>)) {
-        let mut paths = self.lock();
-        change(&mut paths);
-        if let Some(file) = &self.file
-            && let Ok(text) = ron::ser::to_string_pretty(&*paths, ron::ser::PrettyConfig::default())
+    /// Writes the list to its file, if it has one and it changed, what the
+    /// file held kept after what's new: as xWorks ends, or fails. Where it
+    /// can't be written, it's kept for this run. It never waits for the
+    /// list: as xWorks fails, the code that failed may be holding it.
+    pub fn flush(&self) {
+        let Some(file) = &self.file else {
+            return;
+        };
+        let list = match self.list.try_lock() {
+            Ok(list) => list,
+            Err(TryLockError::Poisoned(e)) => e.into_inner(),
+            Err(TryLockError::WouldBlock) => return,
+        };
+        let mut list = self.read(list);
+        if !list.changed {
+            return;
+        }
+        if let Ok(text) = ron::ser::to_string_pretty(&list.paths, ron::ser::PrettyConfig::default())
         {
             if let Some(folder) = file.parent() {
                 let _ = std::fs::create_dir_all(folder);
             }
-            let _ = std::fs::write(file, text);
+            if std::fs::write(file, text).is_ok() {
+                list.changed = false;
+            }
         }
     }
 }
@@ -102,8 +153,14 @@ mod tests {
         let to = dir.join("moved.xw");
         std::fs::rename(&docs[5], &to).unwrap();
         recent.moved(&docs[5], &to);
-        // Kept in its file, for the next run.
-        assert_eq!(Recent::load(file).paths()[0], to);
+        recent.flush();
+        // Kept in its file, for the next run; what's added before it's
+        // read comes first.
+        let again = Recent::load(file);
+        again.add(&docs[0]);
+        let paths = again.paths();
+        assert_eq!(paths[0], docs[0]);
+        assert_eq!(paths[1], to);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
