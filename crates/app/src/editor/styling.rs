@@ -162,6 +162,63 @@ impl Editor {
         })
     }
 
+    /// The values the selection sets itself, over its style, as people
+    /// name them: its paragraphs' own and its text's own.
+    pub(crate) fn own_formatting(&self) -> Vec<&'static str> {
+        let name = |key: &str| match key {
+            keys::ALIGN => "alignment",
+            keys::SPACE_BEFORE | keys::SPACE_AFTER => "spacing",
+            keys::LINE_HEIGHT => "line height",
+            keys::INDENT_START | keys::INDENT_END | keys::INDENT_FIRST => "indents",
+            keys::TABS => "tab stops",
+            keys::FONT => "font",
+            keys::SIZE => "size",
+            keys::COLOR => "colour",
+            _ => "underline",
+        };
+        let mut out: Vec<&'static str> = Vec::new();
+        let mut add = |key: &str| {
+            let n = name(key);
+            if !out.contains(&n) {
+                out.push(n);
+            }
+        };
+        let paragraphs = self.selected_paragraphs();
+        for &id in &paragraphs {
+            let p = self.paragraph(id);
+            for key in PARAGRAPH_FORMATTING {
+                if p.props.contains_key(key) {
+                    add(key);
+                }
+            }
+        }
+        let (start, end) = self.ordered();
+        let last = paragraphs.len().saturating_sub(1);
+        for (i, &id) in paragraphs.iter().enumerate() {
+            let p = self.paragraph(id);
+            let from = if i == 0 { start.offset } else { 0 };
+            let to = if i == last { end.offset } else { p.len() };
+            let mut pos = 0;
+            for run in &p.runs {
+                let (a, b) = (pos, pos + run.len);
+                pos = b;
+                let touched = if from == to {
+                    a <= from && from <= b
+                } else {
+                    b > from && a < to
+                };
+                if touched {
+                    for key in CHARACTER_FORMATTING {
+                        if run.props.contains_key(key) {
+                            add(key);
+                        }
+                    }
+                }
+            }
+        }
+        out
+    }
+
     /// Clear Formatting: takes the selection's own formatting away, its
     /// paragraphs' and its text's, so they look as their styles say; with
     /// none selected, the caret's paragraph's, all of it.
@@ -779,6 +836,26 @@ impl Editor {
                 },
             ],
         });
+        // What the selection sets itself, over its style: its own
+        // formatting, to clear.
+        let own = self.own_formatting();
+        if !own.is_empty() {
+            sections[0].rows.push(Row {
+                label: "Its own".to_string(),
+                controls: vec![
+                    note(&own.join(", ")),
+                    control(
+                        "clear-formatting",
+                        Vec::new(),
+                        writable,
+                        ControlKind::Button {
+                            label: "Clear Formatting".to_string(),
+                            icon: Some("x".to_string()),
+                        },
+                    ),
+                ],
+            });
+        }
         // Its text: face, size, weight and slant, colour.
         let parts = |kind: StyleKind| -> Vec<&story::Part> {
             self.sheet.parts.iter().filter(|p| p.kind == kind).collect()
