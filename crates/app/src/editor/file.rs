@@ -85,7 +85,7 @@ impl Editor {
     /// The name the document's text gives it: its first heading's, or
     /// with none, its first line's; `None` while it's empty.
     pub fn derived_name(&self) -> Option<String> {
-        let sheet = &self.res.sheet;
+        let sheet = &self.sheet;
         let ids = self.ids();
         let heading = ids
             .iter()

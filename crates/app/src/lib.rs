@@ -16,6 +16,8 @@
 //! - [`Recent`]: the documents opened lately.
 //! - [`Settings`]: what the person chose that's kept between runs, such as
 //!   the unit the ruler and the inspector measure in.
+//! - [`OwnSheets`]: the person's own stylesheets, kept in the system's
+//!   configuration folder.
 //! - [`picture`]: PNG, JPEG, GIF and WebP files decoded, in sRGB, to
 //!   place in documents and draw.
 //!
@@ -44,6 +46,7 @@ pub mod recorder;
 mod resources;
 pub mod session;
 mod settings;
+mod stylesheets;
 mod view;
 mod window;
 
@@ -54,4 +57,5 @@ pub use editor::{
 pub use recent::Recent;
 pub use resources::{ResourceError, Resources};
 pub use settings::{RULER_FROM, RulerFrom, Settings, UNITS, units_of_locale};
+pub use stylesheets::{OwnSheet, OwnSheets};
 pub use window::Window;

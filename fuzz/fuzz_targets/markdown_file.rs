@@ -14,17 +14,21 @@ use std::sync::OnceLock;
 
 use libfuzzer_sys::fuzz_target;
 use markdown::{File, Settings, What};
-use story::StyleSheet;
+use story::{SheetSpec, StyleSheet};
 
-fn sheet() -> &'static StyleSheet {
-    static SHEET: OnceLock<StyleSheet> = OnceLock::new();
-    SHEET.get_or_init(|| ron::from_str(include_str!("../../spec/styles/m1.ron")).expect("m1.ron"))
+/// Neutral, which Markdown files take, as objects and resolved.
+fn neutral() -> &'static (Vec<(doc::ObjectId, doc::Object)>, StyleSheet) {
+    static NEUTRAL: OnceLock<(Vec<(doc::ObjectId, doc::Object)>, StyleSheet)> = OnceLock::new();
+    NEUTRAL.get_or_init(|| {
+        let spec = SheetSpec::parse(include_str!("../../spec/styles/neutral.ron")).expect("neutral.ron");
+        (spec.objects(story::SHEET_AT), StyleSheet::from_spec(&spec))
+    })
 }
 
 fuzz_target!(|data: &[u8]| {
-    let sheet = sheet();
+    let (objects, sheet) = neutral();
     let settings = Settings {
-        sheet,
+        sheet: objects,
         language: Some("en-US"),
         sizes: &|_| Some((9525 * 64, 9525 * 48)),
     };

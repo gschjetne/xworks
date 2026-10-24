@@ -60,7 +60,7 @@ impl Editor {
         }
         if let Some(align) = id.strip_prefix("align-") {
             let paragraph = self.paragraph(self.focus.paragraph);
-            return Some(story::align(paragraph, &self.res.sheet)) == align_of(align);
+            return Some(story::align(paragraph, &self.sheet)) == align_of(align);
         }
         false
     }

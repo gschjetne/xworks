@@ -78,6 +78,8 @@ pub struct Colors {
     #[serde(deserialize_with = "color")]
     pub selection: Color,
     #[serde(deserialize_with = "color")]
+    pub formatting: Color,
+    #[serde(deserialize_with = "color")]
     pub danger: Color,
     #[serde(deserialize_with = "color")]
     pub page: Color,

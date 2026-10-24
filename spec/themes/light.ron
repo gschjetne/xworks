@@ -25,6 +25,9 @@
     shadow: Rgba(60, 50, 30, 24),
     // The selection, over the text.
     selection: Rgba(61, 108, 201, 70),
+    // Text's own formatting, over it, where View, Show Direct Formatting
+    // shows it (M2's stage 9): amber, apart from the selection's blue.
+    formatting: Rgba(232, 160, 32, 80),
     // The window's close button, under the pointer.
     danger: Rgb(196, 43, 28),
     // Pages are white in both looks, and their text black; the draft view,

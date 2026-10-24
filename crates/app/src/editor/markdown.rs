@@ -210,11 +210,18 @@ impl Editor {
         let decoded = decode_links(&res, &folder, &markdown::links(&bytes));
         let sizes: HashMap<String, (i64, i64)> = decoded
             .iter()
-            .map(|(link, p)| (link.clone(), placed_size(&res.page, p.width, p.height)))
+            .map(|(link, p)| {
+                (
+                    link.clone(),
+                    placed_size(&res.program.page, p.width, p.height),
+                )
+            })
             .collect();
         let language = language(&res);
+        // A Markdown file can't hold a stylesheet: it takes the program's.
+        let sheet = res.stylesheets[0].objects(story::SHEET_AT);
         let settings = markdown::Settings {
-            sheet: &res.sheet,
+            sheet: &sheet,
             language: language.as_deref(),
             sizes: &|link| sizes.get(link).copied(),
         };
@@ -307,7 +314,7 @@ impl Editor {
         let Some(md) = &mut self.markdown else {
             return Ok(());
         };
-        let bytes = md.file.write(&self.document, &self.res.sheet)?;
+        let bytes = md.file.write(&self.document, &self.sheet)?;
         md.log.push((logged, t.clone()));
         if let Err(e) = write_whole(&self.path, &bytes) {
             self.message = format!("Couldn't save: {e}");
@@ -597,7 +604,7 @@ impl Editor {
         };
         let bytes = md
             .file
-            .write(&self.document, &self.res.sheet)
+            .write(&self.document, &self.sheet)
             .map_err(|e| e.to_string())?;
         if path.exists() {
             return Err(format!("{} already exists", path.display()));

@@ -391,7 +391,7 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
                 Vec::new()
             }
             Step::Outline(want) => {
-                let got = story::outline(window.editor().document(), &res.sheet);
+                let got = story::outline(window.editor().document(), window.editor().sheet());
                 if &got != want {
                     problems.push(format!(
                         "at step {n}, the outline is {got:#?}, expected {want:#?}"
@@ -548,7 +548,7 @@ pub fn check(session: &Session, played: &Played) -> Vec<String> {
         problems.push(format!("paragraphs {got:?}, expected {:?}", session.expect));
     }
     if let Some(want) = &session.outline {
-        let outline = story::outline(document, &editor.resources().sheet);
+        let outline = story::outline(document, editor.sheet());
         if &outline != want {
             problems.push(format!("the outline is {outline:#?}, expected {want:#?}"));
         }
@@ -695,7 +695,8 @@ pub fn check(session: &Session, played: &Played) -> Vec<String> {
     problems
 }
 
-/// Each paragraph's style and text.
+/// Each paragraph's style, by its name in the document's stylesheet, or
+/// nothing for a paragraph that names none, and its text.
 pub(crate) fn paragraphs(document: &doc::Document) -> Vec<(String, String)> {
     document
         .paragraphs()
@@ -703,7 +704,13 @@ pub(crate) fn paragraphs(document: &doc::Document) -> Vec<(String, String)> {
         .map(|&id| {
             let p = document.paragraph(id).expect("a paragraph");
             let style = match p.props.get(story::keys::STYLE) {
-                Some(Value::Text(name)) => name.clone(),
+                Some(Value::Ref(style)) => match document
+                    .style(*style)
+                    .and_then(|s| s.props.get(story::keys::NAME))
+                {
+                    Some(Value::Text(name)) => name.clone(),
+                    _ => String::new(),
+                },
                 _ => String::new(),
             };
             (style, p.text.clone())

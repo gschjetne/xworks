@@ -149,6 +149,8 @@ pub struct Look {
     pub ink: Color,
     /// The selection.
     pub selection: Color,
+    /// Text's own formatting, where it's shown.
+    pub formatting: Color,
     /// Shadows on the desk.
     pub shadow: Color,
     /// Hairlines, such as quotes' bars on the desk.

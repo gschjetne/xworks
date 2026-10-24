@@ -120,7 +120,7 @@ impl Editor {
     /// The size a picture `width` by `height` pixels is placed at: at 96
     /// pixels to the inch, scaled down to fit the page's body.
     fn placed_size(&self, width: u32, height: u32) -> (i64, i64) {
-        super::markdown::placed_size(&self.res.page, width, height)
+        super::markdown::placed_size(&self.sheet.page, width, height)
     }
 
     /// Decodes the pictures `ids` names that aren't decoded yet, from the

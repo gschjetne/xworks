@@ -14,6 +14,7 @@
     field_line: Rgb(66, 65, 61),
     shadow: Rgba(0, 0, 0, 90),
     selection: Rgba(110, 151, 232, 90),
+    formatting: Rgba(240, 176, 64, 90),
     danger: Rgb(196, 43, 28),
     page: Rgb(255, 255, 255),
     page_ink: Rgb(0, 0, 0),

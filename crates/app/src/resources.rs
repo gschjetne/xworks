@@ -1,20 +1,20 @@
-//! What every window shares: fonts, hyphenation patterns, styles,
-//! commands, the chrome's look and icons, where documents live, the
-//! documents opened lately, the person's settings, and the language
-//! documents are made in.
+//! What every window shares: fonts, hyphenation patterns, the stylesheets
+//! that come with xWorks and people's own, commands, the chrome's look and
+//! icons, where documents live, the documents opened lately, the person's
+//! settings, and the language documents are made in.
 
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
-use canvas::{PageStyle, PageStyleSpec};
 use chrome::Commands;
 use serde::Deserialize;
-use story::StyleSheet;
+use story::{SheetSpec, StyleSheet};
 use text::{FontSpec, Fonts, Hyphenation, Hyphenator, Language};
 use toolkit::{Colors, Icons, Labels, Sizes};
 
 use crate::recent::Recent;
 use crate::settings::Settings;
+use crate::stylesheets::OwnSheets;
 
 /// Why resources couldn't be loaded.
 #[derive(Debug, thiserror::Error)]
@@ -47,10 +47,17 @@ pub struct Resources {
     /// demand: see [`Resources::fonts`].
     fonts: Arc<Fonts>,
     on_demand: Arc<OnDemand>,
-    /// The paragraph styles.
-    pub sheet: StyleSheet,
-    /// The page style of automatic pages.
-    pub page: PageStyle,
+    /// The stylesheets that come with xWorks, in the order File, New with
+    /// Stylesheet lists them; new documents copy the first unless the
+    /// person chooses another.
+    pub stylesheets: Arc<Vec<SheetSpec>>,
+    /// The first of them, resolved on its own: the program's stylesheet,
+    /// which a document whose sheet lacks a value takes it from, and which
+    /// Markdown files take, as they can't hold one.
+    pub program: Arc<StyleSheet>,
+    /// The person's own stylesheets, in the system's configuration
+    /// folder, as the shell names it.
+    pub own: Arc<OwnSheets>,
     /// The commands and menus.
     pub commands: Commands,
     /// The chrome's type and sizes (`spec/themes/chrome.ron`).
@@ -131,22 +138,36 @@ struct FontFile {
     file: String,
     #[serde(default)]
     on_demand: bool,
+    /// The family the file's faces are of, for one loaded on demand once a
+    /// document's stylesheet sets text in it; none for one loaded once
+    /// text needs a character the others lack.
+    #[serde(default)]
+    family: Option<String>,
 }
+
+/// The stylesheets that come with xWorks, as `spec/styles.ron` lists them.
+#[derive(Deserialize)]
+struct SheetList {
+    stylesheets: Vec<String>,
+}
+
+/// The most groups of fonts that can load on demand.
+const GROUPS: usize = 16;
 
 /// The fonts loaded only once text needs them, shared by every clone of
-/// the resources.
+/// the resources: in groups, those for characters the others lack (the
+/// CJK faces) and those of each family nothing uses until a document's
+/// stylesheet sets text in it.
 #[derive(Debug, Default)]
 struct OnDemand {
-    files: Vec<PathBuf>,
-    /// Every bundled font, once these are loaded.
-    loaded: OnceLock<Arc<Fonts>>,
-    /// Held while loading; whether loading was tried.
-    tried: Mutex<bool>,
-}
-
-#[derive(Deserialize)]
-struct PageSheet {
-    page: PageStyleSpec,
+    /// Each group: the family it's of, or none for characters, and its
+    /// files.
+    groups: Vec<(Option<String>, Vec<PathBuf>)>,
+    /// Every font loaded so far, after each load: the latest is the one
+    /// in use. Faces are only ever added, so each holds the one before.
+    loaded: [OnceLock<Arc<Fonts>>; GROUPS],
+    /// Held while loading: the groups tried.
+    tried: Mutex<Vec<usize>>,
 }
 
 fn read(path: &Path) -> Result<String, Error> {
@@ -174,16 +195,37 @@ impl Resources {
         for f in files.files {
             let path = root.join("fonts").join(&f.file);
             if f.on_demand {
-                on_demand.files.push(path);
+                let groups = &mut on_demand.groups;
+                if let Some(k) = groups.iter().position(|(family, _)| *family == f.family) {
+                    groups[k].1.push(path);
+                } else if groups.len() < GROUPS {
+                    groups.push((f.family.clone(), vec![path]));
+                } else {
+                    add_font(&mut fonts, path)?;
+                }
             } else {
                 add_font(&mut fonts, path)?;
             }
         }
         let fallbacks: FontSpec = spec(&fonts_spec)?;
         fonts.set_fallbacks(&fallbacks);
-        let styles = root.join("spec/styles/m1.ron");
-        let sheet: StyleSheet = spec(&styles)?;
-        let page: PageSheet = spec(&styles)?;
+        let list: SheetList = spec(&root.join("spec/styles.ron"))?;
+        let mut stylesheets = Vec::new();
+        for name in &list.stylesheets {
+            let path = root.join("spec/styles").join(format!("{name}.ron"));
+            let sheet = SheetSpec::parse(&read(&path)?).map_err(|e| Error::Spec {
+                path: path.clone(),
+                message: e.to_string(),
+            })?;
+            stylesheets.push(sheet);
+        }
+        let Some(first) = stylesheets.first() else {
+            return Err(Error::Spec {
+                path: root.join("spec/styles.ron"),
+                message: "it names no stylesheet".to_string(),
+            });
+        };
+        let program = StyleSheet::from_spec(first);
         let commands_path = root.join("spec/commands/m1.ron");
         let commands_spec: chrome::Spec = spec(&commands_path)?;
         let commands = Commands::from_spec(&commands_spec).map_err(|e| Error::Spec {
@@ -206,8 +248,9 @@ impl Resources {
         Ok(Resources {
             fonts: Arc::new(fonts),
             on_demand: Arc::new(on_demand),
-            sheet,
-            page: PageStyle::from_spec(&page.page),
+            program: Arc::new(program),
+            stylesheets: Arc::new(stylesheets),
+            own: Arc::new(OwnSheets::default()),
             commands,
             sizes,
             light,
@@ -283,33 +326,57 @@ impl Resources {
         Ok(any)
     }
 
-    /// The bundled fonts, with their fallbacks: every one once
-    /// [`Resources::load_on_demand`] has loaded those kept until text needs
-    /// them, and the rest until then. Faces keep their IDs when the rest
-    /// are added, so layouts made before still draw.
+    /// The bundled fonts, with their fallbacks: those loaded on demand
+    /// among them once [`Resources::load_on_demand`] or
+    /// [`Resources::load_families`] has loaded them. Faces keep their IDs
+    /// when the rest are added, so layouts made before still draw.
     pub fn fonts(&self) -> &Arc<Fonts> {
-        self.on_demand.loaded.get().unwrap_or(&self.fonts)
+        self.on_demand
+            .loaded
+            .iter()
+            .rev()
+            .find_map(OnceLock::get)
+            .unwrap_or(&self.fonts)
     }
 
-    /// Loads the fonts kept until text needs them, such as the CJK faces,
-    /// for every window. True if this call loaded them; false if they were
-    /// loaded or tried before, or there are none.
+    /// Loads the fonts kept until text needs a character the others lack,
+    /// such as the CJK faces, for every window. True if this call loaded
+    /// them; false if they were loaded or tried before, or there are none.
     pub fn load_on_demand(&self) -> Result<bool, Error> {
+        self.load_groups(|family| family.is_none())
+    }
+
+    /// Loads the fonts of `families` kept until a document's stylesheet
+    /// sets text in them, for every window. True if this call loaded any.
+    pub fn load_families(&self, families: &[String]) -> Result<bool, Error> {
+        self.load_groups(|family| family.as_ref().is_some_and(|f| families.contains(f)))
+    }
+
+    /// Loads the groups of fonts kept until they're needed that `wanted`
+    /// takes and that weren't tried before.
+    fn load_groups(&self, wanted: impl Fn(&Option<String>) -> bool) -> Result<bool, Error> {
         let mut tried = self
             .on_demand
             .tried
             .lock()
             .unwrap_or_else(PoisonError::into_inner);
-        if *tried || self.on_demand.files.is_empty() {
+        let groups: Vec<usize> = (0..self.on_demand.groups.len())
+            .filter(|k| !tried.contains(k) && wanted(&self.on_demand.groups[*k].0))
+            .collect();
+        if groups.is_empty() {
             return Ok(false);
         }
-        *tried = true;
-        let mut all = (*self.fonts).clone();
-        for path in &self.on_demand.files {
-            add_font(&mut all, path.clone())?;
+        tried.extend(&groups);
+        let mut all = (**self.fonts()).clone();
+        for &k in &groups {
+            for path in &self.on_demand.groups[k].1 {
+                add_font(&mut all, path.clone())?;
+            }
         }
-        // Only this call, holding `tried`, sets it.
-        let _ = self.on_demand.loaded.set(Arc::new(all));
+        // Only this call, holding `tried`, sets the next.
+        if let Some(slot) = self.on_demand.loaded.iter().find(|s| s.get().is_none()) {
+            let _ = slot.set(Arc::new(all));
+        }
         Ok(true)
     }
 }

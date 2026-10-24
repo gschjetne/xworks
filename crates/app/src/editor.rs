@@ -14,7 +14,7 @@ use chrome::{Arg, CommandState, Key, Modifiers};
 use doc::{Document, History, Object, ObjectId, Op, Paragraph, Props, Run, Transaction, Value};
 use rayon::prelude::*;
 use store::{Entry, Store};
-use story::{ParagraphLayout, keys};
+use story::{ParagraphLayout, StyleSheet, keys};
 use text::units::{PIXEL, POINT};
 use text::{Affinity, Cursor};
 
@@ -265,6 +265,16 @@ pub struct Editor {
     /// be opened again after.
     store: Option<Store>,
     document: Document,
+    /// The document's stylesheet, resolved: what its paragraphs are laid
+    /// out in.
+    sheet: Arc<StyleSheet>,
+    /// The document the stylesheet was resolved from, whose objects are
+    /// compared with the current one's by identity, so it's resolved
+    /// again only when a style changed.
+    sheet_of: Document,
+    /// Whether direct formatting is tinted in the text (View, Show Direct
+    /// Formatting): off until the person turns it on.
+    show_formatting: bool,
     history: History,
     laid: Laid,
     anchor: Position,
@@ -333,16 +343,20 @@ fn char_at(text: &str, offset: usize) -> u32 {
 
 impl Editor {
     /// A new, empty document, made at once as "Untitled.xw" (or
-    /// "Untitled 2.xw" and so on) in the documents folder.
+    /// "Untitled 2.xw" and so on) in the documents folder, in a copy of
+    /// the first of the stylesheets that come with xWorks, Neutral.
     pub fn create(res: Arc<Resources>) -> Result<Editor, EditorError> {
+        let spec = res.stylesheets[0].clone();
+        Editor::create_in(res, &spec)
+    }
+
+    /// A new, empty document, made as [`Editor::create`] makes one, in a
+    /// copy of the stylesheet `spec` gives.
+    pub fn create_in(res: Arc<Resources>, spec: &story::SheetSpec) -> Result<Editor, EditorError> {
         let path = Editor::untitled(&res)?;
-        let mut document = Document::new();
+        let mut document = story::new_document(spec);
         let first = document.paragraphs()[0];
-        let mut ops = vec![Op::SetParaProp {
-            paragraph: first,
-            key: keys::STYLE.to_string(),
-            value: Some(Value::Text(res.sheet.paragraph_style(None).name.clone())),
-        }];
+        let mut ops = Vec::new();
         // A document is in the system's language (project owner,
         // 2026-10-22, review pysc65hp); its paragraphs pass it on.
         if res.language != text::Language::und() {
@@ -419,10 +433,15 @@ impl Editor {
             offset: 0,
             upstream: false,
         };
+        let sheet = Arc::new(StyleSheet::of(&document, &res.program));
+        let unloaded = res.load_families(&sheet.families()).err();
         let mut editor = Editor {
             res,
             path,
             store,
+            sheet,
+            sheet_of: document.clone(),
+            show_formatting: false,
             laid: Laid {
                 document: Document::new(),
                 paragraphs: Vec::new(),
@@ -460,6 +479,9 @@ impl Editor {
         };
         editor.named = !editor.auto_named();
         editor.relayout(true);
+        if let Some(e) = unloaded {
+            editor.message = format!("Couldn't load fonts: {e}");
+        }
         editor
     }
 
@@ -587,6 +609,7 @@ impl Editor {
     /// kept, every other paragraph keeps its layout where it is, and only
     /// the changed paragraph's block is made again before pouring.
     fn relayout(&mut self, all: bool) {
+        let all = self.restyle() || all;
         let width = self.page_style().body_width();
         // Whether `id` is the very object it was when last laid out.
         let was = self.laid.document.clone();
@@ -598,11 +621,19 @@ impl Editor {
         // The story's paragraphs in reading order, each in its place:
         // walked again only where a container changed. The order first, so
         // the selection is ordered by it from here on.
+        // A paragraph whose style changed may number the headings after
+        // it otherwise.
+        let restyled = |e: &story::Entry| {
+            !unchanged(e.id)
+                && was.paragraph(e.id).map(|p| p.props.get(keys::STYLE))
+                    != now.paragraph(e.id).map(|p| p.props.get(keys::STYLE))
+        };
         let same_flow = !all
             && !self.laid.containers.is_empty()
-            && self.laid.containers.iter().all(|&c| unchanged(c));
+            && self.laid.containers.iter().all(|&c| unchanged(c))
+            && !self.laid.entries.iter().any(restyled);
         if !same_flow {
-            let flow = story::flow(now, &self.res.sheet, width);
+            let flow = story::flow(now, &self.sheet, width);
             self.laid.ids = flow.entries.iter().map(|e| e.id).collect();
             self.laid.index = self
                 .laid
@@ -671,7 +702,7 @@ impl Editor {
         // The rest laid out and counted afresh: on the worker pool when
         // there are several, as when a document opens, and here when
         // there's one, as when typing, which waking the pool would slow.
-        let (document, res) = (&self.document, &self.res);
+        let (document, res, sheet) = (&self.document, &self.res, &*self.sheet);
         let counted = &words;
         let lay_out = |&k: &usize| {
             let entry = &entries[k];
@@ -684,13 +715,13 @@ impl Editor {
                 source,
                 entry.id,
                 &entry.place,
-                &res.sheet,
+                sheet,
                 res.fonts(),
                 &hyphenation,
             );
             let count = counted[k].unwrap_or_else(|| {
                 let p = document.paragraph(entry.id).expect("a paragraph");
-                story::word_count(p, &res.sheet)
+                story::word_count(p, sheet)
             });
             (layout, count)
         };
@@ -750,7 +781,7 @@ impl Editor {
         let words: Vec<usize> = words.into_iter().map(|w| w.unwrap_or(0)).collect();
         // The blocks to pour: those of changed paragraphs made again, when
         // the flow is kept.
-        let look = &self.res.sheet.blocks;
+        let look = &self.sheet.blocks;
         let (units, blocks) = if same_flow && self.laid.blocks.len() == self.laid.units.len() {
             let units = std::mem::take(&mut self.laid.units);
             let mut blocks = std::mem::take(&mut self.laid.blocks);
@@ -770,7 +801,7 @@ impl Editor {
             .iter()
             .map(|p| vec![(0, 0); p.layout.lines.len()])
             .collect();
-        let pad = look.cell_padding.units();
+        let pad = look.cell_padding;
         for (n, pieces) in pages.iter().enumerate() {
             for piece in pieces {
                 let unit = units[piece.block].clone();
@@ -805,6 +836,77 @@ impl Editor {
             places,
             words,
         };
+    }
+
+    /// Resolves the document's stylesheet again if a style or the sheet
+    /// changed since it was last resolved, and brings in the fonts it sets
+    /// text in that aren't loaded. True if it changed, so every paragraph
+    /// is laid out again.
+    fn restyle(&mut self) -> bool {
+        let (was, now) = (&self.sheet_of, &self.document);
+        let same = |id: ObjectId| match (was.object(id), now.object(id)) {
+            (Some(a), Some(b)) => std::ptr::eq(a as *const Object, b as *const Object),
+            (None, None) => true,
+            _ => false,
+        };
+        let changed = was.sheet() != now.sheet()
+            || now
+                .sheet()
+                .is_some_and(|sheet| !same(sheet) || now.styles().iter().any(|&id| !same(id)));
+        if !changed {
+            return false;
+        }
+        self.sheet = Arc::new(StyleSheet::of(&self.document, &self.res.program));
+        self.sheet_of = self.document.clone();
+        if let Err(e) = self.res.load_families(&self.sheet.families()) {
+            self.message = format!("Couldn't load fonts: {e}");
+        }
+        true
+    }
+
+    /// The document's stylesheet, resolved.
+    pub fn sheet(&self) -> &StyleSheet {
+        &self.sheet
+    }
+
+    /// The operations that take paragraph `id`'s own paragraph formatting
+    /// away, and with `text`, its text's own formatting too: all of it, or
+    /// along `range` of it if one is given.
+    pub(crate) fn clearing(&self, id: ObjectId, range: Option<(u32, u32)>, text: bool) -> Vec<Op> {
+        let p = self.paragraph(id);
+        let mut ops = Vec::new();
+        if range.is_none() || text {
+            for key in story::styles::PARAGRAPH_FORMATTING {
+                if range.is_none() && p.props.contains_key(key) {
+                    ops.push(Op::SetParaProp {
+                        paragraph: id,
+                        key: key.to_string(),
+                        value: None,
+                    });
+                }
+            }
+        }
+        if text {
+            let (from, to) = range.unwrap_or((0, p.len()));
+            for key in story::styles::CHARACTER_FORMATTING {
+                let mut pos = 0;
+                let any = p.runs.iter().any(|run| {
+                    let (a, b) = (pos, pos + run.len);
+                    pos = b;
+                    b > from && a < to && run.props.contains_key(key)
+                });
+                if any && to > from {
+                    ops.push(Op::SetCharProp {
+                        paragraph: id,
+                        offset: from,
+                        len: to - from,
+                        key: key.to_string(),
+                        value: None,
+                    });
+                }
+            }
+        }
+        ops
     }
 
     /// The document with the composition typed in at the caret, for showing
@@ -862,7 +964,7 @@ impl Editor {
     /// draft, one column as tall as it needs, without margins.
     pub(crate) fn page_style(&self) -> canvas::PageStyle {
         match self.view {
-            View::Pages => self.res.page,
+            View::Pages => self.sheet.page,
             View::Draft => canvas::PageStyle {
                 width: self.column(),
                 height: i64::MAX / 8,
@@ -892,7 +994,7 @@ impl Editor {
         let whole = |x: i64| (x + PIXEL / 2).div_euclid(PIXEL) * PIXEL;
         match self.view {
             View::Pages => {
-                let page = &self.res.page;
+                let page = &self.sheet.page;
                 let x = whole((self.width - page.width) / 2).max(gap);
                 (x, top + n as i64 * (page.height + gap))
             }
@@ -903,7 +1005,7 @@ impl Editor {
     fn document_height(&self) -> i64 {
         let (top, gap) = self.gaps();
         match self.view {
-            View::Pages => top + self.laid.pages.len() as i64 * (self.res.page.height + gap),
+            View::Pages => top + self.laid.pages.len() as i64 * (self.sheet.page.height + gap),
             View::Draft => 2 * top + self.draft_height(),
         }
     }
@@ -1471,12 +1573,12 @@ impl Editor {
 
     /// Whether paragraph `id` is a code block.
     fn is_code(&self, id: ObjectId) -> bool {
-        self.res.sheet.style_of(self.paragraph(id)).code
+        self.sheet.style_of(self.paragraph(id)).code
     }
 
     fn split(&mut self) {
         if self.collapsed() {
-            let enter = blocks::enter(&self.document, &self.res.sheet, self.focus);
+            let enter = blocks::enter(&self.document, &self.sheet, self.focus);
             if enter.is_none() && self.is_code(self.focus.paragraph) {
                 // Code breaks its lines, not the paragraph.
                 self.insert_text("\u{2028}");
@@ -1493,16 +1595,13 @@ impl Editor {
         }
         let paragraph = scratch.paragraph(at.paragraph).expect("a paragraph");
         let mut props = paragraph.props.clone();
-        // After a heading's last character comes the default style.
-        let style = match props.get(keys::STYLE) {
-            Some(Value::Text(name)) => Some(name.as_str()),
-            _ => None,
-        };
-        if at.offset == paragraph.len() && self.res.sheet.paragraph_style(style).heading.is_some() {
-            props.insert(
-                keys::STYLE.to_string(),
-                Value::Text(self.res.sheet.paragraph_style(None).name.clone()),
-            );
+        // After a heading's last character comes the default style, and
+        // its own paragraph formatting stays behind with it.
+        if at.offset == paragraph.len() && self.sheet.style_of(paragraph).heading.is_some() {
+            match self.sheet.default_style().id {
+                Some(body) => props.insert(keys::STYLE.to_string(), Value::Ref(body)),
+                None => props.remove(keys::STYLE),
+            };
         }
         let new = self.document.new_id();
         ops.push(Op::SplitParagraph {
@@ -1830,7 +1929,6 @@ impl Editor {
     /// The task whose box is at (`x`, `y`) in the window, if one is, and
     /// whether it's done.
     fn task_box_at(&self, x: i64, y: i64) -> Option<(ObjectId, bool)> {
-        let gap = self.res.sheet.blocks.marker_gap.units();
         for (k, p) in self.laid.paragraphs.iter().enumerate() {
             let (Some(done), Some(line)) = (p.place.task, p.layout.lines.first()) else {
                 continue;
@@ -1840,7 +1938,7 @@ impl Editor {
             }
             let (text_x, top) = self.line_origin(k, 0);
             let side = (line.ascent * 7 / 10).max(PIXEL);
-            let right = text_x - p.x() + p.place.gutter - gap;
+            let right = text_x - p.x() + p.place.gutter - p.place.gap;
             let baseline = top + line.baseline;
             let slack = 3 * PIXEL;
             if (right - side - slack..=right + slack).contains(&x)
@@ -1860,11 +1958,10 @@ impl Editor {
             Some(Value::Int(size)) if *size > 0 => *size,
             _ => {
                 let p = self.paragraph(at.paragraph);
-                let style = match p.props.get(keys::STYLE) {
-                    Some(Value::Text(name)) => Some(name.as_str()),
-                    _ => None,
-                };
-                self.res.sheet.paragraph_style(style).size.units()
+                story::styled(p, &self.sheet, None)
+                    .0
+                    .first()
+                    .map_or(self.sheet.style_of(p).size, |s| s.style.size)
             }
         }
     }
@@ -1879,19 +1976,23 @@ impl Editor {
         }
     }
 
-    fn set_style(&mut self, style: &str) {
-        let (start, end) = self.ordered();
-        let ids = self.ids().to_vec();
-        let (a, b) = (self.index_of(start.paragraph), self.index_of(end.paragraph));
-        let ops = ids[a..=b]
-            .iter()
-            .map(|&id| Op::SetParaProp {
+    /// Applies paragraph style `style` to the paragraphs selected: each
+    /// takes it in place of its own paragraph formatting, but keeps its
+    /// text's own formatting, unless `clear` says to take that away too
+    /// (project owner, 2026-10-24, review 30dmn1js).
+    pub(crate) fn set_style(&mut self, style: ObjectId, clear: bool) {
+        let ids = self.selected_paragraphs();
+        let mut ops = Vec::new();
+        for &id in &ids {
+            ops.push(Op::SetParaProp {
                 paragraph: id,
                 key: keys::STYLE.to_string(),
-                value: Some(Value::Text(style.to_string())),
-            })
-            .collect();
-        self.commit(style, ops, false);
+                value: Some(Value::Ref(style)),
+            });
+            ops.extend(self.clearing(id, None, clear));
+        }
+        let name = self.sheet.paragraph_style(Some(style)).name.clone();
+        self.commit(&name, ops, false);
     }
 
     /// Where the caret goes after `ops` were applied: the end of the last
@@ -2020,6 +2121,7 @@ impl Editor {
             "task-toggle" => self.task_at_caret().is_some_and(|(_, done)| done),
             "view-draft" => self.view == View::Draft,
             "view-pages" => self.view == View::Pages,
+            "show-formatting" => self.show_formatting,
             _ => {
                 id.strip_prefix("style-")
                     .is_some_and(|style| self.style_id() == style)
@@ -2029,20 +2131,11 @@ impl Editor {
         CommandState { enabled, checked }
     }
 
-    /// The caret's paragraph's style, as a command ID ends: "body",
-    /// "heading-1".
+    /// The caret's paragraph's style's role, as a command ID ends:
+    /// "body", "heading-1".
     fn style_id(&self) -> String {
         let p = self.paragraph(self.focus.paragraph);
-        let name = match p.props.get(keys::STYLE) {
-            Some(Value::Text(name)) => Some(name.as_str()),
-            _ => None,
-        };
-        self.res
-            .sheet
-            .paragraph_style(name)
-            .name
-            .to_lowercase()
-            .replace(' ', "-")
+        self.sheet.style_of(p).role.clone().unwrap_or_default()
     }
 
     fn command(&mut self, id: &str) -> Vec<Effect> {
@@ -2063,6 +2156,7 @@ impl Editor {
             "open" => effects.push(Effect::Choose(Choice::Open)),
             "move-to" => effects.push(Effect::Choose(Choice::MoveTo)),
             "quit" => effects.push(Effect::Quit),
+            "show-formatting" => self.show_formatting = !self.show_formatting,
             "view-draft" | "view-pages" => {
                 let view = if id == "view-draft" {
                     View::Draft
@@ -2149,16 +2243,11 @@ impl Editor {
             _ => {
                 if let Some(pt) = id.strip_prefix("size-").and_then(|n| n.parse::<i64>().ok()) {
                     self.set_size(pt * POINT);
-                } else if let Some(style) = id.strip_prefix("style-") {
-                    let name = self
-                        .res
-                        .sheet
-                        .paragraph
-                        .iter()
-                        .find(|s| s.name.to_lowercase().replace(' ', "-") == style)
-                        .map(|s| s.name.clone());
-                    if let Some(name) = name {
-                        self.set_style(&name);
+                } else if let Some(role) = id.strip_prefix("style-") {
+                    // The paragraph styles in the menus are by role, so
+                    // they're the same commands in every stylesheet.
+                    if let Some(style) = self.sheet.by_role(role).and_then(|s| s.id) {
+                        self.set_style(style, false);
                     }
                 }
             }
@@ -2171,12 +2260,12 @@ impl Editor {
     /// On pages, they're those shown; as a draft, the story is laid out
     /// on pages afresh, as it prints.
     pub fn pages(&self) -> canvas::Pages {
-        let look = &self.res.sheet.blocks;
+        let look = &self.sheet.blocks;
         if self.view == View::Draft {
-            let page = &self.res.page;
-            let flow = story::flow(&self.document, &self.res.sheet, page.body_width());
+            let page = &self.sheet.page;
+            let flow = story::flow(&self.document, &self.sheet, page.body_width());
             let hyphenation = self.res.hyphenation();
-            let (document, sheet, fonts) = (&self.document, &self.res.sheet, self.res.fonts());
+            let (document, sheet, fonts) = (&self.document, &self.sheet, self.res.fonts());
             let paragraphs: Vec<ParagraphLayout> = flow
                 .entries
                 .par_iter()
@@ -2198,7 +2287,7 @@ impl Editor {
         }
         canvas::Pages {
             pages: canvas::draw(
-                &self.res.page,
+                &self.sheet.page,
                 look,
                 &self.laid.paragraphs,
                 &self.laid.pages,
@@ -2406,6 +2495,43 @@ impl Editor {
         }
     }
 
+    /// Whether direct formatting is tinted in the text (View, Show Direct
+    /// Formatting).
+    pub(crate) fn shows_formatting(&self) -> bool {
+        self.show_formatting
+    }
+
+    /// What of laid-out paragraph `k` is its own formatting: the byte
+    /// ranges of its text that set their own character values, and
+    /// whether it sets paragraph values of its own.
+    pub(crate) fn direct_formatting(&self, k: usize) -> (Vec<std::ops::Range<usize>>, bool) {
+        let p = self.paragraph(self.laid.paragraphs[k].id);
+        let whole = story::styles::PARAGRAPH_FORMATTING
+            .iter()
+            .any(|key| p.props.contains_key(*key));
+        let mut ranges: Vec<std::ops::Range<usize>> = Vec::new();
+        let mut at = 0;
+        let mut chars = p.text.chars();
+        for run in &p.runs {
+            let len: usize = chars
+                .by_ref()
+                .take(run.len as usize)
+                .map(char::len_utf8)
+                .sum();
+            if story::styles::CHARACTER_FORMATTING
+                .iter()
+                .any(|key| run.props.contains_key(*key))
+            {
+                match ranges.last_mut() {
+                    Some(last) if last.end == at => last.end = at + len,
+                    _ => ranges.push(at..at + len),
+                }
+            }
+            at += len;
+        }
+        (ranges, whole)
+    }
+
     /// How tall the draft's text is, for drawing what's in view.
     pub(crate) fn draft_bottom(&self) -> i64 {
         self.draft_height()
@@ -2428,11 +2554,7 @@ impl Editor {
         let page = self.laid.places[k][line].0 + 1;
         let words: usize = self.laid.words.iter().sum();
         let p = self.paragraph(self.focus.paragraph);
-        let name = match p.props.get(keys::STYLE) {
-            Some(Value::Text(name)) => Some(name.as_str()),
-            _ => None,
-        };
-        let style = &self.res.sheet.paragraph_style(name).name;
+        let style = &self.sheet.style_of(p).name;
         let place = match self.view {
             View::Pages => format!("Page {page} of {}", self.laid.pages.len()),
             View::Draft => "Draft".to_string(),

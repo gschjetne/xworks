@@ -83,7 +83,7 @@ impl Editor {
     }
 
     /// The paragraphs the selection touches, in reading order.
-    fn selected_paragraphs(&self) -> Vec<ObjectId> {
+    pub(crate) fn selected_paragraphs(&self) -> Vec<ObjectId> {
         let (start, end) = self.ordered();
         let (a, b) = (self.index_of(start.paragraph), self.index_of(end.paragraph));
         self.ids()[a..=b].to_vec()
@@ -111,7 +111,7 @@ impl Editor {
             .into_iter()
             .map(|paragraph| {
                 let p = self.paragraph(paragraph);
-                let mut stops = story::paragraph_tabs(p, &self.res.sheet).stops;
+                let mut stops = story::paragraph_tabs(p, &self.sheet).stops;
                 change(&mut stops);
                 stops.retain(|s| (0..=MOST).contains(&s.position));
                 Op::SetParaProp {
@@ -134,10 +134,25 @@ impl Editor {
         let text = |i: usize| args.get(i).and_then(Arg::text);
         match id {
             "paragraph-style" => {
-                if let Some(name) =
-                    text(0).filter(|n| self.res.sheet.paragraph.iter().any(|s| s.name == *n))
-                {
-                    self.set_style(name);
+                // A style by ID, as the inspector gives it, or by name, as a
+                // script may; "clear" after it takes the text's own
+                // formatting away too.
+                let style = match args.first() {
+                    Some(Arg::Int(id)) => u64::try_from(*id)
+                        .ok()
+                        .map(ObjectId)
+                        .filter(|id| self.sheet.paragraph.iter().any(|s| s.id == Some(*id))),
+                    Some(Arg::Text(name)) => self
+                        .sheet
+                        .paragraph
+                        .iter()
+                        .find(|s| s.name == *name)
+                        .and_then(|s| s.id),
+                    _ => None,
+                };
+                let clear = text(1) == Some("clear");
+                if let Some(style) = style {
+                    self.set_style(style, clear);
                 }
             }
             "font" => {
@@ -188,7 +203,7 @@ impl Editor {
                 let kind = text(1)
                     .and_then(StopKind::from_id)
                     .unwrap_or(StopKind::Start);
-                let interval = self.res.sheet.tabs.interval.units().max(MILLIMETRE);
+                let interval = self.sheet.tabs.interval.max(MILLIMETRE);
                 let at = int(0);
                 self.change_tabs("Tab Stop", |stops| {
                     let position = at.unwrap_or_else(|| {
@@ -269,7 +284,7 @@ impl Editor {
         let k = self.index_of(self.focus.paragraph);
         let laid = &self.laid.paragraphs[k];
         let paragraph = self.paragraph(self.focus.paragraph);
-        let own = story::indents(paragraph);
+        let own = story::indents(paragraph, &self.sheet);
         Ruler {
             page_start: x,
             page_width: style.width,
@@ -287,7 +302,7 @@ impl Editor {
                 end: own.end,
                 first: own.first,
             }),
-            stops: story::paragraph_tabs(paragraph, &self.res.sheet)
+            stops: story::paragraph_tabs(paragraph, &self.sheet)
                 .stops
                 .iter()
                 .map(|s| Stop {
@@ -309,7 +324,7 @@ impl Editor {
         let unit = self.res.settings.units();
         let at = self.focus;
         let paragraph = self.paragraph(at.paragraph);
-        let sheet = &self.res.sheet;
+        let sheet = &self.sheet;
 
         // The paragraph.
         let style = &sheet.style_of(paragraph).name;
@@ -392,7 +407,7 @@ impl Editor {
                 ),
             ],
         };
-        let line = story::line_height(paragraph).unwrap_or(0);
+        let line = story::line_height(paragraph, &self.sheet).unwrap_or(0);
         let mut heights = LINE_HEIGHTS.to_vec();
         if !heights.contains(&line) {
             heights.push(line);
@@ -602,7 +617,7 @@ impl Editor {
 
         // The page: the document can't hold its own size and margins yet,
         // so they're shown, and can't be changed.
-        let page = &self.res.page;
+        let page = &self.sheet.page;
         let sizes = [
             ("A4", 210 * MILLIMETRE, 297 * MILLIMETRE),
             ("A5", 148 * MILLIMETRE, 210 * MILLIMETRE),

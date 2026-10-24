@@ -149,10 +149,11 @@ fn empty_paragraph(parent: ObjectId, props: Props) -> Object {
 
 /// The default paragraph style, as a paragraph's properties.
 fn body(sheet: &StyleSheet) -> Props {
-    Props::from([(
-        keys::STYLE.to_string(),
-        Value::Text(sheet.paragraph_style(None).name.clone()),
-    )])
+    sheet
+        .default_style()
+        .id
+        .map(|id| Props::from([(keys::STYLE.to_string(), Value::Ref(id))]))
+        .unwrap_or_default()
 }
 
 fn is_code(doc: &Document, sheet: &StyleSheet, paragraph: ObjectId) -> bool {
@@ -814,14 +815,19 @@ mod tests {
     use super::*;
     use story::BlockSpec;
 
-    fn sheet() -> StyleSheet {
+    /// Neutral, the stylesheet documents take unless the person chooses.
+    fn neutral() -> story::SheetSpec {
         let source = testkit::specs("styles")
             .expect("spec/styles")
             .into_iter()
-            .find(|(name, _)| name == "m1")
-            .expect("m1.ron")
+            .find(|(name, _)| name == "neutral")
+            .expect("neutral.ron")
             .1;
-        ron::from_str(&source).expect("a style sheet")
+        story::SheetSpec::parse(&source).expect("a stylesheet")
+    }
+
+    fn sheet() -> StyleSheet {
+        StyleSheet::from_spec(&neutral())
     }
 
     fn p(text: &str) -> BlockSpec {
@@ -851,18 +857,21 @@ mod tests {
     }
 
     fn nested() -> Document {
-        story::build(&[
-            p("alpha"),
-            BlockSpec::List(
-                false,
-                vec![
-                    vec![p("one"), BlockSpec::List(false, vec![vec![p("deep")]])],
-                    vec![p("two")],
-                ],
-            ),
-            BlockSpec::Quote(vec![p("q1"), p("q2")]),
-            p("omega"),
-        ])
+        story::build(
+            &neutral(),
+            &[
+                p("alpha"),
+                BlockSpec::List(
+                    false,
+                    vec![
+                        vec![p("one"), BlockSpec::List(false, vec![vec![p("deep")]])],
+                        vec![p("two")],
+                    ],
+                ),
+                BlockSpec::Quote(vec![p("q1"), p("q2")]),
+                p("omega"),
+            ],
+        )
     }
 
     #[test]

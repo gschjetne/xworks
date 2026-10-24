@@ -16,6 +16,7 @@ pub(crate) fn view_look(res: &Resources, dark: bool) -> Look {
         page_ink: c.page_ink,
         ink: c.ink,
         selection: c.selection,
+        formatting: c.formatting,
         shadow: c.shadow,
         line: c.line,
         tint: c.hover,

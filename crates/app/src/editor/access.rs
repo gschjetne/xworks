@@ -53,7 +53,7 @@ impl Editor {
         let mut text = Node::new(Role::MultilineTextInput);
         text.set_label(self.name());
         let mut paragraphs = Vec::with_capacity(self.laid.paragraphs.len());
-        let sheet = &self.res.sheet;
+        let sheet = &self.sheet;
         let px = |v: i64| v as f64;
         for (k, laid) in self.laid.paragraphs.iter().enumerate() {
             let paragraph = self.paragraph(laid.id);

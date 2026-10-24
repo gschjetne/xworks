@@ -62,6 +62,10 @@
         // on Windows it's AltGr, which types letters on many layouts.
         (id: "view-draft", title: "&Draft"),
         (id: "view-pages", title: "&Pages"),
+        // Text's own formatting, tinted over it (M2's stage 9; project
+        // owner, 2026-10-24, review 30dmn1js): off until the person turns
+        // it on.
+        (id: "show-formatting", title: "Show Direct &Formatting"),
         (id: "toggle-inspector", title: "&Inspector", shortcut: Some("Primary+Shift+I")),
         (id: "toggle-ruler", title: "&Ruler", shortcut: Some("Primary+Shift+R")),
         (id: "command-palette", title: "&Command Palette…", shortcut: Some("Primary+Shift+P")),
@@ -187,7 +191,7 @@
         (title: "&Edit", items: ["undo", "redo", "-", "cut", "copy", "paste", "-", "select-all"]),
         (title: "&View", items: [
             "view-draft", "view-pages", "-",
-            "toggle-inspector", "toggle-ruler", ">units", "-",
+            "toggle-inspector", "toggle-ruler", ">units", "show-formatting", "-",
             "command-palette",
         ]),
         (title: "&Insert", items: ["insert-picture", "insert-table"]),

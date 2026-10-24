@@ -505,8 +505,9 @@ fn report(
             .take(sample.len() * copies)
             .cloned()
             .collect();
-        let document = story::document(&all);
-        let laid = canvas::automatic(&document, &res.sheet, &res.page, res.fonts());
+        let document = story::document(&res.stylesheets[0], &all);
+        let sheet = &res.program;
+        let laid = canvas::automatic(&document, sheet, &sheet.page, res.fonts());
         (all, document, laid.pages.len())
     };
     // Twenty copies say how many pages a copy fills.

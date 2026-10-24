@@ -125,7 +125,7 @@ struct Recording {
     checkpoints: VecDeque<(Duration, u64, Checkpoint)>,
     /// The document after the last event handled.
     ended: Option<Document>,
-    sheet: Option<StyleSheet>,
+    program: Option<std::sync::Arc<StyleSheet>>,
     title: String,
     language: Option<String>,
     mac: bool,
@@ -152,7 +152,7 @@ impl Recorder {
             first: 0,
             checkpoints: VecDeque::new(),
             ended: None,
-            sheet: None,
+            program: None,
             title: String::new(),
             language: None,
             mac: false,
@@ -175,7 +175,7 @@ impl Recorder {
         let editor = window.editor();
         let mut r = self.lock();
         let res = editor.resources();
-        r.sheet = Some(res.sheet.clone());
+        r.program = Some(res.program.clone());
         r.language = (res.language != text::Language::und()).then(|| res.language.to_string());
         r.mac = res.mac;
         r.title = editor.name();
@@ -288,7 +288,10 @@ impl Recording {
             size: checkpoint.size,
             events: self.steps.iter().skip(skip).cloned().collect(),
             expect: session::paragraphs(&ended),
-            outline: self.sheet.as_ref().map(|s| story::outline(&ended, s)),
+            outline: self
+                .program
+                .as_ref()
+                .map(|p| story::outline(&ended, &StyleSheet::of(&ended, p))),
             marks: Vec::new(),
             clipboard: None,
             status: None,

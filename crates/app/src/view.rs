@@ -63,7 +63,7 @@ pub(crate) fn draw(editor: &Editor, look: &Look) -> Page {
             pieces = &pieces[first..last.max(first)];
         }
         let painted = canvas::paint_page(
-            &res.sheet.blocks,
+            &editor.sheet().blocks,
             canvas::Poured {
                 paragraphs: parts.paragraphs,
                 units: parts.units,
@@ -76,10 +76,42 @@ pub(crate) fn draw(editor: &Editor, look: &Look) -> Page {
             None,
         );
         if parts.draft {
-            out.items
-                .extend(painted.into_iter().map(|item| on_desk(item, res, look)));
+            out.items.extend(
+                painted
+                    .into_iter()
+                    .map(|item| on_desk(item, editor.sheet(), look)),
+            );
         } else {
             out.items.extend(painted);
+        }
+    }
+
+    // Direct formatting, tinted, where the person asked to see it: text
+    // with its own character values, and a bar beside each paragraph
+    // with its own paragraph values.
+    if editor.shows_formatting() {
+        for (k, p) in parts.paragraphs.iter().enumerate() {
+            let lines = &p.layout.lines;
+            let (Some(first), Some(last)) = (lines.first(), lines.last()) else {
+                continue;
+            };
+            let (x, top) = editor.line_origin_of(k, 0);
+            let (_, bottom) = editor.line_origin_of(k, lines.len() - 1);
+            let bottom = bottom + last.top - first.top + last.height;
+            if bottom < view_top || top > view_bottom {
+                continue;
+            }
+            let (ranges, whole) = editor.direct_formatting(k);
+            for range in ranges {
+                highlight(editor, &mut out, k, &p.layout, range, look.formatting, false);
+            }
+            if whole {
+                let bar = x - p.margin - p.inset - 6 * PIXEL;
+                out.items.push(Item::Fill {
+                    path: Path::rect(bar, top + first.top, 2 * PIXEL, bottom - top - first.top),
+                    color: look.formatting,
+                });
+            }
         }
     }
 
@@ -117,13 +149,18 @@ pub(crate) fn draw(editor: &Editor, look: &Look) -> Page {
 
 /// `item` as the draft shows it on the desk: text in the look's ink, and
 /// tints, bars and rules in its colours, so it reads in light and dark.
-fn on_desk(item: Item, res: &crate::Resources, look: &Look) -> Item {
-    let blocks = &res.sheet.blocks;
+fn on_desk(item: Item, sheet: &story::StyleSheet, look: &Look) -> Item {
     let rgb = |(r, g, b): (u8, u8, u8)| Color::rgb(r, g, b);
+    let blocks = &sheet.blocks;
+    // Links are in the colour the stylesheet's link mark gives them.
+    let link = sheet.mark(4).color.map(rgb);
     let recolor = |color: Color| {
-        if color == Color::BLACK || color == rgb(blocks.rule_color) {
+        if color == Color::BLACK
+            || color == rgb(sheet.defaults.color)
+            || color == rgb(blocks.rule_color)
+        {
             look.ink
-        } else if color == rgb(blocks.link_color) {
+        } else if Some(color) == link {
             look.accent
         } else if color == rgb(blocks.code_tint) {
             look.tint

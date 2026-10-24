@@ -281,14 +281,19 @@ pub fn document_pages() -> canvas::Pages {
     document_in(&page_style())
 }
 
-/// M1's page style.
+/// The stylesheet `spec/styles/{name}.ron`.
+pub(crate) fn stylesheet(name: &str) -> story::SheetSpec {
+    story::SheetSpec::parse(&spec("styles", name)).expect("a stylesheet")
+}
+
+/// Neutral, the stylesheet new documents take, M2's look.
+pub(crate) fn neutral() -> story::SheetSpec {
+    stylesheet("neutral")
+}
+
+/// Neutral's page style.
 pub(crate) fn page_style() -> canvas::PageStyle {
-    #[derive(serde::Deserialize)]
-    struct Sheet {
-        page: canvas::PageStyleSpec,
-    }
-    let page: Sheet = ron::from_str(&spec("styles", "m1")).expect("a page style");
-    canvas::PageStyle::from_spec(&page.page)
+    story::StyleSheet::from_spec(&neutral()).page
 }
 
 /// The sample document in M1's paragraph styles, in automatic pages of
@@ -300,7 +305,7 @@ pub(crate) fn document_in(style: &canvas::PageStyle) -> canvas::Pages {
 /// The sample document as [`document_in`] sets it, but with M1's serif
 /// in `serif` and its sans in `sans`.
 pub(crate) fn document_with(style: &canvas::PageStyle, serif: &str, sans: &str) -> canvas::Pages {
-    let mut sheet: story::StyleSheet = ron::from_str(&spec("styles", "m1")).expect("a style sheet");
+    let mut sheet = story::StyleSheet::from_spec(&neutral());
     for paragraph in &mut sheet.paragraph {
         paragraph.family = match paragraph.family.as_str() {
             "Noto Serif" => serif.to_string(),
@@ -310,7 +315,7 @@ pub(crate) fn document_with(style: &canvas::PageStyle, serif: &str, sans: &str) 
     }
     let paragraphs: Vec<(String, Vec<(String, doc::Props)>)> =
         ron::from_str(&spec("documents", "m1-sample")).expect("a document");
-    let document = story::document(&paragraphs);
+    let document = story::document(&neutral(), &paragraphs);
     canvas::automatic(&document, &sheet, style, fonts())
 }
 
@@ -323,22 +328,11 @@ pub fn blocks_sheet() -> Page {
 /// The document with every kind of block in M2's styles, in automatic
 /// pages.
 pub fn blocks_pages() -> canvas::Pages {
-    #[derive(serde::Deserialize)]
-    struct Sheet {
-        page: canvas::PageStyleSpec,
-    }
-    let styles = spec("styles", "m1");
-    let page: Sheet = ron::from_str(&styles).expect("a page style");
-    let sheet: story::StyleSheet = ron::from_str(&styles).expect("a style sheet");
+    let sheet = story::StyleSheet::from_spec(&neutral());
     let blocks: Vec<story::BlockSpec> =
         ron::from_str(&spec("documents", "m2-blocks")).expect("a document");
-    let document = story::build(&blocks);
-    canvas::automatic(
-        &document,
-        &sheet,
-        &canvas::PageStyle::from_spec(&page.page),
-        fonts(),
-    )
+    let document = story::build(&neutral(), &blocks);
+    canvas::automatic(&document, &sheet, &sheet.page, fonts())
 }
 
 /// The document with pictures, side by side on a grey sheet.
@@ -350,29 +344,17 @@ pub fn pictures_sheet() -> Page {
 /// styles, in automatic pages: the photograph and the heart drawing's
 /// pictures as they're named, and one it lacks.
 pub fn pictures_pages() -> canvas::Pages {
-    #[derive(serde::Deserialize)]
-    struct Sheet {
-        page: canvas::PageStyleSpec,
-    }
-    let styles = spec("styles", "m1");
-    let page: Sheet = ron::from_str(&styles).expect("a page style");
-    let sheet: story::StyleSheet = ron::from_str(&styles).expect("a style sheet");
+    let sheet = story::StyleSheet::from_spec(&neutral());
     let blocks: Vec<story::BlockSpec> =
         ron::from_str(&spec("documents", "m2-pictures")).expect("a document");
-    let document = story::build(&blocks);
+    let document = story::build(&neutral(), &blocks);
     let mut pictures = canvas::Pictures::new();
     pictures.insert(
         "landscape".to_string(),
         crate::drawing::photograph().clone(),
     );
     pictures.insert("heart".to_string(), crate::drawing::icon());
-    canvas::automatic_with(
-        &document,
-        &sheet,
-        &canvas::PageStyle::from_spec(&page.page),
-        fonts(),
-        &pictures,
-    )
+    canvas::automatic_with(&document, &sheet, &sheet.page, fonts(), &pictures)
 }
 
 /// The spec `spec/{dir}/{name}.ron`.

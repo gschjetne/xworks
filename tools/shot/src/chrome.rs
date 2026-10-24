@@ -34,7 +34,7 @@ fn sample(name: &str, dark: bool) -> Window {
     let res = Arc::new(app::Resources::load(&root, documents.clone(), false).expect("resources"));
     let paragraphs: Vec<(String, Vec<(String, doc::Props)>)> =
         ron::from_str(&crate::pages::spec("documents", "m1-sample")).expect("a document");
-    let document = story::document(&paragraphs);
+    let document = story::document(&crate::pages::neutral(), &paragraphs);
     let path = documents.join(format!("{name}.xw"));
     drop(store::Store::create(&path, &document, "story").expect("the file"));
     let mut window = Window::open(res, &path).expect("it opens");

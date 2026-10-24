@@ -52,6 +52,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "stylesheet_file"
+path = "fuzz_targets/stylesheet_file.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "store_file"
 path = "fuzz_targets/store_file.rs"
 test = false
