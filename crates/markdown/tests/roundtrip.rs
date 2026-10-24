@@ -55,6 +55,8 @@ enum B {
     Quote(Vec<B>),
     /// A table: its columns' alignments, and its rows of cells.
     Table(Vec<String>, Vec<Vec<Vec<R>>>),
+    /// A rule across the text: a thematic break.
+    Rule,
 }
 
 fn run() -> impl Strategy<Value = R> {
@@ -97,6 +99,7 @@ fn runs() -> impl Strategy<Value = Vec<R>> {
 
 fn leaf() -> impl Strategy<Value = B> {
     prop_oneof![
+        1 => Just(B::Rule),
         4 => (prop::sample::select(vec![0u8, 0, 0, 1, 2, 3, 6]), runs()).prop_map(|(l, r)| B::P(l, r)),
         1 => ("[a-z]{0,5}", prop::collection::vec("[a-z `~*#>\\-]{0,8}", 1..4)).prop_map(|(i, l)| B::Code(i, l)),
         1 => (
@@ -268,6 +271,7 @@ fn objects(next: &mut u64, b: &B, parent: ObjectId, out: &mut Vec<(ObjectId, Obj
                 push(out, at, child);
             }
         }
+        B::Rule => out.push((id, container(Kind::Rule, Props::new()))),
         B::Table(aligns, rows) => {
             out.push((id, container(Kind::Table, Props::new())));
             for cells in rows {
@@ -326,9 +330,13 @@ fn build(blocks: &[B]) -> Document {
             .expect("building applies");
         after = Some(id);
     }
-    document
-        .apply(&Op::DeleteBlock { block: first })
-        .expect("the first paragraph goes");
+    // The paragraph it starts with goes, unless the blocks have none, as
+    // a story of rules alone has.
+    if document.paragraphs().len() > 1 {
+        document
+            .apply(&Op::DeleteBlock { block: first })
+            .expect("the first paragraph goes");
+    }
     document
 }
 

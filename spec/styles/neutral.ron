@@ -11,7 +11,9 @@
 // colour below by name. `Some(...)` may be left out around a value.
 (
     name: "Neutral",
-    version: 1,
+    // Version 2 has the room around a rule across the text (M2's stage 6's
+    // follow-up, review jy4a2tx5), which the other sheets take from it.
+    version: 2,
     faces: [
         (name: "Text", role: "text", family: "Source Serif 4"),
         (name: "Heading", role: "heading", family: "Inter"),
@@ -136,6 +138,9 @@
         hairline: Pt(0.5),
         rule_colour: "Rule",
         hairline_colour: "Hairline",
+        // A rule across the text, Markdown's thematic break: room above
+        // and below its hairline, drawn in the rules' colour.
+        rule_space: Pt(9),
         missing_picture: "Missing picture",
     ),
 )

@@ -1,7 +1,8 @@
 //! The story's tree as a reading-order list of paragraphs, each with its
 //! place: how far it's indented, the marker of the list item it starts or
 //! the number of the numbered heading it is, the quotes it's in, the table
-//! cell it is, and the containers around it.
+//! cell it is, the containers around it, and the rules across the text
+//! that come before it.
 
 use doc::{Document, Kind, Object, ObjectId, Value};
 
@@ -39,6 +40,21 @@ pub struct Cell {
     pub width: i64,
 }
 
+/// A rule across the text, Markdown's thematic break, in its place: drawn
+/// across its column, in the quotes it's in, before the paragraph it's
+/// placed with, or after the story's last paragraph if none follows it.
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct Rule {
+    /// The rule.
+    pub id: ObjectId,
+    /// Where it starts, across from the body's start edge.
+    pub indent: i64,
+    /// How wide it is.
+    pub width: i64,
+    /// The quotes it's in, outermost first, as [`Place::quotes`] has them.
+    pub quotes: Vec<(ObjectId, i64)>,
+}
+
 /// Where a paragraph sits in the story's tree, as laying it out and drawing
 /// it need. Lengths are in layout units.
 #[derive(Clone, Debug, Default, PartialEq, Eq, Hash)]
@@ -65,6 +81,12 @@ pub struct Place {
     pub cell: Option<Cell>,
     /// The containers it's in, outermost first.
     pub path: Vec<Ancestor>,
+    /// The rules across the text right before it in reading order, which
+    /// it's placed with, in order.
+    pub rules: Vec<Rule>,
+    /// The rules after it, if it's the story's last paragraph and rules
+    /// end the story.
+    pub rules_after: Vec<Rule>,
 }
 
 impl Place {
@@ -120,8 +142,10 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
     // How many numbered headings of each level there have been since the
     // last of a level above it.
     let mut counters = [0i64; 6];
-    let mut out = Vec::new();
+    let mut out: Vec<Entry> = Vec::new();
     let mut containers = Vec::new();
+    // The rules met since the last paragraph, which go with the next.
+    let mut rules: Vec<Rule> = Vec::new();
     let mut stack = vec![(document.root(), Place::top(width))];
     while let Some((id, place)) = stack.pop() {
         let Some(object) = document.object(id) else {
@@ -133,6 +157,7 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
         let block = match object {
             Object::Paragraph(p) => {
                 let mut place = place;
+                place.rules = std::mem::take(&mut rules);
                 let style = sheet.style_of(p);
                 if let Some(level) = style.heading.filter(|l| (1..=6).contains(l)) {
                     let level = usize::from(level);
@@ -149,6 +174,15 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
                     }
                 }
                 out.push(Entry { id, place });
+                continue;
+            }
+            Object::Block(block) if block.kind == Kind::Rule => {
+                rules.push(Rule {
+                    id,
+                    indent: place.indent,
+                    width: place.width,
+                    quotes: place.quotes.clone(),
+                });
                 continue;
             }
             Object::Story(story) => {
@@ -268,8 +302,9 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
                 }
             }
             // An item hands its marker on to its first block; a row out of
-            // a table can't be, as rows are only ever in tables.
-            Kind::Item | Kind::Row => {
+            // a table can't be, as rows are only ever in tables; and a rule
+            // holds nothing.
+            Kind::Item | Kind::Row | Kind::Rule => {
                 for (i, &c) in block.children.iter().enumerate() {
                     let mut p = inner.clone();
                     if i > 0 {
@@ -281,6 +316,9 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
             }
         }
         stack.extend(children.into_iter().rev());
+    }
+    if let Some(last) = out.last_mut() {
+        last.place.rules_after = rules;
     }
     Flow {
         entries: out,

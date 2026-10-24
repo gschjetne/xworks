@@ -812,6 +812,10 @@ impl Editor {
         for (n, pieces) in pages.iter().enumerate() {
             for piece in pieces {
                 let unit = units[piece.block].clone();
+                // A rule across the text has no lines of text.
+                if unit.is_empty() {
+                    continue;
+                }
                 if paragraphs[unit.start].place.cell.is_some() {
                     // A table's row: every line of each of its cells.
                     for k in unit {
@@ -1087,6 +1091,10 @@ impl Editor {
         let mut best: Option<(i64, usize, usize)> = None;
         for piece in &self.laid.pages[n] {
             let unit = self.laid.units[piece.block].clone();
+            if unit.is_empty() {
+                // A rule: the caret goes to the text around it.
+                continue;
+            }
             let cells = unit.len() > 1 || self.laid.paragraphs[unit.start].place.cell.is_some();
             for k in unit {
                 let p = &self.laid.paragraphs[k];
@@ -1256,21 +1264,20 @@ impl Editor {
                 })
                 .unwrap_or(unit.end - 1)
         };
+        // The blocks below and above that have text: past rules.
+        let below = (u + 1..units.len()).find(|&v| !units[v].is_empty());
+        let above = (0..u).rev().find(|&v| !units[v].is_empty());
         let (k, line) = if down {
             if line + 1 < layout.lines.len() {
                 (k, line + 1)
-            } else if u + 1 < units.len() {
-                (under(u + 1), 0)
             } else {
-                return None;
+                (under(below?), 0)
             }
         } else if line > 0 {
             (k, line - 1)
-        } else if u > 0 {
-            let k = under(u - 1);
-            (k, self.laid.paragraphs[k].layout.lines.len() - 1)
         } else {
-            return None;
+            let k = under(above?);
+            (k, self.laid.paragraphs[k].layout.lines.len() - 1)
         };
         let p = &self.laid.paragraphs[k];
         let cursor = p.layout.hit_line(line, goal - p.x());
@@ -1458,11 +1465,10 @@ impl Editor {
             });
             return (ops, start);
         }
-        // Across containers, blocks between go whole.
-        let parent = self.document.parent(start.paragraph);
+        // Across containers, or a rule between, blocks between go whole.
         if ids[a..=b]
-            .iter()
-            .any(|&id| self.document.parent(id) != parent)
+            .windows(2)
+            .any(|w| self.document.next(w[0]) != Some(w[1]))
         {
             let ops = blocks::deletion(&self.document, ids, start, end).unwrap_or_default();
             return (ops, start);
@@ -2059,12 +2065,28 @@ impl Editor {
         }
     }
 
-    /// The first paragraph in `block`, in reading order.
+    /// The first paragraph in `block`, in reading order; for a block with
+    /// none, as a rule has, the first after it.
     fn first_paragraph(&self, block: ObjectId) -> Option<ObjectId> {
-        self.document
-            .subtree(block)
-            .into_iter()
-            .find(|&id| self.document.paragraph(id).is_some())
+        let first_in = |block: ObjectId| {
+            self.document
+                .subtree(block)
+                .into_iter()
+                .find(|&id| self.document.paragraph(id).is_some())
+        };
+        if let Some(p) = first_in(block) {
+            return Some(p);
+        }
+        let mut at = block;
+        loop {
+            match self.document.next(at) {
+                Some(next) => match first_in(next) {
+                    Some(p) => return Some(p),
+                    None => at = next,
+                },
+                None => at = self.document.parent(at)?,
+            }
+        }
     }
 
     fn undo(&mut self, redo: bool) {
@@ -2102,7 +2124,17 @@ impl Editor {
         }
         self.relayout(false);
         let ops = if redo { &t.ops } else { &t.inverse };
-        let caret = self.after(ops).unwrap_or_else(|| self.document_edge(false));
+        // Where the change was; or, where that can't be told, as when a
+        // rule came or went, where the caret is, if that's still there.
+        let focus = self.focus;
+        let kept = self.document.paragraph(focus.paragraph).map(|p| Position {
+            offset: focus.offset.min(p.len()),
+            ..focus
+        });
+        let caret = self
+            .after(ops)
+            .or(kept)
+            .unwrap_or_else(|| self.document_edge(false));
         self.go(caret, false);
         self.message = format!("{} {}", if redo { "Redid" } else { "Undid" }, t.name);
         self.load_pictures(Editor::pictures_in(ops));
@@ -2120,7 +2152,7 @@ impl Editor {
             "copy-out" => self.version.is_some(),
             "save-version" | "paste" | "bold" | "italic" | "strikethrough" | "code"
             | "list-bullets" | "list-numbers" | "list-tasks" | "quote" | "insert-table"
-            | "insert-picture" => writable,
+            | "insert-rule" | "insert-picture" => writable,
             "task-toggle" => writable && self.task_at_caret().is_some(),
             "clear-formatting" => writable && self.has_direct_formatting(),
             "redefine-style" | "new-style" | "replace-stylesheet" => {
@@ -2250,12 +2282,13 @@ impl Editor {
             "save-stylesheet" => self.save_stylesheet(),
             "update-stylesheet" => self.update_panel(),
             "task-toggle" => self.check_off(),
-            "list-bullets" | "list-numbers" | "quote" | "insert-table" => {
+            "list-bullets" | "list-numbers" | "quote" | "insert-table" | "insert-rule" => {
                 let (start, end) = self.ordered();
                 let ids = self.ids().to_vec();
                 let outcome = match id {
                     "quote" => blocks::toggle_quote(&self.document, &ids, start, end),
                     "insert-table" => blocks::insert_table(&self.document, start),
+                    "insert-rule" => blocks::insert_rule(&self.document, &self.sheet, start),
                     _ => {
                         blocks::toggle_list(&self.document, &ids, start, end, id == "list-numbers")
                     }

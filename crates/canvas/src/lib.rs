@@ -6,12 +6,14 @@
 //! - [`PageStyle`]: a page's size and margins, a document's page style.
 //! - [`paginate`]: blocks of lines poured into pages, breaking paragraphs
 //!   between lines; [`blocks`] makes them of a story's paragraphs, a
-//!   table's row as one.
+//!   table's row as one, and of its rules across the text, Markdown's
+//!   thematic breaks, a hairline each with room around it.
 //! - [`paint_page`] and [`draw`]: a page's pieces as display lists, with
 //!   list markers and tasks' boxes, quotes' bars, code on its tint, lines
-//!   through struck text and tables' rules, and the pictures in the text
-//!   ([`Pictures`]), each standing on its line's baseline with its
-//!   alternative text.
+//!   through struck text, tables' rules and rules across the text, and
+//!   the pictures in the text ([`Pictures`]), each standing on its line's
+//!   baseline with its alternative text. Rules are drawn, not text, so a
+//!   PDF has them as artifacts.
 //! - [`structure`]: the story's blocks, nested, for tagged PDF; a
 //!   paragraph of one picture alone is a figure.
 //! - [`automatic`] and [`automatic_with`]: a document's story poured into
@@ -174,27 +176,60 @@ pub fn paginate(height: i64, blocks: &[Block]) -> Vec<Vec<Piece>> {
 
 /// What each block to pour holds of a story's laid-out paragraphs, by
 /// their indices: one paragraph, or the cells of a table's row, which
-/// pour together, side by side.
+/// pour together, side by side; or none, for a rule across the text
+/// ([`story::Rule`]): `k..k` for one before paragraph `k`, and `n..n`,
+/// past the last of the `n`, for one that ends the story.
 pub fn units(paragraphs: &[ParagraphLayout]) -> Vec<Range<usize>> {
     let mut out: Vec<Range<usize>> = Vec::with_capacity(paragraphs.len());
     for (k, p) in paragraphs.iter().enumerate() {
+        out.extend(p.place.rules.iter().map(|_| k..k));
         let row = p.place.cell.map(|c| c.row);
         match out.last_mut() {
             Some(last)
-                if row.is_some() && paragraphs[last.start].place.cell.map(|c| c.row) == row =>
+                if row.is_some()
+                    && last.start != last.end
+                    && paragraphs[last.start].place.cell.map(|c| c.row) == row =>
             {
                 last.end = k + 1;
             }
             _ => out.push(k..k + 1),
         }
     }
+    if let Some(last) = paragraphs.last() {
+        let n = paragraphs.len();
+        out.extend(last.place.rules_after.iter().map(|_| n..n));
+    }
     out
+}
+
+/// The rule across the text that unit `u` of `units`, the [`units`] of
+/// `paragraphs`, is, if it's one.
+pub fn rule_at<'a>(
+    paragraphs: &'a [ParagraphLayout],
+    units: &[Range<usize>],
+    u: usize,
+) -> Option<&'a story::Rule> {
+    let unit = units.get(u)?;
+    if !unit.is_empty() {
+        return None;
+    }
+    // Which of the rules in its place it is: as many come before it.
+    let nth = units[..u]
+        .iter()
+        .rev()
+        .take_while(|r| r.is_empty() && r.start == unit.start)
+        .count();
+    match paragraphs.get(unit.start) {
+        Some(p) => p.place.rules.get(nth),
+        None => paragraphs.last()?.place.rules_after.get(nth),
+    }
 }
 
 /// A story's laid-out paragraphs as blocks to pour, a block for each of
 /// its [`units`]: a paragraph's lines, or a table row as one line, as
-/// tall as its tallest cell, with room around the cells as `look` says.
-/// A table's header keeps with the row after it.
+/// tall as its tallest cell, with room around the cells as `look` says,
+/// or a rule's hairline with room around it. A table's header keeps with
+/// the row after it.
 pub fn blocks(paragraphs: &[ParagraphLayout], look: &story::Blocks) -> Vec<Block> {
     units(paragraphs)
         .into_iter()
@@ -205,6 +240,16 @@ pub fn blocks(paragraphs: &[ParagraphLayout], look: &story::Blocks) -> Vec<Block
 /// The block to pour of one of the [`units`] of `paragraphs`, as
 /// [`blocks`] makes it.
 pub fn block(paragraphs: &[ParagraphLayout], unit: Range<usize>, look: &story::Blocks) -> Block {
+    if unit.is_empty() {
+        // A rule: its hairline, and room around it.
+        let space = look.rule_space;
+        return Block {
+            lines: vec![look.hairline.max(1)],
+            space_before: space,
+            space_after: space,
+            keep_with_next: false,
+        };
+    }
     let p = &paragraphs[unit.start];
     match p.place.cell {
         None => Block {
@@ -400,7 +445,12 @@ pub fn paint_page(
     for piece in pieces {
         let unit = &units[piece.block];
         let (top, bottom) = extent(piece, blocks);
-        for &(quote, x) in &paragraphs[unit.start].place.quotes {
+        let quotes = match rule_at(paragraphs, units, piece.block) {
+            Some(rule) => &rule.quotes,
+            None if unit.is_empty() => continue,
+            None => &paragraphs[unit.start].place.quotes,
+        };
+        for &(quote, x) in quotes {
             match bars.iter_mut().find(|b| b.0 == quote) {
                 Some(bar) => bar.3 = bar.3.max(bottom),
                 None => bars.push((quote, x, top, bottom)),
@@ -418,6 +468,21 @@ pub fn paint_page(
     let tint = rgb(look.code_tint);
     for piece in pieces {
         let unit = units[piece.block].clone();
+        if unit.is_empty() {
+            // A rule across the text: a hairline across its column, in
+            // the colour of a table's rules.
+            if let Some(rule) = rule_at(paragraphs, units, piece.block) {
+                let height = blocks[piece.block].lines[0];
+                back.push(fill(
+                    rule.indent,
+                    piece.y,
+                    rule.width,
+                    height,
+                    rgb(look.rule_color),
+                ));
+            }
+            continue;
+        }
         let first = &paragraphs[unit.start];
         if let Some(cell) = first.place.cell {
             // A table's row: its cells side by side, and its rules.
@@ -620,6 +685,8 @@ pub fn tagged(paragraphs: &[ParagraphLayout]) -> (Structure, Sources) {
                 Kind::Quote => push(&mut structure, Role::Quote, parent),
                 Kind::Table => push(&mut structure, Role::Table, parent),
                 Kind::Row => push(&mut structure, Role::Row, parent),
+                // A rule holds nothing, so is around nothing.
+                Kind::Rule => continue,
             };
             open.push((a.id, into));
         }

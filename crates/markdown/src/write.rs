@@ -490,6 +490,7 @@ impl<'a> Writer<'a> {
                 Kind::Quote => self.open_quote(id)?,
                 Kind::Table => self.table(id)?,
                 Kind::Row => {}
+                Kind::Rule => self.rule(id)?,
             },
             Object::Story(_) | Object::Sheet(_) | Object::Style(_) => {}
         }
@@ -603,17 +604,22 @@ impl<'a> Writer<'a> {
         let open = self.open.last().expect("open");
         match open.frame {
             Frame::Root => {
-                // What the file had after its last block, if that's last.
+                // What the file had after its last block, if that's last:
+                // the last it had lines for, past a paragraph the reader
+                // made to end a story of rules, which is written as
+                // nothing.
+                let base = &self.file.baseline;
+                let had_last = base.children(base.root()).iter().rev().find(|c| {
+                    self.file
+                        .sources
+                        .get(c)
+                        .is_some_and(|s| !s.lines.is_empty())
+                });
                 if let Some((last, _)) = open.prev
                     && let Some(src) = self.file.sources.get(&last)
                     && open.original
                     && !src.lines.is_empty()
-                    && self
-                        .file
-                        .baseline
-                        .children(self.file.baseline.root())
-                        .last()
-                        == Some(&last)
+                    && had_last == Some(&last)
                 {
                     let tail = &self.file.text[src.lines.end..];
                     if tail.trim().is_empty() {
@@ -814,6 +820,29 @@ impl<'a> Writer<'a> {
         open.first = prefix.clone();
         open.rest = prefix;
         self.open.push(open);
+        Ok(())
+    }
+
+    /// Rule `id`, a thematic break written afresh: `---`, after the blank
+    /// line every block written afresh has before it, so it's never read
+    /// as a heading's underline; or, on the first line of a list item
+    /// whose marker or another's on that line is a `-`, of a character
+    /// none of them is, as the line would otherwise be a thematic break
+    /// itself, not an item holding one.
+    fn rule(&mut self, id: ObjectId) -> Result<(), Unheld> {
+        let b = self.document.block(id).expect("a rule");
+        check_props(id, &b.props, &[])?;
+        let markers: String = self
+            .open
+            .iter()
+            .filter(|o| o.pending && o.frame == Frame::Item)
+            .map(|o| o.first.as_str())
+            .collect();
+        let c = ['-', '*', '_']
+            .into_iter()
+            .find(|c| !markers.contains(*c))
+            .unwrap_or('_');
+        self.fresh(&c.to_string().repeat(3));
         Ok(())
     }
 
@@ -1047,8 +1076,7 @@ impl<'a> Writer<'a> {
             }
         }
         // An alert's `[!NOTE]` stays alone on its line, as GitHub reads it.
-        let alert =
-            alert.filter(|&n| chars.get(n).is_some_and(|(c, p)| *c == ' ' && p.is_empty()));
+        let alert = alert.filter(|&n| chars.get(n).is_some_and(|(c, p)| *c == ' ' && p.is_empty()));
         kept.extend(alert);
         let width = self.width();
         for (careful, breaks, width) in [
@@ -1088,7 +1116,8 @@ impl<'a> Writer<'a> {
         {
             return None;
         }
-        let is_alert = |p: &Props| matches!(p.get(keys::SOURCE), Some(Value::Text(k)) if k == "alert");
+        let is_alert =
+            |p: &Props| matches!(p.get(keys::SOURCE), Some(Value::Text(k)) if k == "alert");
         let n = chars.iter().take_while(|(_, p)| is_alert(p)).count();
         (n > 0).then_some(n)
     }

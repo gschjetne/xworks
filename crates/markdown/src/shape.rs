@@ -43,6 +43,8 @@ pub enum Form {
     Table,
     /// A table's row.
     Row,
+    /// A rule across the text: a thematic break.
+    Rule,
 }
 
 /// The keys of a run's properties Markdown holds.
@@ -123,6 +125,7 @@ pub(crate) fn shape_of(document: &Document, sheet: &StyleSheet, id: ObjectId) ->
                     Kind::Quote => Form::Quote,
                     Kind::Table => Form::Table,
                     Kind::Row => Form::Row,
+                    Kind::Rule => Form::Rule,
                 };
                 out.push(Node { depth, form });
                 if b.kind == Kind::Table {

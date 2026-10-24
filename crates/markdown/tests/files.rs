@@ -370,6 +370,101 @@ fn alerts_are_kept_as_written() {
     assert!(p.runs.iter().all(|r| !r.props.contains_key(keys::SOURCE)));
 }
 
+/// Thematic breaks are rules (review jy4a2tx5), however they're written,
+/// in the story, in quotes and in list items, and written back byte for
+/// byte; a story that ends in one, or is nothing else, too.
+#[test]
+fn thematic_breaks_are_rules_written_back_as_they_were() {
+    let sheet = sheet();
+    for bytes in [
+        &b"Above\n\n---\n\nBelow\n"[..],
+        b"Above\n\n***\nBelow\n",
+        b"Above\n\n___\n",
+        b" - - -\n",
+        b"*  *  *  *\n\n\n",
+        b"> Quoted\n>\n> ___\n",
+        b"- one\n\n  ***\n- two\n",
+        b"Text\n\n---\n\n",
+    ] {
+        let read = read(bytes, &sheet);
+        let rules = read
+            .document
+            .subtree(read.document.root())
+            .into_iter()
+            .filter(|&id| {
+                read.document
+                    .block(id)
+                    .is_some_and(|b| b.kind == doc::Kind::Rule)
+            })
+            .count();
+        assert_eq!(rules, 1, "{}", String::from_utf8_lossy(bytes));
+        assert!(
+            read.document.paragraphs().iter().all(|&id| {
+                !read
+                    .document
+                    .paragraph(id)
+                    .is_some_and(|p| p.props.contains_key(keys::SOURCE))
+            }),
+            "nothing kept as written in {}",
+            String::from_utf8_lossy(bytes)
+        );
+        let written = read
+            .file
+            .clone()
+            .write(&read.document, &sheet)
+            .expect("it writes");
+        assert_eq!(
+            String::from_utf8_lossy(&written),
+            String::from_utf8_lossy(bytes)
+        );
+    }
+}
+
+/// A rule written afresh is `---` after a blank line, which no paragraph
+/// before it can take for a heading's underline; on a list item's first
+/// line, beside a `-` bullet, it's of another character, as the line
+/// would otherwise be a rule itself, not an item holding one.
+#[test]
+fn rules_written_afresh_read_back_as_rules() {
+    use story::{BlockSpec, props};
+    let sheet = sheet();
+    let p = |text: &str| BlockSpec::Paragraph("Body".into(), vec![(text.into(), props(&[]))]);
+    for (blocks, want) in [
+        (
+            vec![p("Above"), BlockSpec::Rule, p("Below")],
+            "Above\n\n---\n\nBelow\n",
+        ),
+        (vec![p("Text"), BlockSpec::Rule], "Text\n\n---\n"),
+        (
+            vec![BlockSpec::List(false, vec![vec![BlockSpec::Rule, p("x")]])],
+            "- ***\n\n  x\n",
+        ),
+        (
+            vec![BlockSpec::Quote(vec![BlockSpec::Rule, p("Quoted")])],
+            "> ---\n>\n> Quoted\n",
+        ),
+    ] {
+        let document = story::build(&neutral(), &blocks);
+        let written = markdown::File::empty(Some("en-US"))
+            .write(&document, &sheet)
+            .expect("it writes");
+        assert_eq!(String::from_utf8_lossy(&written), want);
+        let again = self::read(&written, &sheet);
+        assert_eq!(shape(&again.document, &sheet), shape(&document, &sheet));
+    }
+    // A rule first, and another later, isn't front matter.
+    let document = story::build(
+        &neutral(),
+        &[BlockSpec::Rule, p("Middle"), BlockSpec::Rule, p("End")],
+    );
+    let written = markdown::File::empty(None)
+        .write(&document, &sheet)
+        .expect("it writes");
+    let again = self::read(&written, &sheet);
+    assert_eq!(again.file.front_matter(), None);
+    assert_eq!(shape(&again.document, &sheet), shape(&document, &sheet));
+}
+
 /// The file's front matter is kept, and its language is the paragraphs'.
 #[test]
 fn front_matter_is_kept_and_gives_the_language() {

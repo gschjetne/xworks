@@ -224,6 +224,7 @@ pub fn valid(key: &str) -> fn(&Value) -> bool {
         | keys::CELL_PADDING
         | keys::RULE
         | keys::HAIRLINE
+        | keys::RULE_SPACE
         | keys::LIST_INDENT
         | keys::MARKER_GAP => small,
         keys::TAB_INTERVAL => interval,
@@ -519,6 +520,10 @@ pub struct Blocks {
     pub rule_color: Rgb,
     /// The colour of the rules between its rows.
     pub hairline_color: Rgb,
+    /// The room above and below a rule across the text, Markdown's
+    /// thematic break, which is drawn a hairline wide in the rules'
+    /// colour.
+    pub rule_space: i64,
     /// The colour drawn where a picture can't be.
     pub missing_picture: Rgb,
 }
@@ -729,6 +734,7 @@ impl StyleSheet {
                 keys::HAIRLINE_COLOR,
                 fb.map_or((0, 0, 0), |b| b.hairline_color),
             ),
+            rule_space: int(keys::RULE_SPACE, fb.map_or(0, |b| b.rule_space)),
             missing_picture: colour(
                 keys::MISSING_PICTURE,
                 fb.map_or((255, 255, 255), |b| b.missing_picture),

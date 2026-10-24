@@ -5,12 +5,12 @@
 //! - [`read`]: CommonMark with GitHub's tables, strikethrough and task
 //!   lists, read with pulldown-cmark into a [`Document`]: headings are the
 //!   Heading styles; paragraphs, lists, quotes, code blocks and tables are
-//!   stage 2's blocks; emphasis, strong, code, links and lines through
-//!   text are marks; images are pictures in the text, linked by their
-//!   paths (`story::keys::PICTURE_SRC`). What a story doesn't hold, such
-//!   as HTML, thematic breaks, link reference definitions, footnotes and
-//!   the `[!NOTE]` of GitHub's alerts, which are quotes, is kept as it was
-//!   written (`story::keys::SOURCE`). YAML or TOML front
+//!   stage 2's blocks, and thematic breaks are rules; emphasis, strong,
+//!   code, links and lines through text are marks; images are pictures in
+//!   the text, linked by their paths (`story::keys::PICTURE_SRC`). What a
+//!   story doesn't hold, such as HTML, link reference definitions,
+//!   footnotes and the `[!NOTE]` of GitHub's alerts, which are quotes, is
+//!   kept as it was written (`story::keys::SOURCE`). YAML or TOML front
 //!   matter is kept as it was, outside the story, and its `lang` is the
 //!   paragraphs' language.
 //! - [`File`]: what the file said, kept for writing it back:
@@ -242,6 +242,8 @@ pub(crate) enum Syntax {
     Code(Option<(char, usize)>),
     /// Markdown kept as it was written.
     Raw,
+    /// A thematic break, which is a rule.
+    Rule,
     /// A list: its bullet or delimiter, whether its items are apart, with
     /// blank lines between them, and whether its numbers count up.
     List {

@@ -123,6 +123,125 @@ fn blocks_nest_and_read_in_order() {
     assert!(doc.dump().contains("#20 list in #0 [#21, #23] {}"));
 }
 
+/// A rule, Markdown's thematic break (review jy4a2tx5), is a block the
+/// story, an item or a quote holds, and it holds nothing. It's inserted,
+/// deleted, moved and undone as other blocks are, and rebased as they
+/// are; and a story of rules alone still needs a paragraph.
+#[test]
+fn a_rule_is_a_block_that_holds_nothing() {
+    let mut doc = three();
+    let root = doc.root();
+    let rule = |parent: ObjectId| container(Kind::Rule, parent, &[]);
+    let before = doc.clone();
+    let insert = Op::InsertBlock {
+        parent: root,
+        after: Some(ObjectId(10)),
+        objects: vec![(ObjectId(20), rule(root))],
+    };
+    let undo = doc.apply(&insert).unwrap();
+    assert_eq!(
+        doc.children(root),
+        [ObjectId(1), ObjectId(10), ObjectId(20), ObjectId(11)]
+    );
+    assert_eq!(texts(&doc), ["one", "two", "three"]);
+    assert!(doc.dump().contains("#20 rule in #0 [] {}"));
+    // Nothing goes in it.
+    assert_eq!(
+        doc.apply(&insert_para(ObjectId(20), None, 30, "in")),
+        Err(Error::WrongKind {
+            parent: ObjectId(20),
+            child: ObjectId(30)
+        })
+    );
+    assert!(
+        doc.apply(&Op::MoveBlock {
+            block: ObjectId(11),
+            parent: ObjectId(20),
+            after: None
+        })
+        .is_err()
+    );
+    // It moves into a quote, and back.
+    doc.apply(&Op::InsertBlock {
+        parent: root,
+        after: None,
+        objects: vec![(ObjectId(21), container(Kind::Quote, root, &[]))],
+    })
+    .unwrap();
+    let moved = doc
+        .apply(&Op::MoveBlock {
+            block: ObjectId(20),
+            parent: ObjectId(21),
+            after: None,
+        })
+        .unwrap();
+    assert_eq!(doc.parent(ObjectId(20)), Some(ObjectId(21)));
+    doc.apply_all(&moved).unwrap();
+    assert_eq!(doc.parent(ObjectId(20)), Some(root));
+    // Deleted and undone.
+    let mut deleted = doc.clone();
+    let back = deleted
+        .apply(&Op::DeleteBlock {
+            block: ObjectId(20),
+        })
+        .unwrap();
+    assert!(deleted.block(ObjectId(20)).is_none());
+    deleted.apply_all(&back).unwrap();
+    assert_eq!(deleted, doc);
+    // Undoing the insertion takes it away.
+    let mut undone = before.clone();
+    undone.apply(&insert).unwrap();
+    undone.apply_all(&undo).unwrap();
+    assert_eq!(undone, before);
+    // Two put in one place keep the first one's first.
+    let other = Op::InsertBlock {
+        parent: root,
+        after: Some(ObjectId(10)),
+        objects: vec![(ObjectId(40), rule(root))],
+    };
+    let met = both(&before, &insert, &other);
+    assert_eq!(
+        met.children(root),
+        [
+            ObjectId(1),
+            ObjectId(10),
+            ObjectId(20),
+            ObjectId(40),
+            ObjectId(11)
+        ]
+    );
+    // A list item holds one too; a list or a row doesn't.
+    let list = Object::Block(Block {
+        kind: Kind::List,
+        parent: root,
+        children: vec![ObjectId(51)],
+        props: Props::new(),
+    });
+    assert!(!list.holds(&rule(root)));
+    assert!(container(Kind::Item, root, &[]).holds(&rule(root)));
+    assert!(!container(Kind::Row, root, &[]).holds(&rule(root)));
+    assert!(!rule(root).holds(&rule(root)));
+    assert!(!rule(root).holds(&para(root, "x")));
+    // A story of a rule alone isn't one.
+    let snapshot = doc::Snapshot {
+        root,
+        next_id: 3,
+        objects: vec![
+            (
+                root,
+                Object::Story(doc::Story {
+                    blocks: vec![ObjectId(2)],
+                }),
+            ),
+            (ObjectId(2), rule(root)),
+        ],
+    };
+    assert_eq!(
+        Document::from_snapshot(snapshot).err(),
+        Some(SnapshotError::EmptyStory(root))
+    );
+}
+
 #[test]
 fn a_deletion_undoes_with_everything_in_it() {
     let mut doc = three();

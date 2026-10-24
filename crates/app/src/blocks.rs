@@ -437,15 +437,60 @@ pub(crate) fn enter(doc: &Document, sheet: &StyleSheet, at: Position) -> Option<
     }
 }
 
+/// Whether `id` is a rule across the text.
+fn is_rule(doc: &Document, id: ObjectId) -> bool {
+    kind(doc, id) == Some(Kind::Rule)
+}
+
+/// The rule right before paragraph `p` in reading order, if there's one:
+/// the block before it, or the last block inside that, and so on.
+fn rule_before(doc: &Document, p: ObjectId) -> Option<ObjectId> {
+    let mut at = doc.previous(p)?;
+    loop {
+        if is_rule(doc, at) {
+            return Some(at);
+        }
+        at = *doc.children(at).last()?;
+    }
+}
+
+/// The rule right after paragraph `p` in reading order, if there's one:
+/// the block after it, or after its container if it's the last there,
+/// or the first block inside that, and so on.
+fn rule_after(doc: &Document, p: ObjectId) -> Option<ObjectId> {
+    let mut at = p;
+    let next = loop {
+        match doc.next(at) {
+            Some(next) => break next,
+            None => at = doc.parent(at).filter(|&c| c != doc.root())?,
+        }
+    };
+    let mut at = next;
+    loop {
+        if is_rule(doc, at) {
+            return Some(at);
+        }
+        at = *doc.children(at).first()?;
+    }
+}
+
 /// What Backspace (`forward` false) or Delete does at the caret `at`, at
 /// its paragraph's start or end, with nothing selected; `ids` are the
 /// story's paragraphs in reading order, `k` its place among them. `None`
-/// where nothing in the tree is in the way: M1's join.
+/// where nothing in the tree is in the way: M1's join. A rule right
+/// before or after is deleted, as a character would be.
 pub(crate) fn edge(doc: &Document, ids: &[ObjectId], k: usize, forward: bool) -> Option<Outcome> {
     let p = *ids.get(k)?;
     let parent = doc.parent(p)?;
     let first = doc.children(parent).first() == Some(&p);
     if forward {
+        if !is_cell(doc, p)
+            && let Some(rule) = rule_after(doc, p)
+        {
+            let mut b = Ops::new(doc);
+            b.push(Op::DeleteBlock { block: rule })?;
+            return Some(b.edit("Delete", end(doc, p)));
+        }
         let Some(&next) = ids.get(k + 1) else {
             return Some(Outcome::Nothing);
         };
@@ -485,6 +530,11 @@ pub(crate) fn edge(doc: &Document, ids: &[ObjectId], k: usize, forward: bool) ->
             return Some(b.edit("Delete", start(p)));
         }
         _ => {}
+    }
+    if let Some(rule) = rule_before(doc, p) {
+        let mut b = Ops::new(doc);
+        b.push(Op::DeleteBlock { block: rule })?;
+        return Some(b.edit("Delete", start(p)));
     }
     let Some(&previous) = k.checked_sub(1).and_then(|i| ids.get(i)) else {
         return Some(Outcome::Nothing);
@@ -768,6 +818,69 @@ pub(crate) fn toggle_quote(
     })?;
     move_all(&mut b, &paragraphs, quote, None)?;
     Some(b.edit("Quote", from))
+}
+
+/// A rule across the text at the caret `at`, Insert, Rule: before its
+/// paragraph if the caret is at its start, or it's empty; otherwise the
+/// paragraph is split there, the rule between its halves, as Enter
+/// splits it. In a table's cell, it goes after the table, a paragraph
+/// after it if there's none. The caret goes to the paragraph after it.
+pub(crate) fn insert_rule(doc: &Document, sheet: &StyleSheet, at: Position) -> Option<Outcome> {
+    let p = at.paragraph;
+    let paragraph = doc.paragraph(p)?;
+    let mut b = Ops::new(doc);
+    let rule = b.fresh();
+    let rule_in = |parent: ObjectId| container(Kind::Rule, parent, Props::new());
+    if is_cell(doc, p) {
+        let table = doc.parent(doc.parent(p)?)?;
+        let parent = doc.parent(table)?;
+        b.push(Op::InsertBlock {
+            parent,
+            after: Some(table),
+            objects: vec![(rule, rule_in(parent))],
+        })?;
+        let caret = match doc.next(table).filter(|&n| doc.paragraph(n).is_some()) {
+            Some(next) => next,
+            None => {
+                let new = b.fresh();
+                b.push(Op::InsertBlock {
+                    parent,
+                    after: Some(rule),
+                    objects: vec![(new, empty_paragraph(parent, body(sheet)))],
+                })?;
+                new
+            }
+        };
+        return Some(b.edit("Rule", start(caret)));
+    }
+    let parent = doc.parent(p)?;
+    if at.offset == 0 || paragraph.is_empty() {
+        b.push(Op::InsertBlock {
+            parent,
+            after: doc.previous(p),
+            objects: vec![(rule, rule_in(parent))],
+        })?;
+        return Some(b.edit("Rule", start(p)));
+    }
+    // After a heading's last character comes the default style, as Enter
+    // has it.
+    let mut props = paragraph.props.clone();
+    if at.offset == paragraph.len() && sheet.style_of(paragraph).heading.is_some() {
+        props.extend(body(sheet));
+    }
+    let new = b.fresh();
+    b.push(Op::SplitParagraph {
+        paragraph: p,
+        offset: at.offset,
+        new,
+        new_props: props,
+    })?;
+    b.push(Op::InsertBlock {
+        parent,
+        after: Some(p),
+        objects: vec![(rule, rule_in(parent))],
+    })?;
+    Some(b.edit("Rule", start(new)))
 }
 
 /// A table of two columns, a header and one row, after the caret's

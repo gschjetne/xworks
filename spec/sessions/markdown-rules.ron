@@ -1,0 +1,36 @@
+// A Markdown file's thematic breaks are rules (review jy4a2tx5), read
+// from each way of writing them and written back as they were; one
+// deleted and undone is written as it was, and one inserted is written
+// "---", after a blank line, so it's never a heading's underline.
+(
+    size: (900, 700),
+    open: Some(("Breaks.md", "Above\n\n***\n\nBetween\n\n_ _ _\n\nBelow\n")),
+    events: [
+        Outline(["Body: Above", "rule", "Body: Between", "rule", "Body: Below"]),
+        Key("Down"),
+        Key("Backspace"),
+        Outline(["Body: Above", "Body: Between", "rule", "Body: Below"]),
+        Key("Primary+Z"),
+        Key("Primary+End"),
+        Command("insert-rule"),
+        Type("After"),
+    ],
+    expect: [
+        ("Body", "Above"),
+        ("Body", "Between"),
+        ("Body", "Below"),
+        ("Body", "After"),
+    ],
+    outline: Some([
+        "Body: Above",
+        "rule",
+        "Body: Between",
+        "rule",
+        "Body: Below",
+        "rule",
+        "Body: After",
+    ]),
+    files: [
+        ("Breaks.md", Some("Above\n\n***\n\nBetween\n\n_ _ _\n\nBelow\n\n---\n\nAfter\n")),
+    ],
+)

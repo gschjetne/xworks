@@ -288,11 +288,23 @@ fn the_page_is_the_documents_own_and_kept() {
     assert_eq!(reopened.sheet().page.width, 148 * MILLIMETRE);
 }
 
+/// The version of Neutral that comes with xWorks.
+fn neutral_version(res: &Resources) -> u32 {
+    res.stylesheets
+        .iter()
+        .find(|s| s.name == "Neutral")
+        .expect("Neutral")
+        .version
+}
+
 #[test]
 fn a_new_document_copies_the_stylesheet_chosen_and_can_take_another() {
     let res = res("app-styles-new");
     let mut editor = Editor::create(res.clone()).expect("a document");
-    assert_eq!(editor.sheet().origin, Some(("Neutral".to_string(), 1)));
+    assert_eq!(
+        editor.sheet().origin,
+        Some(("Neutral".to_string(), neutral_version(&res)))
+    );
     let effects = with(
         &mut editor,
         "new-with-stylesheet",
@@ -372,7 +384,7 @@ fn a_newer_version_of_the_stylesheet_is_offered_never_applied() {
     // A newer Neutral, whose body is a point larger.
     let mut newer = (*res).clone();
     let mut neutral = newer.stylesheets[0].clone();
-    neutral.version = 2;
+    neutral.version += 1;
     neutral.paragraph[0].size = Some(text::units::Length::Pt(12.0));
     let mut sheets = (*newer.stylesheets).clone();
     sheets[0] = neutral;
@@ -399,7 +411,10 @@ fn a_newer_version_of_the_stylesheet_is_offered_never_applied() {
     );
     key(&mut editor, Key::Enter, false, false);
     assert_eq!(editor.sheet().default_style().size, 12 * POINT);
-    assert_eq!(editor.sheet().origin, Some(("Neutral".to_string(), 2)));
+    assert_eq!(
+        editor.sheet().origin,
+        Some(("Neutral".to_string(), neutral_version(&res) + 1))
+    );
     assert!(!editor.state("update-stylesheet").enabled);
 }
 
@@ -466,7 +481,10 @@ fn a_markdown_file_keeps_neutral_and_asks_before_a_style_changes() {
     let path = res.documents.join("Notes.md");
     std::fs::write(&path, "# Notes\n\nA line.\n").unwrap();
     let mut editor = Editor::open(res.clone(), &path).expect("it opens");
-    assert_eq!(editor.sheet().origin, Some(("Neutral".to_string(), 1)));
+    assert_eq!(
+        editor.sheet().origin,
+        Some(("Neutral".to_string(), neutral_version(&res)))
+    );
     let body = style(&editor, "Body");
     with(
         &mut editor,

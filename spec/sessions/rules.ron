@@ -1,0 +1,73 @@
+// A rule across the text, Markdown's thematic break (review jy4a2tx5):
+// Insert, Rule puts one at the caret, between its paragraph's halves, or
+// before an empty paragraph. The caret steps over it, Backspace after it
+// and Delete before it take it away, Undo brings it back, and a
+// selection across it takes it with the text.
+(
+    size: (900, 700),
+    events: [
+        Type("Above"),
+        Command("insert-rule"),
+        Type("Below"),
+        Outline(["Body: Above", "rule", "Body: Below"]),
+        // Up and Down go past it, to the text.
+        Key("Up"),
+        Key("End"),
+        Type("!"),
+        Key("Down"),
+        Key("Home"),
+        Type("["),
+        Outline(["Body: Above!", "rule", "Body: [Below"]),
+        // Backspace after it takes it away, and Undo brings it back.
+        Key("Backspace"),
+        Outline(["Body: Above!", "rule", "Body: Below"]),
+        Key("Backspace"),
+        Outline(["Body: Above!", "Body: Below"]),
+        Key("Primary+Z"),
+        Outline(["Body: Above!", "rule", "Body: Below"]),
+        // Delete before it, the same.
+        Key("Up"),
+        Key("End"),
+        Key("Delete"),
+        Outline(["Body: Above!", "Body: Below"]),
+        Key("Primary+Z"),
+        Outline(["Body: Above!", "rule", "Body: Below"]),
+        // In the middle of a paragraph, it splits it; in a list item, it
+        // stays in the item.
+        Key("Primary+End"),
+        Key("Enter"),
+        Command("list-bullets"),
+        Type("one two"),
+        Repeat("Left", 3),
+        Command("insert-rule"),
+        Outline([
+            "Body: Above!",
+            "rule",
+            "Body: Below",
+            "list",
+            "  item",
+            "    Body: one ",
+            "    rule",
+            "    Body: two",
+        ]),
+        // A selection across a rule takes it with the text.
+        Key("Primary+Home"),
+        Key("End"),
+        Key("Shift+Right"),
+        Key("Shift+Right"),
+        Key("Backspace"),
+    ],
+    expect: [
+        ("Body", "Above!elow"),
+        ("Body", "one "),
+        ("Body", "two"),
+    ],
+    outline: Some([
+        "Body: Above!elow",
+        "list",
+        "  item",
+        "    Body: one ",
+        "    rule",
+        "    Body: two",
+    ]),
+)

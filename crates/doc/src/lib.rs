@@ -6,7 +6,8 @@
 //!   is an O(1) snapshot. Its root is a [`Story`], a tree of blocks:
 //!   [`Paragraph`]s, text with runs of character properties ([`Run`]) and
 //!   properties of its own ([`Props`]), and containers ([`Block`]) of each
-//!   [`Kind`]: lists of items, quotes, and tables of rows of cells.
+//!   [`Kind`]: lists of items, quotes, and tables of rows of cells; and
+//!   rules, which hold nothing.
 //!   Headings and code blocks are paragraphs, set apart by their style.
 //!   Beside the story there may be a [`Sheet`], the document's own
 //!   stylesheet: [`Style`]s of each [`StyleKind`], each based on another

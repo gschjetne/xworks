@@ -13,8 +13,10 @@
 //!   name, as pasting and replacing a sheet do.
 //! - [`flow`]: the story's paragraphs in reading order, each with its
 //!   [`Place`] in the tree: indent, list marker (numbers computed, not
-//!   stored), a numbered heading's number, quotes, table cell, and the
-//!   containers around it.
+//!   stored), a numbered heading's number, quotes, table cell, the
+//!   containers around it, and the rules across the text before it
+//!   ([`Rule`], Markdown's thematic break), which have no text and go
+//!   with the paragraph after them.
 //! - [`spans`] and [`spans_at`]: a paragraph's text as styled spans: its
 //!   style, its run's character style and marks, and its own formatting
 //!   over them.
@@ -53,7 +55,7 @@ mod merge;
 pub mod sheet;
 pub mod styles;
 
-pub use flow::{Ancestor, Cell, DEEPEST, Entry, Flow, Place, flow};
+pub use flow::{Ancestor, Cell, DEEPEST, Entry, Flow, Place, Rule, flow};
 pub use merge::{Change, changes, merge};
 pub use sheet::{SheetError, SheetSpec};
 pub use styles::{
@@ -159,6 +161,10 @@ pub mod keys {
     pub const RULE_COLOR: &str = "rule-color";
     /// The colour of the rules between its rows (as [`COLOR`]).
     pub const HAIRLINE_COLOR: &str = "hairline-color";
+    /// The room above and below a rule across the text, Markdown's
+    /// thematic break, which is drawn a hairline wide in the rules' colour
+    /// (a number).
+    pub const RULE_SPACE: &str = "rule-space";
     /// The colour drawn where a picture can't be (as [`COLOR`]).
     pub const MISSING_PICTURE: &str = "missing-picture";
     /// Bold (on or off): Markdown's strong emphasis.
@@ -1130,6 +1136,8 @@ pub enum BlockSpec {
     /// A table: its columns' alignment ("start", "center", "end" or ""),
     /// and its rows, the header first, each of its cells' text.
     Table(Vec<String>, Vec<Vec<Vec<(String, Props)>>>),
+    /// A rule across the text, as Markdown's thematic break.
+    Rule,
 }
 
 /// A document in the stylesheet `spec` gives, whose story holds
@@ -1259,6 +1267,7 @@ fn objects_of(
                 push_child(&mut out[at].1, row);
             }
         }
+        BlockSpec::Rule => out.push((id, container(Kind::Rule, Props::new()))),
     }
     id
 }

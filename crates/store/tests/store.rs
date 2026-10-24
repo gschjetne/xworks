@@ -482,6 +482,51 @@ fn the_encoding_of_blocks_is_pinned() {
     assert_eq!(store::decode::<Vec<Op>>(&bytes).unwrap(), ops);
 }
 
+/// A rule across the text (review jy4a2tx5) is schema 3's kind of block
+/// after schema 2's five, so it's written as the sixth kind, and the
+/// rest's bytes are as they were. It's stored, logged and read back as
+/// other blocks are, and the dump shows it.
+#[test]
+fn a_rule_is_the_kind_after_schema_2s() {
+    use doc::{Block, Kind, Object, ObjectId};
+    let insert = Op::InsertBlock {
+        parent: ObjectId(0),
+        after: Some(ObjectId(1)),
+        objects: vec![(
+            ObjectId(5),
+            Object::Block(Block {
+                kind: Kind::Rule,
+                parent: ObjectId(0),
+                children: vec![],
+                props: Props::new(),
+            }),
+        )],
+    };
+    let bytes = store::encode(&insert).unwrap();
+    assert_eq!(
+        bytes,
+        [
+            6, 0, 1, 1, 1, // InsertBlock in #0 after Some(#1), one object
+            5, 2, 5, 0, 0, 0, // #5: a Block, a Rule in #0, empty, no props
+        ]
+    );
+    assert_eq!(store::decode::<Op>(&bytes).unwrap(), insert);
+    // In a file, logged and in a snapshot.
+    let path = scratch("rule").join("rule.xw");
+    let mut document = Document::new();
+    let mut store = Store::create(&path, &document, "story").unwrap();
+    let t = document.transact("Rule", vec![insert]).unwrap();
+    store.append(Entry::Commit(&t), &document).unwrap();
+    drop(store);
+    let opened = Store::open(&path).unwrap();
+    assert_eq!(opened.document, document);
+    assert!(
+        store::dump(&path).unwrap().contains("rule in #0 [] {}"),
+        "{}",
+        store::dump(&path).unwrap()
+    );
+}
+
 /// Snapshots are part of the format too: these bytes change only with a
 /// new schema.
 #[test]

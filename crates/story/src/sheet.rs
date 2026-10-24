@@ -273,6 +273,11 @@ pub struct DocumentSpec {
     pub rule_colour: String,
     /// The colour of the rules between its rows.
     pub hairline_colour: String,
+    /// The room above and below a rule across the text, Markdown's
+    /// thematic break, drawn a hairline wide in the rules' colour; the
+    /// program's where it's left out, as in sheets from before rules.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub rule_space: Option<Length>,
     /// The colour drawn where a picture can't be.
     pub missing_picture: String,
 }
@@ -605,6 +610,9 @@ impl SheetSpec {
             ("a hairline", d.hairline),
         ] {
             check_length(what, length, 0..=INCH)?;
+        }
+        if let Some(space) = d.rule_space {
+            check_length("a rule's space", space, 0..=INCH)?;
         }
         for colour in [
             &d.quote_colour,
@@ -979,6 +987,9 @@ impl SheetSpec {
         ] {
             props.insert(key.to_string(), Value::Int(length.units()));
         }
+        if let Some(space) = d.rule_space {
+            props.insert(keys::RULE_SPACE.to_string(), Value::Int(space.units()));
+        }
         for (key, colour) in [
             (keys::QUOTE_COLOR, &d.quote_colour),
             (keys::CODE_TINT, &d.code_tint),
@@ -1061,6 +1072,7 @@ impl SheetSpec {
             hairline: length(keys::HAIRLINE)?,
             rule_colour: colour(keys::RULE_COLOR),
             hairline_colour: colour(keys::HAIRLINE_COLOR),
+            rule_space: int(&sheet.props, keys::RULE_SPACE).map(length_of),
             missing_picture: colour(keys::MISSING_PICTURE),
         };
         let mut spec = SheetSpec {

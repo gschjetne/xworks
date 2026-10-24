@@ -21,6 +21,8 @@ inline <abbr>HTML</abbr>, and a picture ![a gradient](images/gradient.jpg).
 - [x] Order seeds
 - [ ] Mend the fence
 
+***
+
 > [!NOTE]
 > Frost can come as late as May.
 

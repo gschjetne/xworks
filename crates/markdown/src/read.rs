@@ -1041,9 +1041,25 @@ impl<'a> Builder<'a> {
                 self.end_line(false);
             }
             Event::Rule => {
+                // A thematic break: a rule, a block the story holds
+                // (review jy4a2tx5).
                 self.block_start(&range);
-                let text = self.text[range.clone()].trim().to_string();
-                self.raw("rule", text, whole_lines(self.text, &range));
+                let id = self.id();
+                let first_of = self.first_of(range.start);
+                let parent = self.stack.last().expect("open").id;
+                let rule = Object::Block(Block {
+                    kind: Kind::Rule,
+                    parent,
+                    children: Vec::new(),
+                    props: Props::new(),
+                });
+                self.add(
+                    id,
+                    rule,
+                    whole_lines(self.text, &range),
+                    first_of,
+                    Syntax::Rule,
+                );
             }
             Event::TaskListMarker(done) => {
                 if let Some(item) = self

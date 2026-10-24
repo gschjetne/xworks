@@ -242,6 +242,121 @@ fn a_tables_row_pours_as_one_block() {
     assert_eq!(units.len(), laid.len() - 5 * 2);
 }
 
+/// The rectangle a path of straight lines takes up.
+fn bounds(path: &scene::Path) -> scene::Rect {
+    let points: Vec<scene::Point> = path
+        .0
+        .iter()
+        .filter_map(|s| match s {
+            scene::Segment::MoveTo(p) | scene::Segment::LineTo(p) => Some(*p),
+            _ => None,
+        })
+        .collect();
+    let (x0, x1) = (
+        points.iter().map(|p| p.x).min().unwrap_or(0),
+        points.iter().map(|p| p.x).max().unwrap_or(0),
+    );
+    let (y0, y1) = (
+        points.iter().map(|p| p.y).min().unwrap_or(0),
+        points.iter().map(|p| p.y).max().unwrap_or(0),
+    );
+    scene::Rect::new(x0, y0, x1 - x0, y1 - y0)
+}
+
+/// A rule across the text, Markdown's thematic break (review jy4a2tx5),
+/// pours as a hairline with room above and below, and is drawn across its
+/// column in the rules' colour, in a quote between the quote's indent and
+/// under its bar; and it's nothing in the structure, only drawn, so a PDF
+/// has it as an artifact, not text. One that ends the story comes after
+/// the last paragraph.
+#[test]
+fn rules_are_hairlines_across_their_column() {
+    use story::{BlockSpec, props};
+    let (sheet, style) = styles();
+    let look = &sheet.blocks;
+    let p = |text: &str| BlockSpec::Paragraph("Body".into(), vec![(text.into(), props(&[]))]);
+    let with = story::build(
+        &neutral(),
+        &[
+            p("Above"),
+            BlockSpec::Rule,
+            BlockSpec::Quote(vec![p("Quoted"), BlockSpec::Rule]),
+            p("Below"),
+            BlockSpec::Rule,
+        ],
+    );
+    let without = story::build(
+        &neutral(),
+        &[p("Above"), BlockSpec::Quote(vec![p("Quoted")]), p("Below")],
+    );
+    let laid = story::lay_out(&with, &sheet, fonts(), style.body_width());
+    let units = canvas::units(&laid);
+    assert_eq!(units, [0..1, 1..1, 1..2, 2..2, 2..3, 3..3]);
+    let blocks = canvas::blocks(&laid, look);
+    let space = look.rule_space;
+    for u in [1, 3, 5] {
+        assert_eq!(blocks[u].lines, [look.hairline]);
+        assert_eq!(
+            (blocks[u].space_before, blocks[u].space_after),
+            (space, space)
+        );
+        assert!(canvas::rule_at(&laid, &units, u).is_some(), "unit {u}");
+    }
+    assert!(canvas::rule_at(&laid, &units, 0).is_none());
+
+    let pages = canvas::automatic(&with, &sheet, &style, fonts());
+    let plain = canvas::automatic(&without, &sheet, &style, fonts());
+    assert_eq!(pages.structure, plain.structure, "rules aren't in it");
+    let color = scene::Color::rgb(look.rule_color.0, look.rule_color.1, look.rule_color.2);
+    let rules: Vec<scene::Rect> = pages.pages[0]
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Fill { path, color: c } if *c == color => Some(bounds(path)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(rules.len(), 3, "{rules:?}");
+    let indent = look.quote_indent;
+    assert_eq!(
+        (rules[0].x, rules[0].width),
+        (style.left, style.body_width())
+    );
+    assert_eq!(
+        (rules[1].x, rules[1].width),
+        (style.left + indent, style.body_width() - indent)
+    );
+    assert_eq!(
+        (rules[2].x, rules[2].width),
+        (style.left, style.body_width())
+    );
+    assert!(rules[0].y < rules[1].y && rules[1].y < rules[2].y);
+    // The quote's bar reaches down to its rule.
+    let bar = scene::Color::rgb(look.quote_color.0, look.quote_color.1, look.quote_color.2);
+    let bars: Vec<scene::Rect> = pages.pages[0]
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Fill { path, color: c } if *c == bar => Some(bounds(path)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(bars.len(), 1);
+    assert_eq!(bars[0].y + bars[0].height, rules[1].y + rules[1].height);
+    // No text: the glyphs are those of the story without rules.
+    let glyphs = |pages: &canvas::Pages| -> String {
+        pages.pages[0]
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Glyphs(g) => Some(g.text.clone()),
+                _ => None,
+            })
+            .collect()
+    };
+    assert_eq!(glyphs(&pages), glyphs(&plain));
+}
+
 /// Struck text is drawn with a line through it, as long as its glyphs; a
 /// task's box is drawn in its bullet's place, with a tick if it's done.
 /// Both are strokes and fills outside the reading order.

@@ -41,6 +41,8 @@ fn the_commands_hold_together() {
         "list-numbers",
         "quote",
         "insert-table",
+        // Rules across the text (review jy4a2tx5).
+        "insert-rule",
         "size-12",
         "word-left",
         "word-right",

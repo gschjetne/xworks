@@ -63,6 +63,9 @@ pub enum Kind {
     Table,
     /// A row of a table: its cells, each one paragraph.
     Row,
+    /// A rule across the text, as Markdown's thematic break: it holds
+    /// nothing.
+    Rule,
 }
 
 impl Kind {
@@ -74,12 +77,13 @@ impl Kind {
             Kind::Quote => "quote",
             Kind::Table => "table",
             Kind::Row => "row",
+            Kind::Rule => "rule",
         }
     }
 }
 
-/// A container of blocks: a list, an item, a quote, a table or a row. It
-/// may be empty.
+/// A container of blocks: a list, an item, a quote, a table or a row,
+/// which may be empty; or a rule, which is always empty.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Block {
     /// What it is.
@@ -221,14 +225,15 @@ impl Object {
     }
 
     /// Whether it can hold `child`: a story, an item or a quote holds
-    /// paragraphs, lists, quotes and tables; a list holds items; a table
-    /// holds rows; a row holds paragraphs; and the stylesheet holds styles.
+    /// paragraphs, lists, quotes, tables and rules; a list holds items; a
+    /// table holds rows; a row holds paragraphs; a rule holds nothing; and
+    /// the stylesheet holds styles.
     pub fn holds(&self, child: &Object) -> bool {
         let flow = matches!(
             child,
             Object::Paragraph(_)
                 | Object::Block(Block {
-                    kind: Kind::List | Kind::Quote | Kind::Table,
+                    kind: Kind::List | Kind::Quote | Kind::Table | Kind::Rule,
                     ..
                 })
         );
@@ -253,6 +258,7 @@ impl Object {
                     })
                 ),
                 Kind::Row => matches!(child, Object::Paragraph(_)),
+                Kind::Rule => false,
             },
         }
     }

@@ -225,9 +225,13 @@ fn block(
         Holds::Items => Some(Kind::Item),
         Holds::Rows => Some(Kind::Row),
         Holds::Flow if depth == 0 => None,
-        Holds::Flow => {
-            [None, Some(Kind::List), Some(Kind::Quote), Some(Kind::Table)][c.below(4) as usize]
-        }
+        Holds::Flow => [
+            None,
+            Some(Kind::List),
+            Some(Kind::Quote),
+            Some(Kind::Table),
+            Some(Kind::Rule),
+        ][c.below(5) as usize],
     };
     let Some(kind) = kind else {
         return (id, vec![(id, paragraph(c, parent))]);
@@ -235,11 +239,16 @@ fn block(
     let inner = match kind {
         Kind::List => Holds::Items,
         Kind::Table => Holds::Rows,
-        Kind::Row => Holds::Paragraphs,
+        Kind::Row | Kind::Rule => Holds::Paragraphs,
         Kind::Item | Kind::Quote => Holds::Flow,
     };
-    // Now and then an empty container, as Markdown's "-" is an empty item.
-    let count = if c.below(8) == 0 { 0 } else { 1 + c.below(2) };
+    // Now and then an empty container, as Markdown's "-" is an empty item;
+    // a rule always.
+    let count = if kind == Kind::Rule || c.below(8) == 0 {
+        0
+    } else {
+        1 + c.below(2)
+    };
     let mut children = Vec::new();
     let mut rest = Vec::new();
     for _ in 0..count {
@@ -277,7 +286,8 @@ fn holds(object: &Object) -> Holds {
         Object::Block(b) => match b.kind {
             Kind::List => Holds::Items,
             Kind::Table => Holds::Rows,
-            Kind::Row => Holds::Paragraphs,
+            // A rule holds nothing: a paragraph made for it is refused.
+            Kind::Row | Kind::Rule => Holds::Paragraphs,
             Kind::Item | Kind::Quote => Holds::Flow,
         },
         _ => Holds::Flow,

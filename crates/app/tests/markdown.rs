@@ -145,6 +145,44 @@ fn a_markdown_file_is_locked_while_its_open_and_written_whole() {
     assert!(matches!(store::acquire(&path), store::Acquired::Held(_)));
 }
 
+/// A Markdown file's thematic break is a rule (review jy4a2tx5): drawn in
+/// the draft, a hairline across the column, and printed, where it's drawn
+/// and not text.
+#[test]
+fn a_rule_is_drawn_and_printed_but_isnt_text() {
+    let res = resources("rule");
+    let path = file(&res, "Rule.md", b"Above\n\n---\n\nBelow\n");
+    let editor = Editor::open(res.clone(), &path).expect("it opens");
+    let look = &editor.sheet().blocks;
+    let rule = scene::Color::rgb(look.rule_color.0, look.rule_color.1, look.rule_color.2);
+    let pages = editor.pages();
+    let fills = pages.pages[0]
+        .items
+        .iter()
+        .filter(|item| matches!(item, Item::Fill { color, .. } if *color == rule))
+        .count();
+    assert_eq!(fills, 1, "a hairline across the column");
+    let pdf = render_pdf::pdf(&pages.pages, &pages.structure, None).expect("a PDF");
+    let text = testkit::pdf::text(&pdf).expect("its text");
+    assert!(text.contains("Above") && text.contains("Below"), "{text:?}");
+    assert!(!text.contains('-'), "{text:?}");
+    // The draft draws it too, in the look's ink.
+    let drawn = editor.view().items.len();
+    let mut without =
+        Editor::open(res.clone(), &file(&res, "Plain.md", b"Above\n\nBelow\n")).expect("it opens");
+    without.update(Event::Resize {
+        width: 800.0,
+        height: 600.0,
+    });
+    let mut with = editor;
+    with.update(Event::Resize {
+        width: 800.0,
+        height: 600.0,
+    });
+    assert!(drawn > 0);
+    assert_eq!(with.view().items.len(), without.view().items.len() + 1);
+}
+
 #[test]
 fn versions_of_a_markdown_file_last_while_its_open() {
     let res = resources("versions");
