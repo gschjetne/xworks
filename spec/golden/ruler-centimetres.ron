@@ -1,0 +1,7 @@
+// An approved golden image (spec/golden/README.md), written by `shot --approve`.
+Golden(
+    name: "ruler-centimetres",
+    size: (1280, 120),
+    sha256: "8beff434a41017253a331bc5c039e780ba9424bc98be0008bd038fca539303f2",
+    approved_by: "Grim Schjetne",
+)

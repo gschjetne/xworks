@@ -2,6 +2,6 @@
 Golden(
     name: "chrome-palette",
     size: (1280, 800),
-    sha256: "a8fc9c57b0caf34bed65343e5aedb50d41245866e79ff12745fbab705ef66618",
+    sha256: "b571e421616144c8ef7a34c4619f18c91f0512bec0918fffcaf36b9107a23a12",
     approved_by: "Grim Schjetne",
 )
