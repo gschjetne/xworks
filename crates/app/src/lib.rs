@@ -24,9 +24,15 @@
 //! Every edit is a transaction, written to the document's file as it's
 //! committed; there's no saving and no "Save changes?". A run of typing
 //! undoes as one. A Markdown file opens as itself, in the draft view, and
-//! each edit writes it back whole, through a rename, as the `markdown`
-//! crate writes it; an edit Markdown can't hold asks first, and makes the
-//! document an `.xw` file beside it only if the person says so.
+//! each edit makes it whole again, as the `markdown` crate writes it, for
+//! a worker of its own to write a moment later, through a rename, flushed
+//! to disk; closing writes it at once. An edit Markdown can't hold asks
+//! first, and makes the document an `.xw` file beside it only if the
+//! person says so. A change another program makes to a Markdown file is
+//! read, or asked about, when the window comes forward or before xWorks
+//! writes; its lock is in xWorks' own folder ([`Resources::locks`]).
+//! Typing a web or e-mail address makes it a link, as GitHub reads one,
+//! where `spec/editing.ron` says.
 //!
 //! app is an impure crate: it reads and writes documents.
 //!
