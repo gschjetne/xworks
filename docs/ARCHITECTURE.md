@@ -747,6 +747,15 @@ From trying the chrome live (project owner, 2026-10-24, review ydqhfds0):
   picas.
 - **The caret blinks at the system's rate.**
 
+From those, built (project owner, 2026-10-24, review 77nh3z47):
+
+- **Where the ruler counts from is a choice** too, beside its units in
+  View, Units: the margin, the text column's start, or the paper's left
+  edge. It's kept between runs with the unit.
+- **The space above and below a paragraph is in points,** as type is set.
+  Tab stops, indents and the page are places on the ruler, so they read
+  in its unit.
+
 The owner approved mockups of all this as goldens (`mockup-pages`,
 `mockup-pages-dark`, `mockup-draft-dark` and `mockup-palette`, drawn by
 `shot`, review 3ce247c2); the chrome M2 builds matches them.
@@ -792,8 +801,9 @@ the stage's own, open to the owner's review unless marked settled.
   click at its foot sets a stop, snapped to the finest ticks (2.5 mm, an
   eighth of an inch, six points); a stop dragged off it goes.
 - **Lengths in the person's unit.** The inspector shows the page's and
-  the paragraph's lengths in it (spacing, tab stops and margins), picas
-  as typographers write them, "3p6", and type sizes in points. The unit
+  the paragraph's lengths in it (tab stops, indents and margins), picas
+  as typographers write them, "3p6", and type sizes and the space above
+  and below a paragraph in points (review 77nh3z47). The unit
   is kept in `settings.ron` beside the recent documents (`app::Settings`).
   Until the person chooses, it's the system's: inches where measurements
   are US customary (Windows' own setting, or the locale's region
@@ -1140,6 +1150,12 @@ runner is a noted to-do, not yet planned.
 The harness is `tools/budgets`. It reads the numbers it measures against
 from `spec/budgets.ron`, whose names must match this table's rows, and
 judges each by its 95th percentile.
+
+**Memory is judged on a real GPU** (project owner, 2026-10-24, review
+77nh3z47): on Windows now, and on native Linux once the owner's
+workstation runs it. Under WSL about 72 MB of an empty window's memory is
+Mesa's software GPU, which no one using xWorks runs, so the harness shows
+WSL's figure for information.
 
 | Interaction | Budget |
 |---|---|
