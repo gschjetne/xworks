@@ -5,29 +5,29 @@
 
 use std::sync::OnceLock;
 
-use canvas::{PageStyle, PageStyleSpec, Pictures};
+use canvas::{PageStyle, Pictures};
 use doc::{Props, Value};
 use scene::{Item, Role};
-use serde::Deserialize;
 use story::{OBJECT, StyleSheet, keys, props};
 use text::Fonts;
 use text::units::INCH;
 
-#[derive(Deserialize)]
-struct Sheet {
-    page: PageStyleSpec,
-}
-
-fn styles() -> (StyleSheet, PageStyle) {
+/// Neutral, the stylesheet documents take unless the person chooses.
+fn neutral() -> story::SheetSpec {
     let source = testkit::specs("styles")
         .expect("spec/")
         .into_iter()
-        .find(|(n, _)| n == "m1")
-        .expect("spec/styles/m1.ron")
+        .find(|(n, _)| n == "neutral")
+        .expect("spec/styles/neutral.ron")
         .1;
-    let sheet: StyleSheet = ron::from_str(&source).expect("a style sheet");
-    let page: Sheet = ron::from_str(&source).expect("a page style");
-    (sheet, PageStyle::from_spec(&page.page))
+    story::SheetSpec::parse(&source).expect("a stylesheet")
+}
+
+/// Neutral resolved, as a document made in it has it, and its page.
+fn styles() -> (StyleSheet, PageStyle) {
+    let sheet = StyleSheet::from_spec(&neutral());
+    let page = sheet.page;
+    (sheet, page)
 }
 
 fn fonts() -> &'static Fonts {
@@ -60,27 +60,30 @@ fn solid(rgba: [u8; 4]) -> scene::Image {
 #[test]
 fn pictures_are_drawn_where_their_characters_stand() {
     let object = OBJECT.to_string();
-    let document = story::document(&[
-        (
-            "Body",
-            vec![
-                ("Text with ".to_string(), Props::new()),
-                (object.clone(), picture("inline", "A dot", 2 * INCH, INCH)),
-                (" in it.".to_string(), Props::new()),
-            ],
-        ),
-        (
-            "Body",
-            vec![(
-                object.clone(),
-                picture("figure", "A figure", 3 * INCH, 2 * INCH),
-            )],
-        ),
-        (
-            "Body",
-            vec![(object.clone(), picture("missing", "", INCH, INCH))],
-        ),
-    ]);
+    let document = story::document(
+        &neutral(),
+        &[
+            (
+                "Body",
+                vec![
+                    ("Text with ".to_string(), Props::new()),
+                    (object.clone(), picture("inline", "A dot", 2 * INCH, INCH)),
+                    (" in it.".to_string(), Props::new()),
+                ],
+            ),
+            (
+                "Body",
+                vec![(
+                    object.clone(),
+                    picture("figure", "A figure", 3 * INCH, 2 * INCH),
+                )],
+            ),
+            (
+                "Body",
+                vec![(object.clone(), picture("missing", "", INCH, INCH))],
+            ),
+        ],
+    );
     let (sheet, style) = styles();
     let mut pictures = Pictures::new();
     pictures.insert("inline".to_string(), solid([200, 0, 0, 255]));

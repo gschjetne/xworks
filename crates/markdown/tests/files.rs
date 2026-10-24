@@ -7,14 +7,27 @@ use doc::{Document, ObjectId, Op, Props, Run, Value};
 use markdown::{Read, Settings, shape};
 use story::{StyleSheet, keys};
 
-fn sheet() -> StyleSheet {
+/// Neutral, the program's stylesheet, which Markdown files take.
+fn neutral() -> story::SheetSpec {
     let source = testkit::specs("styles")
         .expect("spec/styles")
         .into_iter()
-        .find(|(name, _)| name == "m1")
-        .expect("spec/styles/m1.ron")
+        .find(|(name, _)| name == "neutral")
+        .expect("spec/styles/neutral.ron")
         .1;
-    ron::from_str(&source).expect("m1.ron is a style sheet")
+    story::SheetSpec::parse(&source).expect("neutral.ron is a stylesheet")
+}
+
+/// Neutral resolved, as a document read from Markdown has it.
+fn sheet() -> StyleSheet {
+    StyleSheet::from_spec(&neutral())
+}
+
+/// Neutral's objects, as reading Markdown puts them in a document.
+fn objects() -> &'static [(doc::ObjectId, doc::Object)] {
+    static OBJECTS: std::sync::OnceLock<Vec<(doc::ObjectId, doc::Object)>> =
+        std::sync::OnceLock::new();
+    OBJECTS.get_or_init(|| neutral().objects(story::SHEET_AT))
 }
 
 /// Every file, by name, as its bytes.
@@ -32,9 +45,9 @@ fn file(name: &str) -> Vec<u8> {
         .1
 }
 
-fn read(bytes: &[u8], sheet: &StyleSheet) -> Read {
+fn read(bytes: &[u8], _sheet: &StyleSheet) -> Read {
     let settings = Settings {
-        sheet,
+        sheet: objects(),
         language: Some("en-US"),
         sizes: &|_| None,
     };
@@ -190,7 +203,8 @@ fn new_items_follow_the_files_habits() {
         let tag = read.file.language().expect("a language").to_string();
         let language = Props::from([(keys::LANGUAGE.to_string(), Value::Text(tag))]);
         let mut paragraph_props = language;
-        paragraph_props.insert(keys::STYLE.to_string(), Value::Text("Body".into()));
+        let body = story::style_named(&read.document, "Body").expect("Body");
+        paragraph_props.insert(keys::STYLE.to_string(), Value::Ref(body));
         document
             .apply(&Op::InsertBlock {
                 parent: list,

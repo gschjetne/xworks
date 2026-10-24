@@ -952,12 +952,15 @@ impl<'a> Writer<'a> {
     /// it's a table's.
     fn check_paragraph(&self, id: ObjectId, p: &Paragraph, cell: bool) -> Result<(), Unheld> {
         let unheld = |what| Err(Unheld { block: id, what });
-        if let Some(Value::Text(name)) = p.props.get(keys::STYLE)
-            && !self.sheet.paragraph.iter().any(|s| s.name == *name)
-        {
-            return unheld(What::Style(name.clone()));
-        }
         let style = self.sheet.style_of(p);
+        // Markdown holds the program's sheet's styles that it has: body
+        // text, headings and code.
+        let markdown = |role: &str| {
+            role == "body" || role == "code" || role.strip_prefix("heading-").is_some()
+        };
+        if style.id.is_some() && !style.role.as_deref().is_some_and(markdown) {
+            return unheld(What::Style(style.name.clone()));
+        }
         if cell && (style.code || style.heading.is_some()) {
             return unheld(What::BlockInCell);
         }
@@ -1241,8 +1244,9 @@ impl<'a> Writer<'a> {
             text.push_str("\n\n");
             text.push_str(&named.join("\n"));
         }
+        let sheet = story::sheet_objects(self.document);
         let settings = Settings {
-            sheet: self.sheet,
+            sheet: &sheet,
             language: None,
             sizes: &|_| None,
         };

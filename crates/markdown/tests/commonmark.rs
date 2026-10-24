@@ -7,14 +7,27 @@
 use markdown::{File, Settings, shape};
 use story::StyleSheet;
 
-fn sheet() -> StyleSheet {
+/// Neutral, the program's stylesheet, which Markdown files take.
+fn neutral() -> story::SheetSpec {
     let source = testkit::specs("styles")
         .expect("spec/styles")
         .into_iter()
-        .find(|(name, _)| name == "m1")
-        .expect("spec/styles/m1.ron")
+        .find(|(name, _)| name == "neutral")
+        .expect("spec/styles/neutral.ron")
         .1;
-    ron::from_str(&source).expect("m1.ron is a style sheet")
+    story::SheetSpec::parse(&source).expect("neutral.ron is a stylesheet")
+}
+
+/// Neutral resolved, as a document read from Markdown has it.
+fn sheet() -> StyleSheet {
+    StyleSheet::from_spec(&neutral())
+}
+
+/// Neutral's objects, as reading Markdown puts them in a document.
+fn objects() -> &'static [(doc::ObjectId, doc::Object)] {
+    static OBJECTS: std::sync::OnceLock<Vec<(doc::ObjectId, doc::Object)>> =
+        std::sync::OnceLock::new();
+    OBJECTS.get_or_init(|| neutral().objects(story::SHEET_AT))
 }
 
 fn examples() -> Vec<testkit::commonmark::Example> {
@@ -29,7 +42,7 @@ fn show(markdown: &str) -> String {
 fn every_example_is_written_back_untouched_byte_for_byte() {
     let sheet = sheet();
     let settings = Settings {
-        sheet: &sheet,
+        sheet: objects(),
         language: None,
         sizes: &|_| None,
     };
@@ -70,7 +83,7 @@ fn every_example_is_written_back_untouched_byte_for_byte() {
 fn every_example_written_afresh_reads_back_as_the_same_story() {
     let sheet = sheet();
     let settings = Settings {
-        sheet: &sheet,
+        sheet: objects(),
         language: None,
         sizes: &|_| None,
     };
@@ -121,7 +134,7 @@ fn every_example_written_afresh_reads_back_as_the_same_story() {
 fn every_example_edited_reads_back_as_edited() {
     let sheet = sheet();
     let settings = Settings {
-        sheet: &sheet,
+        sheet: objects(),
         language: None,
         sizes: &|_| None,
     };

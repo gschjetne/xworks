@@ -4,17 +4,11 @@
 
 use std::sync::OnceLock;
 
-use canvas::{PageStyle, PageStyleSpec, Piece};
+use canvas::{PageStyle, Piece};
 use doc::{Document, Op, Props, Run};
 use scene::Item;
-use serde::Deserialize;
 use story::StyleSheet;
 use text::Fonts;
-
-#[derive(Deserialize)]
-struct Sheet {
-    page: PageStyleSpec,
-}
 
 fn spec(dir: &str, name: &str) -> String {
     testkit::specs(dir)
@@ -25,17 +19,22 @@ fn spec(dir: &str, name: &str) -> String {
         .1
 }
 
+/// Neutral, the stylesheet documents take unless the person chooses.
+fn neutral() -> story::SheetSpec {
+    story::SheetSpec::parse(&spec("styles", "neutral")).expect("a stylesheet")
+}
+
+/// Neutral resolved, as a document made in it has it, and its page.
 fn styles() -> (StyleSheet, PageStyle) {
-    let source = spec("styles", "m1");
-    let sheet: StyleSheet = ron::from_str(&source).expect("a style sheet");
-    let page: Sheet = ron::from_str(&source).expect("a page style");
-    (sheet, PageStyle::from_spec(&page.page))
+    let sheet = StyleSheet::from_spec(&neutral());
+    let page = sheet.page;
+    (sheet, page)
 }
 
 fn sample() -> Document {
     let paragraphs: Vec<(String, Vec<(String, Props)>)> =
         ron::from_str(&spec("documents", "m1-sample")).expect("a document");
-    story::document(&paragraphs)
+    story::document(&neutral(), &paragraphs)
 }
 
 /// The sample twice over: several pages in any of the bundled fonts. The
@@ -44,7 +43,7 @@ fn long_sample() -> Document {
     let mut paragraphs: Vec<(String, Vec<(String, Props)>)> =
         ron::from_str(&spec("documents", "m1-sample")).expect("a document");
     paragraphs.extend(paragraphs.clone());
-    story::document(&paragraphs)
+    story::document(&neutral(), &paragraphs)
 }
 
 fn fonts() -> &'static Fonts {
@@ -126,13 +125,9 @@ fn an_edit_leaves_the_pages_before_it() {
         let (sheet, _) = styles();
         let mut start = k;
         while start > 0 {
-            let style = match edited
+            let style = edited
                 .paragraph(ids[start - 1])
-                .and_then(|p| p.props.get(story::keys::STYLE))
-            {
-                Some(doc::Value::Text(name)) => sheet.paragraph_style(Some(name)).keep_with_next,
-                _ => false,
-            };
+                .is_some_and(|p| sheet.style_of(p).keep_with_next);
             if !style {
                 break;
             }
@@ -155,7 +150,7 @@ fn the_same_document_breaks_the_same_way() {
 fn blocks_document() -> Document {
     let blocks: Vec<story::BlockSpec> =
         ron::from_str(&spec("documents", "m2-blocks")).expect("a document");
-    story::build(&blocks)
+    story::build(&neutral(), &blocks)
 }
 
 /// Lists, quotes, code and tables stay within the margins, and every
@@ -230,7 +225,7 @@ fn a_tables_row_pours_as_one_block() {
         .filter(|&u| laid[units[u].start].place.cell.is_some())
         .collect();
     assert_eq!(rows.len(), 5);
-    let pad = sheet.blocks.cell_padding.units();
+    let pad = sheet.blocks.cell_padding;
     for &u in &rows {
         assert_eq!(units[u].len(), 3, "three cells a row");
         let tallest = laid[units[u].clone()]
@@ -241,14 +236,8 @@ fn a_tables_row_pours_as_one_block() {
         assert_eq!(blocks[u].lines, [tallest + 2 * pad]);
     }
     assert!(blocks[rows[0]].keep_with_next);
-    assert_eq!(
-        blocks[rows[0]].space_before,
-        sheet.blocks.table_space.units()
-    );
-    assert_eq!(
-        blocks[rows[4]].space_after,
-        sheet.blocks.table_space.units()
-    );
+    assert_eq!(blocks[rows[0]].space_before, sheet.blocks.table_space);
+    assert_eq!(blocks[rows[4]].space_after, sheet.blocks.table_space);
     // Everything else is a paragraph of its own.
     assert_eq!(units.len(), laid.len() - 5 * 2);
 }
@@ -261,19 +250,22 @@ fn struck_text_and_tasks_draw_their_lines_and_boxes() {
     use story::{BlockSpec, keys, props};
     let (sheet, style) = styles();
     let p = |text: &str| BlockSpec::Paragraph("Body".into(), vec![(text.into(), props(&[]))]);
-    let mut document = story::build(&[
-        BlockSpec::Paragraph(
-            "Body".into(),
-            vec![
-                ("Kept and ".into(), props(&[])),
-                (
-                    "struck".into(),
-                    props(&[(keys::STRIKETHROUGH, doc::Value::Bool(true))]),
-                ),
-            ],
-        ),
-        BlockSpec::List(false, vec![vec![p("to do")], vec![p("done")]]),
-    ]);
+    let mut document = story::build(
+        &neutral(),
+        &[
+            BlockSpec::Paragraph(
+                "Body".into(),
+                vec![
+                    ("Kept and ".into(), props(&[])),
+                    (
+                        "struck".into(),
+                        props(&[(keys::STRIKETHROUGH, doc::Value::Bool(true))]),
+                    ),
+                ],
+            ),
+            BlockSpec::List(false, vec![vec![p("to do")], vec![p("done")]]),
+        ],
+    );
     let list = document.children(document.root())[1];
     for (item, done) in document
         .children(list)
@@ -290,7 +282,7 @@ fn struck_text_and_tasks_draw_their_lines_and_boxes() {
             .expect("it applies");
     }
     let plain = canvas::automatic(
-        &story::build(&[p("Kept and struck")]),
+        &story::build(&neutral(), &[p("Kept and struck")]),
         &sheet,
         &style,
         fonts(),

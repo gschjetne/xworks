@@ -9,14 +9,27 @@ use markdown::{File, Settings, What, shape};
 use proptest::prelude::*;
 use story::{StyleSheet, keys};
 
-fn sheet() -> StyleSheet {
+/// Neutral, the program's stylesheet, which Markdown files take.
+fn neutral() -> story::SheetSpec {
     let source = testkit::specs("styles")
         .expect("spec/styles")
         .into_iter()
-        .find(|(name, _)| name == "m1")
-        .expect("spec/styles/m1.ron")
+        .find(|(name, _)| name == "neutral")
+        .expect("spec/styles/neutral.ron")
         .1;
-    ron::from_str(&source).expect("m1.ron is a style sheet")
+    story::SheetSpec::parse(&source).expect("neutral.ron is a stylesheet")
+}
+
+/// Neutral resolved, as a document read from Markdown has it.
+fn sheet() -> StyleSheet {
+    StyleSheet::from_spec(&neutral())
+}
+
+/// Neutral's objects, as reading Markdown puts them in a document.
+fn sheet_objects() -> &'static [(doc::ObjectId, doc::Object)] {
+    static OBJECTS: std::sync::OnceLock<Vec<(doc::ObjectId, doc::Object)>> =
+        std::sync::OnceLock::new();
+    OBJECTS.get_or_init(|| neutral().objects(story::SHEET_AT))
 }
 
 /// A run of text and its marks.
@@ -160,7 +173,7 @@ fn para(parent: ObjectId, style: Option<&str>, runs: &[R], extra: Props) -> Obje
     }
     let mut props = extra;
     if let Some(style) = style {
-        props.insert(keys::STYLE.to_string(), Value::Text(style.to_string()));
+        props.insert(keys::STYLE.to_string(), Value::Ref(style_id(style)));
     }
     let mut runs: Vec<Run> = Vec::new();
     for run in out {
@@ -298,9 +311,16 @@ fn objects(next: &mut u64, b: &B, parent: ObjectId, out: &mut Vec<(ObjectId, Obj
     id
 }
 
-/// A document of `blocks`.
+/// The ID of Neutral's paragraph style `name`, in a document made in it.
+fn style_id(name: &str) -> ObjectId {
+    static NEUTRAL: std::sync::OnceLock<Document> = std::sync::OnceLock::new();
+    let document = NEUTRAL.get_or_init(|| story::new_document(&neutral()));
+    story::style_named(document, name).expect("a style of Neutral's")
+}
+
+/// A document of `blocks`, in Neutral.
 fn build(blocks: &[B]) -> Document {
-    let mut document = Document::new();
+    let mut document = story::new_document(&neutral());
     let root = document.root();
     let first = document.paragraphs()[0];
     let mut next = 100;
@@ -323,9 +343,9 @@ fn build(blocks: &[B]) -> Document {
     document
 }
 
-fn settings(sheet: &StyleSheet) -> Settings<'_> {
+fn settings(_sheet: &StyleSheet) -> Settings<'static> {
     Settings {
-        sheet,
+        sheet: sheet_objects(),
         language: None,
         sizes: &|_| None,
     }

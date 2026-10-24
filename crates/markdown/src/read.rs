@@ -9,14 +9,17 @@ use doc::{Block, Document, Kind, Object, ObjectId, Paragraph, Props, Run, Snapsh
 use pulldown_cmark::{
     Alignment, BlockQuoteKind, CodeBlockKind, Event, LinkType, Parser, Tag, TagEnd,
 };
-use story::{OBJECT, StyleSheet, keys};
+use story::{OBJECT, keys};
 
 use crate::{File, Habits, InlineHabits, OPTIONS, Read, Reference, Source, Syntax, TextLine};
 
 /// What reading needs from outside the file.
 pub struct Settings<'a> {
-    /// The style sheet, whose styles headings and code take.
-    pub sheet: &'a StyleSheet,
+    /// The stylesheet the document read takes, as its objects, the sheet
+    /// first: the program's, as Markdown can't hold one
+    /// ([`story::SheetSpec::objects`]). Headings, code and paragraphs name
+    /// its styles by role.
+    pub sheet: &'a [(ObjectId, Object)],
     /// The language paragraphs are in where the file's front matter
     /// doesn't say: the system's, as a BCP 47 tag.
     pub language: Option<&'a str>,
@@ -324,7 +327,7 @@ struct Counts {
 
 struct Builder<'a> {
     text: &'a str,
-    sheet: &'a StyleSheet,
+    sheet: &'a [(ObjectId, Object)],
     sizes: &'a dyn Fn(&str) -> Option<(i64, i64)>,
     language: Option<String>,
     next: u64,
@@ -351,7 +354,13 @@ impl<'a> Builder<'a> {
             sheet: settings.sheet,
             sizes: settings.sizes,
             language,
-            next: 1,
+            next: settings
+                .sheet
+                .iter()
+                .map(|(id, _)| id.0 + 1)
+                .max()
+                .unwrap_or(1)
+                .max(1),
             objects: Vec::new(),
             sources: HashMap::new(),
             inline: HashMap::new(),
@@ -446,33 +455,44 @@ impl<'a> Builder<'a> {
         out
     }
 
-    /// The style a paragraph's props name for a heading of `level`.
-    fn heading_style(&self, level: u8) -> String {
-        self.sheet
-            .paragraph
-            .iter()
-            .find(|s| s.heading == Some(level))
-            .map_or_else(|| format!("Heading {level}"), |s| s.name.clone())
+    /// The sheet's paragraph style with `role`, or else the first whose
+    /// property `key` is `value`.
+    fn style_by(&self, role: &str, key: &str, value: Value) -> Option<ObjectId> {
+        let styles = || {
+            self.sheet.iter().filter_map(|(id, o)| match o {
+                Object::Style(s) if s.kind == doc::StyleKind::Paragraph => Some((*id, s)),
+                _ => None,
+            })
+        };
+        styles()
+            .find(|(_, s)| s.props.get(keys::ROLE) == Some(&Value::Text(role.to_string())))
+            .or_else(|| styles().find(|(_, s)| s.props.get(key) == Some(&value)))
+            .map(|(id, _)| id)
     }
 
-    fn body_style(&self) -> String {
-        self.sheet.paragraph_style(None).name.clone()
+    /// The style a heading of `level` takes.
+    fn heading_style(&self, level: u8) -> Option<ObjectId> {
+        self.style_by(
+            &format!("heading-{level}"),
+            keys::HEADING,
+            Value::Int(i64::from(level)),
+        )
     }
 
-    fn code_style(&self) -> String {
-        self.sheet
-            .paragraph
-            .iter()
-            .find(|s| s.code)
-            .map_or_else(|| story::CODE_STYLE.to_string(), |s| s.name.clone())
+    fn body_style(&self) -> Option<ObjectId> {
+        story::default_style_id(self.sheet)
+    }
+
+    fn code_style(&self) -> Option<ObjectId> {
+        self.style_by("code", keys::CODE, Value::Bool(true))
     }
 
     /// A paragraph's own properties: its style, if it names one, and the
     /// file's language.
-    fn para_props(&self, style: Option<String>) -> Props {
+    fn para_props(&self, style: Option<ObjectId>) -> Props {
         let mut props = Props::new();
         if let Some(style) = style {
-            props.insert(keys::STYLE.to_string(), Value::Text(style));
+            props.insert(keys::STYLE.to_string(), Value::Ref(style));
         }
         if let Some(language) = &self.language {
             props.insert(keys::LANGUAGE.to_string(), Value::Text(language.clone()));
@@ -481,7 +501,7 @@ impl<'a> Builder<'a> {
     }
 
     /// Starts reading a paragraph-like block of `kind` at `range`.
-    fn open(&mut self, kind: ParaKind, style: Option<String>, range: Range<usize>) {
+    fn open(&mut self, kind: ParaKind, style: Option<ObjectId>, range: Range<usize>) {
         let id = self.id();
         let first_of = self.first_of(range.start);
         let props = self.para_props(style);
@@ -540,7 +560,7 @@ impl<'a> Builder<'a> {
     fn raw(&mut self, kind: &str, text: String, lines: Range<usize>) {
         let id = self.id();
         let first_of = self.first_of(lines.start);
-        let mut props = self.para_props(Some(self.code_style()));
+        let mut props = self.para_props(self.code_style());
         props.insert(keys::SOURCE.to_string(), Value::Text(kind.to_string()));
         let parent = self.stack.last().expect("open").id;
         let text = text
@@ -637,7 +657,7 @@ impl<'a> Builder<'a> {
             self.gap(
                 line_start(self.text, range.start).max(self.stack.last().expect("open").cursor),
             );
-            let style = Some(self.body_style());
+            let style = self.body_style();
             self.open(ParaKind::Paragraph, style, range.clone());
             if let Some(p) = &mut self.para {
                 p.implicit = true;
@@ -813,7 +833,7 @@ impl<'a> Builder<'a> {
         if matches!(frame.kind, FrameKind::Item | FrameKind::Quote) && frame.children.is_empty() {
             // An empty item or quote holds an empty paragraph, to type in.
             let id = self.id();
-            let props = self.para_props(Some(self.body_style()));
+            let props = self.para_props(self.body_style());
             self.objects.push((
                 id,
                 Object::Paragraph(Paragraph {
@@ -1014,12 +1034,12 @@ impl<'a> Builder<'a> {
                 {
                     self.stack[n - 2].loose = true;
                 }
-                let style = Some(self.body_style());
+                let style = self.body_style();
                 self.open(ParaKind::Paragraph, style, range);
             }
             Tag::Heading { level, .. } => {
                 self.block_start(&range);
-                let style = Some(self.heading_style(level as u8));
+                let style = self.heading_style(level as u8);
                 let setext = !self.text[range.start..].trim_start().starts_with('#');
                 self.open(ParaKind::Heading, style, range.clone());
                 let underline = setext
@@ -1035,7 +1055,7 @@ impl<'a> Builder<'a> {
             }
             Tag::CodeBlock(kind) => {
                 self.block_start(&range);
-                let style = Some(self.code_style());
+                let style = self.code_style();
                 let fence = match &kind {
                     CodeBlockKind::Fenced(_) => {
                         let rest = &self.text[range.start..];
@@ -1060,7 +1080,7 @@ impl<'a> Builder<'a> {
             }
             Tag::HtmlBlock => {
                 self.block_start(&range);
-                let style = Some(self.code_style());
+                let style = self.code_style();
                 self.open(ParaKind::Html, style, range);
                 if let Some(p) = &mut self.para {
                     p.props
@@ -1399,7 +1419,7 @@ impl<'a> Builder<'a> {
         if !has_paragraph {
             // A story always has a paragraph.
             let id = self.id();
-            let props = self.para_props(Some(self.body_style()));
+            let props = self.para_props(self.body_style());
             self.objects.push((
                 id,
                 Object::Paragraph(Paragraph {
@@ -1424,6 +1444,7 @@ impl<'a> Builder<'a> {
         }
         let root = self.stack.pop().expect("the story");
         let mut objects = self.objects;
+        objects.extend(self.sheet.iter().cloned());
         objects.push((
             ObjectId(0),
             Object::Story(doc::Story {

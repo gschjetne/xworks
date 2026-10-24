@@ -3,7 +3,7 @@
 //! form: automatic pages from one page style, the mode the word processor
 //! grows from.
 //!
-//! - [`PageStyle`]: a page's size and margins.
+//! - [`PageStyle`]: a page's size and margins, a document's page style.
 //! - [`paginate`]: blocks of lines poured into pages, breaking paragraphs
 //!   between lines; [`blocks`] makes them of a story's paragraphs, a
 //!   table's row as one.
@@ -42,68 +42,12 @@ use std::ops::Range;
 
 use doc::{Document, Kind, ObjectId};
 use scene::{Color, Item, Page, Point, Role, Structure};
-use serde::Deserialize;
 use story::{ParagraphLayout, StyleSheet};
-use text::units::Length;
 use text::{Decoration, Fonts};
 
-/// A page's size and margins, as `spec/styles/` gives them.
-#[derive(Clone, Copy, Debug, PartialEq, Deserialize)]
-pub struct PageStyleSpec {
-    /// Its width.
-    pub width: Length,
-    /// Its height.
-    pub height: Length,
-    /// The margin at the top.
-    pub top: Length,
-    /// The margin at the bottom.
-    pub bottom: Length,
-    /// The margin at the left.
-    pub left: Length,
-    /// The margin at the right.
-    pub right: Length,
-}
-
-/// A page's size and margins, in layout units.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct PageStyle {
-    /// Its width.
-    pub width: i64,
-    /// Its height.
-    pub height: i64,
-    /// The margin at the top.
-    pub top: i64,
-    /// The margin at the bottom.
-    pub bottom: i64,
-    /// The margin at the left.
-    pub left: i64,
-    /// The margin at the right.
-    pub right: i64,
-}
-
-impl PageStyle {
-    /// The page style `spec` describes.
-    pub fn from_spec(spec: &PageStyleSpec) -> PageStyle {
-        PageStyle {
-            width: spec.width.units(),
-            height: spec.height.units(),
-            top: spec.top.units(),
-            bottom: spec.bottom.units(),
-            left: spec.left.units(),
-            right: spec.right.units(),
-        }
-    }
-
-    /// The width of the text between the margins.
-    pub fn body_width(&self) -> i64 {
-        self.width - self.left - self.right
-    }
-
-    /// The height of the text between the margins.
-    pub fn body_height(&self) -> i64 {
-        self.height - self.top - self.bottom
-    }
-}
+/// A page's size and margins, in layout units: a document's page style,
+/// as its stylesheet gives it.
+pub use story::PageStyle;
 
 /// Something to pour onto pages: a paragraph's lines, by height, and the
 /// space around it.
@@ -270,14 +214,14 @@ pub fn block(paragraphs: &[ParagraphLayout], unit: Range<usize>, look: &story::B
             keep_with_next: p.keep_with_next,
         },
         Some(cell) => {
-            let space = look.table_space.units();
+            let space = look.table_space;
             let tallest = paragraphs[unit]
                 .iter()
                 .map(|c| c.layout.height)
                 .max()
                 .unwrap_or(0);
             Block {
-                lines: vec![tallest + 2 * look.cell_padding.units()],
+                lines: vec![tallest + 2 * look.cell_padding],
                 space_before: if cell.index == 0 { space } else { 0 },
                 space_after: if cell.last { space } else { 0 },
                 keep_with_next: cell.index == 0 && !cell.last,
@@ -381,29 +325,16 @@ fn paint_pictures(
 /// The lines through `lines` of `p`'s text where its spans are struck
 /// through, in their text's colour, with the first line's top left at
 /// `at`.
-fn decorations(
-    p: &ParagraphLayout,
-    lines: Range<usize>,
-    at: Point,
-    fonts: &Fonts,
-    look: &story::Blocks,
-) -> Vec<Item> {
+fn decorations(p: &ParagraphLayout, lines: Range<usize>, at: Point, fonts: &Fonts) -> Vec<Item> {
     if p.decorations.iter().all(|d| *d == Decoration::NONE) {
         return Vec::new();
     }
-    let link = rgb(look.link_color);
     p.layout.decorations(
         fonts,
         lines,
         at,
         |span| p.decorations.get(span).copied().unwrap_or(Decoration::NONE),
-        |span| {
-            if p.links.get(span).copied().unwrap_or(false) {
-                link
-            } else {
-                Color::BLACK
-            }
-        },
+        |span| p.colors.get(span).map_or(Color::BLACK, |c| rgb(*c)),
     )
 }
 
@@ -476,20 +407,13 @@ pub fn paint_page(
             }
         }
     }
-    let bar = look.quote_bar.units();
+    let bar = look.quote_bar;
     for (_, x, top, bottom) in bars {
         back.push(fill(x, top, bar, bottom - top, rgb(look.quote_color)));
     }
     let color = |p: &ParagraphLayout| {
-        let links = p.links.clone();
-        let link = rgb(look.link_color);
-        move |span: usize| {
-            if links.get(span).copied().unwrap_or(false) {
-                link
-            } else {
-                Color::BLACK
-            }
-        }
+        let colors = p.colors.clone();
+        move |span: usize| colors.get(span).map_or(Color::BLACK, |c| rgb(*c))
     };
     let tint = rgb(look.code_tint);
     for piece in pieces {
@@ -498,10 +422,10 @@ pub fn paint_page(
         if let Some(cell) = first.place.cell {
             // A table's row: its cells side by side, and its rules.
             let height = blocks[piece.block].lines[0];
-            let pad = look.cell_padding.units();
+            let pad = look.cell_padding;
             let left = cell.x - i64::from(cell.column) * cell.width;
             let width = i64::from(cell.columns) * cell.width;
-            let rule = look.rule.units();
+            let rule = look.rule;
             let rule_at = |y: i64, w: i64, c| fill(left, y - w / 2, width, w.max(1), c);
             if cell.index == 0 {
                 back.push(rule_at(piece.y, rule, rgb(look.rule_color)));
@@ -511,7 +435,7 @@ pub fn paint_page(
             } else {
                 back.push(rule_at(
                     piece.y + height,
-                    look.hairline.units(),
+                    look.hairline,
                     rgb(look.hairline_color),
                 ));
             }
@@ -520,7 +444,7 @@ pub fn paint_page(
                 let at = Point::new(origin.x + p.x(), origin.y + piece.y + pad);
                 let block = sources.map(|s| s.text[k]);
                 front.extend(p.layout.paint(fonts, at, block, color(p)));
-                front.extend(decorations(p, 0..p.layout.lines.len(), at, fonts, look));
+                front.extend(decorations(p, 0..p.layout.lines.len(), at, fonts));
                 front.extend(paint_pictures(
                     p,
                     0..p.layout.lines.len(),
@@ -572,14 +496,14 @@ pub fn paint_page(
             }
         }
         // A task's box, before its marker if it has one too.
-        let mut gutter = p.place.gutter - look.marker_gap.units();
+        let mut gutter = p.place.gutter - p.place.gap;
         if let Some(done) = p.place.task
             && piece.lines.start == 0
             && let Some(l) = lines.first()
         {
             let baseline = Point::new(origin.x + gutter, origin.y + piece.y + l.baseline);
             front.extend(task_box(baseline, l.ascent, done));
-            gutter -= task_side(l.ascent) + look.marker_gap.units();
+            gutter -= task_side(l.ascent) + p.place.gap;
         }
         if let Some(marker) = &p.marker
             && piece.lines.start == 0
@@ -600,7 +524,7 @@ pub fn paint_page(
             p.layout
                 .paint_lines(fonts, piece.lines.clone(), at, block, color(p)),
         );
-        front.extend(decorations(p, piece.lines.clone(), at, fonts, look));
+        front.extend(decorations(p, piece.lines.clone(), at, fonts));
         front.extend(paint_pictures(
             p,
             piece.lines.clone(),
