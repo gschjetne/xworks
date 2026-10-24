@@ -23,10 +23,15 @@ fn spec(dir: &str, name: &str) -> String {
         .1
 }
 
+/// Neutral, the stylesheet documents take unless the person chooses.
+fn neutral() -> story::SheetSpec {
+    story::SheetSpec::parse(&spec("styles", "neutral")).expect("a stylesheet")
+}
+
 fn sample() -> Document {
     let paragraphs: Vec<(String, Vec<(String, Props)>)> =
         ron::from_str(&spec("documents", "m1-sample")).expect("a document");
-    story::document(&paragraphs)
+    story::document(&neutral(), &paragraphs)
 }
 
 fn fonts() -> &'static Fonts {
@@ -43,16 +48,11 @@ fn fonts() -> &'static Fonts {
     })
 }
 
-/// The document's pages drawn, as pixels.
+/// The document's pages drawn, as pixels, in its own stylesheet.
 fn renders(document: &Document) -> Vec<Vec<u8>> {
-    #[derive(serde::Deserialize)]
-    struct Sheet {
-        page: canvas::PageStyleSpec,
-    }
-    let styles = spec("styles", "m1");
-    let sheet: story::StyleSheet = ron::from_str(&styles).expect("a style sheet");
-    let page: Sheet = ron::from_str(&styles).expect("a page style");
-    let style = canvas::PageStyle::from_spec(&page.page);
+    let program = story::StyleSheet::from_spec(&neutral());
+    let sheet = story::StyleSheet::of(document, &program);
+    let style = sheet.page;
     canvas::automatic(document, &sheet, &style, fonts())
         .pages
         .iter()
@@ -256,26 +256,29 @@ fn a_newer_schema_opens_read_only() {
     drop(store);
     let connection = Connection::open(&path).expect("SQLite opens it");
     connection
-        .pragma_update(None, "user_version", 3)
+        .pragma_update(None, "user_version", store::SCHEMA + 1)
         .expect("set");
     drop(connection);
 
     let mut opened = Store::open(&path).expect("it opens");
-    assert_eq!(opened.store.read_only(), Some(&store::ReadOnly::Newer(3)));
+    assert_eq!(
+        opened.store.read_only(),
+        Some(&store::ReadOnly::Newer(store::SCHEMA + 1))
+    );
     assert_eq!(opened.document, document);
     let t = typing(&mut document, 0, " More.");
     assert!(matches!(
         opened.store.append(Entry::Commit(&t), &document),
-        Err(Error::ReadOnly { schema: 3 })
+        Err(Error::ReadOnly { schema }) if schema == store::SCHEMA + 1
     ));
     assert!(matches!(
         opened.store.name_version("No"),
-        Err(Error::ReadOnly { schema: 3 })
+        Err(Error::ReadOnly { schema }) if schema == store::SCHEMA + 1
     ));
     assert!(
         store::dump(&path)
             .expect("it dumps")
-            .starts_with("xworks schema 3\n")
+            .starts_with(&format!("xworks schema {}\n", store::SCHEMA + 1))
     );
 }
 
@@ -517,4 +520,75 @@ fn the_encoding_of_snapshots_is_pinned() {
         ]
     );
     assert_eq!(store::decode::<doc::Snapshot>(&bytes).unwrap(), snapshot);
+}
+
+/// Schema 3's stylesheet, its objects, its operations and references
+/// pinned the same way.
+#[test]
+fn the_encoding_of_stylesheets_is_pinned() {
+    use doc::{Object, ObjectId, Sheet, Style, StyleKind};
+    let ops = vec![
+        Op::InsertStyle {
+            sheet: ObjectId(2),
+            after: None,
+            id: ObjectId(9),
+            style: Style {
+                sheet: ObjectId(2),
+                kind: StyleKind::Face,
+                base: None,
+                props: Props::from([("family".to_string(), Value::Text("Inter".to_string()))]),
+            },
+        },
+        Op::DeleteStyle { style: ObjectId(9) },
+        Op::SetStyleProp {
+            style: ObjectId(3),
+            key: "font".to_string(),
+            value: Some(Value::Ref(ObjectId(9))),
+        },
+        Op::SetBase {
+            style: ObjectId(4),
+            base: Some(ObjectId(3)),
+        },
+    ];
+    let bytes = store::encode(&ops).unwrap();
+    assert_eq!(
+        bytes,
+        [
+            4, // four operations
+            10, 2, 0, 9, // InsertStyle in #2, first, as #9
+            2, 3, 0, // in #2, a Face, based on nothing
+            1, 6, b'f', b'a', b'm', b'i', b'l', b'y', 2, 5, b'I', b'n', b't', b'e', b'r', 11,
+            9, // DeleteStyle #9
+            12, 3, 4, b'f', b'o', b'n', b't', 1, 3, 9, // SetStyleProp #3 font = Some(Ref(#9))
+            13, 4, 1, 3, // SetBase #4 on Some(#3)
+        ]
+    );
+    assert_eq!(store::decode::<Vec<Op>>(&bytes).unwrap(), ops);
+    let objects = vec![
+        (
+            ObjectId(2),
+            Object::Sheet(Sheet {
+                styles: vec![ObjectId(3)],
+                props: Props::new(),
+            }),
+        ),
+        (
+            ObjectId(3),
+            Object::Style(Style {
+                sheet: ObjectId(2),
+                kind: StyleKind::Paragraph,
+                base: None,
+                props: Props::new(),
+            }),
+        ),
+    ];
+    let bytes = store::encode(&objects).unwrap();
+    assert_eq!(
+        bytes,
+        [
+            2, // two objects
+            2, 3, 1, 3, 0, // #2: a Sheet of one style, #3, no properties
+            3, 4, 2, 0, 0, 0, // #3: a Style in #2, a paragraph style, no base or properties
+        ]
+    );
 }

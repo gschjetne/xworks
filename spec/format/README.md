@@ -1,22 +1,26 @@
 # The `.xw` format
 
 An xWorks document is one file with the extension `.xw`: an SQLite database
-(docs/ARCHITECTURE.md, section 6). This is schema 2, M2's; schema 1 was
-M1's, and a schema 1 file is upgraded when it's opened ("Upgrading").
+(docs/ARCHITECTURE.md, section 6). This is schema 3, M2's since its stage 9,
+whose documents carry their own stylesheets; schema 2 was M2's before it,
+and schema 1 M1's. A file of an older schema is upgraded when it's opened
+("Upgrading").
 
 ## Recognizing a file
 
 - **Application ID:** the database header's application ID is `0x78576B73`,
   "xWks" in ASCII. A file without it isn't an xWorks document.
-- **Schema:** the header's user version is the schema version, here `2`.
+- **Schema:** the header's user version is the schema version, here `3`.
   A reader that finds a version newer than it knows opens the file
   read-only and says so; it never writes to it, and never guesses at what
   it doesn't understand. Version 0 means a file that was never finished.
 
 ## Tables
 
-[schema-2.sql](schema-2.sql) creates them; it is the definition, and
-`store` runs it as it is.
+[schema-3.sql](schema-3.sql) creates them; it is the definition, and
+`store` runs it as it is. They're schema 2's tables, and
+[schema-2.sql](schema-2.sql) and [schema-1.sql](schema-1.sql) are kept as
+the records of the schemas before.
 
 | Table | Holds |
 |---|---|
@@ -45,6 +49,37 @@ Every object but the root names the container it's in, and is listed by
 it exactly once; there is always a paragraph. M1's stories were flat:
 schema 1's story listed paragraphs only.
 
+Beside the story is the document's **stylesheet** (`doc::Sheet`), new in
+schema 3: a second root, listing its styles and named parts, each by ID,
+in order, with properties of its own: the defaults every chain of styles
+ends in (`font`, `size`, `color` and the rest), what the document shares
+(`tab-interval`, `document-tabs`, and how quotes, code and tables look:
+`quote-indent`, `quote-bar`, `quote-color`, `code-tint`, `code-padding`,
+`table-space`, `cell-padding`, `rule`, `hairline`, `rule-color`,
+`hairline-color`, `missing-picture`), and where it came from (`origin`,
+the stylesheet's name, and `origin-version`, its version). A document
+may have none, as a new `doc::Document` has none; one xWorks makes always
+has one.
+
+- A **style** (`doc::Style`) is of a kind (`doc::StyleKind`): a paragraph
+  style, a character style or a page style, or a **named part** styles
+  refer to: a face (`family`), a colour (`color`, `#rrggbb`), a layout of
+  tab stops (`tabs`) or a list definition (`bullets`, `numbers`,
+  `list-indent`, `marker-gap`). A style may be based on another of its
+  kind, and sets only what differs from it; parts are based on nothing.
+  No chain of bases comes back to where it started. Its `name` and `role`
+  are among its properties: its name is what people see and is unique to
+  nothing, its role (`body`, `heading-1`, `code`, `emphasis`, `text`,
+  `page` …) what another sheet's style matches it by.
+- A value naming another object is a **reference** (`doc::Value::Ref`): a
+  paragraph's `style`, a run's `char-style`, or a style's `font`, `color`
+  or `tabs` naming a part, whose value it then takes. A reference to
+  nothing, or to an object of the wrong kind, is as if unset.
+- A page style holds `page-width`, `page-height` and `margin-top`,
+  `margin-bottom`, `margin-left` and `margin-right`; the document is laid
+  out on the stylesheet's first.
+- Lengths are in layout units, 914 400 to the inch, as everywhere.
+
 A **picture** is in a paragraph's text: the character U+FFFC, whose run
 has the properties `picture`, the picture's ID in the `image` table
 (text), `picture-alt`, what it shows in words (text), and
@@ -62,12 +97,16 @@ format 1. Integers are variable-length, strings and lists carry their
 length, text is UTF-8, and text offsets count Unicode scalar values.
 
 postcard writes an enum's variant as its position, so the order of
-variants in `doc::Op`, `doc::Object`, `doc::Kind` and `doc::Value` is
-part of the format: new variants go at the end, and reordering or
-removing one is a new schema. Schema 2 added operations on blocks after
-M1's six, and containers after stories and paragraphs, so every schema 1
-value means the same in schema 2. Tests in `store` pin the bytes of known
-values.
+variants in `doc::Op`, `doc::Object`, `doc::Kind`, `doc::StyleKind` and
+`doc::Value` is part of the format: new variants go at the end, and
+reordering or removing one is a new schema. Schema 2 added operations on
+blocks after M1's six, and containers after stories and paragraphs, so
+every schema 1 value means the same in schema 2. Schema 3 added the
+stylesheet and styles after containers, references after text, and four
+operations after schema 2's ten: `InsertStyle`, `DeleteStyle`,
+`SetStyleProp` (on a style, a part or the stylesheet) and `SetBase`; so a
+schema 2 value decodes as schema 3's types, and what it says changes only
+by the upgrade. Tests in `store` pin the bytes of known values.
 
 ## Opening
 
@@ -91,11 +130,19 @@ Opening a file of an older schema upgrades it in one SQLite transaction,
 so it's upgraded whole or not at all:
 
 - **From schema 1:** [upgrade-1.sql](upgrade-1.sql) adds the `image`
-  table; every snapshot and every log entry is read with schema 1's types,
-  kept frozen in `store`, and written again in schema 2's encoding; and
-  the user version becomes 2. Named versions replay from the snapshots
-  before them as they did. What doesn't decode leaves the file as it was,
-  and opening it is an error.
+  table, and every snapshot and every log entry is read with schema 1's
+  types, kept frozen in `store`; then it's upgraded as a schema 2 file is.
+- **From schema 2:** every snapshot gains the stylesheet schema 2's
+  documents were laid out in, Neutral as it was at version 1, frozen as
+  objects in [upgrade-2.ron](upgrade-2.ron), at IDs above every ID the
+  file has ever given out, in a snapshot or an operation; every snapshot's
+  next ID goes past them. In every snapshot and every log entry, applied
+  or undoing, a paragraph's `style`, which named its style by its name,
+  names it by ID; a name the sheet hasn't, which laid out as the default
+  style, is unset. Everything is written in schema 3's encoding, and the
+  user version becomes 3. Named versions replay from the snapshots before
+  them, and undo and redo take back what they did. What doesn't decode
+  leaves the file as it was, and opening it is an error.
 
 [fixtures/](fixtures/) holds files older xWorks wrote, which every later
 one must open with the same text and history.

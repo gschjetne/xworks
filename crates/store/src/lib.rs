@@ -33,6 +33,7 @@
 
 mod lock;
 mod v1;
+mod v2;
 
 use std::path::{Path, PathBuf};
 
@@ -43,7 +44,7 @@ use rusqlite::{Connection, OpenFlags, OptionalExtension, params};
 use sha2::{Digest, Sha256};
 
 /// The schema this crate reads and writes.
-pub const SCHEMA: i64 = 2;
+pub const SCHEMA: i64 = 3;
 
 /// The SQLite application ID of xWorks documents: "xWks".
 pub const APPLICATION_ID: i64 = 0x7857_6B73;
@@ -51,7 +52,7 @@ pub const APPLICATION_ID: i64 = 0x7857_6B73;
 /// A snapshot goes with every this many log entries.
 pub const SNAPSHOT_EVERY: i64 = 100;
 
-const SCHEMA_SQL: &str = include_str!("../../../spec/format/schema-2.sql");
+const SCHEMA_SQL: &str = include_str!("../../../spec/format/schema-3.sql");
 
 /// The ID a picture of `data` is kept under: the SHA-256 of its bytes, in
 /// lowercase hexadecimal.
@@ -689,43 +690,78 @@ pub fn dump(path: &Path) -> Result<String, Error> {
 /// Upgrades the file `connection` is open on from schema `from` to
 /// today's, in one SQLite transaction: its tables, and its snapshots and
 /// log in today's encoding, so every named version still replays from the
-/// snapshot before it. If anything in it doesn't decode, the file is left
-/// as it was.
+/// snapshot before it. A schema 1 file's are read with schema 1's types;
+/// a schema 2 file's documents gain the stylesheet they were laid out
+/// with, and their paragraphs name its styles by ID. If anything in it
+/// doesn't decode, the file is left as it was.
 fn upgrade(connection: &mut Connection, from: i64) -> Result<(), Error> {
     let tx = connection.transaction()?;
     if from == 1 {
         tx.execute_batch(UPGRADE_1_SQL)?;
-        let snapshots: Vec<(i64, Vec<u8>)> = tx
-            .prepare("SELECT seq, document FROM snapshot ORDER BY seq")?
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
-            .collect::<Result<_, _>>()?;
-        for (seq, bytes) in snapshots {
-            let snapshot: doc::Snapshot = decode::<v1::Snapshot>(&bytes)
-                .map_err(|e| Error::Damaged(format!("the snapshot after entry {seq}: {e}")))?
-                .into();
-            tx.execute(
-                "UPDATE snapshot SET document = ?1 WHERE seq = ?2",
-                params![encode(&snapshot)?, seq],
-            )?;
-        }
-        let entries: Vec<(i64, Vec<u8>, Vec<u8>)> = tx
-            .prepare("SELECT seq, ops, inverse FROM log ORDER BY seq")?
-            .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
-            .collect::<Result<_, _>>()?;
-        let ops = |seq: i64, bytes: &[u8]| -> Result<Vec<u8>, Error> {
-            let ops: Vec<Op> = decode::<Vec<v1::Op>>(bytes)
-                .map_err(|e| Error::Damaged(format!("log entry {seq}: {e}")))?
+    }
+    let raw: Vec<(i64, Vec<u8>)> = tx
+        .prepare("SELECT seq, document FROM snapshot ORDER BY seq")?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?)))?
+        .collect::<Result<_, _>>()?;
+    let mut snapshots: Vec<(i64, Snapshot)> = Vec::with_capacity(raw.len());
+    for (seq, bytes) in raw {
+        let damaged = |e: Error| Error::Damaged(format!("the snapshot after entry {seq}: {e}"));
+        let snapshot = if from == 1 {
+            decode::<v1::Snapshot>(&bytes).map_err(damaged)?.into()
+        } else {
+            decode::<Snapshot>(&bytes).map_err(damaged)?
+        };
+        snapshots.push((seq, snapshot));
+    }
+    let raw: Vec<(i64, Vec<u8>, Vec<u8>)> = tx
+        .prepare("SELECT seq, ops, inverse FROM log ORDER BY seq")?
+        .query_map([], |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)))?
+        .collect::<Result<_, _>>()?;
+    let ops = |seq: i64, bytes: &[u8]| -> Result<Vec<Op>, Error> {
+        let damaged = |e: Error| Error::Damaged(format!("log entry {seq}: {e}"));
+        if from == 1 {
+            Ok(decode::<Vec<v1::Op>>(bytes)
+                .map_err(damaged)?
                 .into_iter()
                 .map(Op::from)
-                .collect();
-            encode(&ops)
-        };
-        for (seq, applied, inverse) in entries {
-            tx.execute(
-                "UPDATE log SET ops = ?1, inverse = ?2 WHERE seq = ?3",
-                params![ops(seq, &applied)?, ops(seq, &inverse)?, seq],
-            )?;
+                .collect())
+        } else {
+            decode::<Vec<Op>>(bytes).map_err(damaged)
         }
+    };
+    let mut entries: Vec<(i64, Vec<Op>, Vec<Op>)> = Vec::with_capacity(raw.len());
+    for (seq, applied, inverse) in raw {
+        entries.push((seq, ops(seq, &applied)?, ops(seq, &inverse)?));
+    }
+    // The stylesheet goes above every ID the file has ever given out.
+    let top = snapshots
+        .iter()
+        .map(|(_, s)| s.next_id)
+        .chain(
+            entries
+                .iter()
+                .flat_map(|(_, a, b)| a.iter().chain(b))
+                .flat_map(v2::created)
+                .map(|id| id.saturating_add(1)),
+        )
+        .max()
+        .unwrap_or(0);
+    let upgrade = v2::Upgrade::new(top)?;
+    for (seq, mut snapshot) in snapshots {
+        upgrade.snapshot(&mut snapshot);
+        tx.execute(
+            "UPDATE snapshot SET document = ?1 WHERE seq = ?2",
+            params![encode(&snapshot)?, seq],
+        )?;
+    }
+    for (seq, mut applied, mut inverse) in entries {
+        for op in applied.iter_mut().chain(inverse.iter_mut()) {
+            upgrade.op(op);
+        }
+        tx.execute(
+            "UPDATE log SET ops = ?1, inverse = ?2 WHERE seq = ?3",
+            params![encode(&applied)?, encode(&inverse)?, seq],
+        )?;
     }
     tx.pragma_update(None, "user_version", SCHEMA)?;
     tx.commit()?;

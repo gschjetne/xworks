@@ -10,6 +10,7 @@ publish.workspace = true
 [dependencies]
 doc.workspace = true
 postcard.workspace = true
+ron.workspace = true
 rusqlite.workspace = true
 serde.workspace = true
 sha2.workspace = true
