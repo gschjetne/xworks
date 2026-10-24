@@ -565,8 +565,10 @@ below are its own, open to the owner's review.
   end, or one of `,;:!?)"'` follows the address, but not a period, as
   addresses have them inside; Undo right after takes the link off and
   leaves the caret, and typing on in a link made so takes it along, as
-  part of the typing. Pasting makes none. In `.xw` documents it's off
-  until the owner says (`spec/editing.ron`).
+  part of the typing. Pasting links the addresses that came with it, as
+  an edit of its own Undo takes back, since in a Markdown file an
+  address left plain would be written escaped. In `.xw` documents both
+  are off until the owner says (`spec/editing.ron`).
 - **Measured** (under WSL, render-cpu, the 95th percentile): a 500-page
   Markdown file, 0.6 MB and 13,545 paragraphs, opens in 150 ms, about
   half of it reading the Markdown, once it was laid out once rather than

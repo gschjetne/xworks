@@ -1785,6 +1785,8 @@ impl Editor {
         }
         let props = self.typing_props(at);
         let mut caret = at;
+        // What the paste put in each paragraph, for linking addresses.
+        let mut pasted = Vec::new();
         for (i, line) in text.split('\n').enumerate() {
             if i > 0 {
                 let new = scratch.new_id();
@@ -1826,11 +1828,17 @@ impl Editor {
                 return;
             }
             ops.push(op);
+            pasted.push((
+                caret.paragraph,
+                caret.offset as usize,
+                (caret.offset + len) as usize,
+            ));
             caret.offset += len;
             caret.upstream = true;
         }
         if self.commit("Paste", ops, false) {
             self.go(caret, false);
+            self.link_pasted(&pasted);
         }
     }
 

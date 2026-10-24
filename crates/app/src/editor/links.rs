@@ -8,7 +8,8 @@
 //! A period doesn't end one, as addresses have periods inside: an address
 //! at a sentence's end is linked by the space or line's end after it.
 //! Typing on in an address linked so, as after a `:` that turned out to
-//! begin a port, takes the link along, as part of the typing.
+//! begin a port, takes the link along, as part of the typing. Pasting
+//! links the addresses that came with the paste, in the same way.
 
 use doc::{Document, ObjectId, Op, Props, Value};
 use story::keys;
@@ -197,6 +198,51 @@ impl Editor {
             caret.offset as usize
         };
         self.link_ending(caret.paragraph, end, trigger);
+    }
+
+    /// Links the addresses, as GitHub's autolinks read them, that lie
+    /// wholly in what a paste put in: each paragraph, and the characters
+    /// of it the paste put there. An edit of its own, as typing one makes,
+    /// so Undo right after takes the links off and leaves the text.
+    pub(super) fn link_pasted(&mut self, pasted: &[(ObjectId, usize, usize)]) {
+        if !self.links_as_typed() {
+            return;
+        }
+        let mut ops = Vec::new();
+        for &(p, from, to) in pasted {
+            if self.document.paragraph(p).is_none() || self.is_code(p) {
+                continue;
+            }
+            let chars = characters(&self.document, p);
+            let text: String = chars.iter().map(|(c, _)| *c).collect();
+            for link in markdown::autolinks(&text) {
+                let (a, b) = (link.start, link.end);
+                if a < from
+                    || b > to
+                    || chars[a..b]
+                        .iter()
+                        .any(|(_, props)| !plain(props) || link_of(props).is_some())
+                {
+                    continue;
+                }
+                ops.push(Op::SetCharProp {
+                    paragraph: p,
+                    offset: a as u32,
+                    len: (b - a) as u32,
+                    key: keys::LINK.to_string(),
+                    value: Some(Value::Text(link.url)),
+                });
+            }
+        }
+        if ops.is_empty() {
+            return;
+        }
+        let (anchor, focus) = (self.anchor, self.focus);
+        if self.commit(LINK, ops, false) {
+            self.typing = None;
+            self.anchor = anchor;
+            self.focus = focus;
+        }
     }
 
     /// Links the addresses, as GitHub's autolinks read them, in the run

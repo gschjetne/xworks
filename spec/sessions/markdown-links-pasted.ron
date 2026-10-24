@@ -1,0 +1,31 @@
+// Pasting text with web or e-mail addresses into a Markdown file links
+// them, as typing them does (review jy4a2tx5), so the file has them bare
+// rather than escaped. The links are an edit of their own: Undo right
+// after takes them off and leaves the text, which the file then has
+// escaped, so it doesn't read as a link. An address at a paste's end,
+// with nothing after it, is linked too.
+(
+    size: (900, 700),
+    open: Some(("Pasted.md", "")),
+    events: [
+        Clipboard("See www.example.net/garden, or mail me@example.net.\nThen https://example.org"),
+        Key("Primary+V"),
+        Key("Enter"),
+        Clipboard("Not www.example.com"),
+        Key("Primary+V"),
+        Key("Primary+Z"),
+    ],
+    expect: [
+        ("Body", "See www.example.net/garden, or mail me@example.net."),
+        ("Body", "Then https://example.org"),
+        ("Body", "Not www.example.com"),
+    ],
+    marks: [
+        ("www.example.net/garden", ["link"]),
+        ("me@example.net", ["link"]),
+        ("https://example.org", ["link"]),
+    ],
+    files: [
+        ("Pasted.md", Some("See www.example.net/garden, or mail me@example.net.\n\nThen https://example.org\n\nNot www\\.example.com\n")),
+    ],
+)
