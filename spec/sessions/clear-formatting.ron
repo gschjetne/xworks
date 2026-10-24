@@ -1,0 +1,19 @@
+// Clear Formatting (M2's stage 9), by its shortcut, Ctrl+\: the text's own
+// size and the paragraph's own space above go, so they look as their
+// style says, and strong, a character style, stays.
+(
+    size: (900, 700),
+    events: [
+        Type("Sized and spaced"),
+        Key("Primary+A"),
+        Command("size-18"),
+        Key("Primary+B"),
+        CommandWith("space-before", [Int(127000)]),
+        Key("Primary+\\"),
+        Key("End"),
+    ],
+    expect: [("Body", "Sized and spaced")],
+    marks: [("Sized and spaced", ["bold"])],
+    props: [("Sized", "space-before", None)],
+    status: Some("Page 1 of 1   ·   Body   ·   11 pt   ·   3 words"),
+)

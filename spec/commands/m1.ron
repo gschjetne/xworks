@@ -21,6 +21,10 @@
 (
     commands: [
         (id: "new", title: "&New", shortcut: Some("Primary+N")),
+        // A new document in a stylesheet chosen from those that come with
+        // xWorks and the person's own (M2's stage 9): its key, "app:" or
+        // "own:" and its name. New, alone, makes one in Neutral.
+        (id: "new-with-stylesheet", title: "New &with Stylesheet", arg: Some(Text)),
         // A new, empty Markdown file in the documents folder (M2's stage
         // 6), which opens as itself.
         (id: "new-markdown", title: "New Mar&kdown Document", shortcut: Some("Primary+Shift+N")),
@@ -118,6 +122,21 @@
 
         (id: "insert-table", title: "&Table", shortcut: Some("Primary+Shift+T")),
 
+        // The document's own stylesheet (M2's stage 9; project owner,
+        // 2026-10-24, review 30dmn1js): the selection's own formatting
+        // taken away, Ctrl+\ as Google Docs has it; a style redefined
+        // from the selection, or a new one made from it, each an explicit
+        // command, as a style changes only when it's edited; and the
+        // stylesheet kept as the person's own, replaced by another (its
+        // key, as New with Stylesheet's), or updated to a newer version of
+        // the one it came from, which is only ever offered.
+        (id: "clear-formatting", title: "Clear &Formatting", shortcut: Some("Primary+\\")),
+        (id: "redefine-style", title: "&Redefine Style from Selection"),
+        (id: "new-style", title: "&New Style from Selection"),
+        (id: "replace-stylesheet", title: "Rep&lace Stylesheet With", arg: Some(Text)),
+        (id: "save-stylesheet", title: "&Keep Stylesheet as My Own"),
+        (id: "update-stylesheet", title: "&Update Stylesheet…"),
+
         // The language of the selected text, or with none selected, of the
         // caret's paragraph: language-TAG, TAG a BCP 47 tag. A new document
         // is in the system's language. The inspector sets them, by the
@@ -176,13 +195,26 @@
         (id: "tab-stop-place", title: "Place a Tab Stop", arg: Some(List)),
         (id: "tab-stop-kind", title: "Set a Tab Stop's Kind", arg: Some(List)),
         (id: "tab-stop-remove", title: "Remove a Tab Stop", arg: Some(Int)),
-        // The page's size and margins, which documents can't hold yet.
+        // The page's size, by name, and a margin, by side ("top",
+        // "bottom", "left" or "right") and length: the document's page
+        // style's.
         (id: "page-size", title: "Page Size", arg: Some(Text)),
         (id: "page-margin", title: "Page Margin", arg: Some(List)),
+        // The inspector's Style tab: a style's value set, by the style's
+        // ID, the key and the value; a style's on-or-off value turned
+        // over; a value let go, so the style takes it from up its chain;
+        // a style based on another, by their IDs, 0 for none; and a style
+        // renamed.
+        (id: "style-set", title: "Set a Style's Value", arg: Some(List)),
+        (id: "style-toggle", title: "Turn a Style's Value Over", arg: Some(List)),
+        (id: "style-reset", title: "Let a Style's Value Go", arg: Some(List)),
+        (id: "style-base", title: "Base a Style", arg: Some(List)),
+        (id: "style-rename", title: "Rename a Style", arg: Some(List)),
     ],
     menus: [
         (title: "&File", items: [
-            "new", "new-markdown", "open", ">open-recent", "-",
+            "new", ">new-with-stylesheet", "new-markdown", "open", ">open-recent", "-",
+            ">replace-stylesheet", "-",
             "rename", "move-to", "-",
             "save-version", "versions", "copy-out", "-",
             "export-pdf", "print", "-",
@@ -197,7 +229,8 @@
         (title: "&Insert", items: ["insert-picture", "insert-table"]),
         (title: "F&ormat", items: [
             "bold", "italic", "strikethrough", "code", "-",
-            "style-body", "style-heading-1", "style-heading-2", "style-heading-3", "style-code", "-",
+            "style-body", "style-heading-1", "style-heading-2", "style-heading-3", "style-code",
+            ">styles", "clear-formatting", "-",
             "list-bullets", "list-numbers", "list-tasks", "task-toggle", "quote", "-",
             "align-start", "align-center", "align-end", "align-justify", "-",
             "size-bigger", "size-smaller",
@@ -205,6 +238,11 @@
         (title: "&Help", items: ["save-session", "-", "about"]),
     ],
     submenus: [
+        // A style made or remade from the selection, and the stylesheet
+        // kept or updated (M2's stage 9).
+        (id: "styles", title: "Styles", items: [
+            "redefine-style", "new-style", "-", "save-stylesheet", "update-stylesheet",
+        ]),
         (id: "units", title: "&Units", items: [
             "units-centimetres", "units-inches", "units-picas", "-",
             "ruler-from-margin", "ruler-from-edge",

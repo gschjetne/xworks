@@ -100,6 +100,17 @@ pub enum ControlKind {
         /// Its icon, if it shows one rather than its words.
         icon: Option<String>,
     },
+    /// Text, typed: the command runs with it, such as a style's name.
+    Text {
+        /// It as it stands.
+        value: String,
+    },
+    /// Words that say something of the row, and run nothing: where a
+    /// value comes from, such as "Heading" or "defaults".
+    Note {
+        /// What it says.
+        text: String,
+    },
 }
 
 /// A choice of a [`ControlKind::Choice`].

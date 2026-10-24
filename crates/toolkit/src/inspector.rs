@@ -103,6 +103,7 @@ impl InspectorView {
                         ControlKind::Choice { plain: true, .. }
                             | ControlKind::Length { plain: true, .. }
                             | ControlKind::Button { .. }
+                            | ControlKind::Note { .. }
                     )
                 });
                 let h = if plain { px(24.0) } else { field_h };
@@ -401,6 +402,38 @@ impl InspectorView {
                 }
                 ControlKind::Segments { segments, selected } => {
                     segmented(kit, &mut out, *rect, parts, segments, *selected);
+                }
+                ControlKind::Text { value: text } => {
+                    field_box(&mut out, c, *rect, radius - PIXEL);
+                    let x = rect.x + px(10.0);
+                    match editing.filter(|(e, _)| e == at).map(|(_, f)| f) {
+                        Some(field) => {
+                            let layout = kit.layout(field.text(), value);
+                            let y = rect.y + (rect.height - layout.height) / 2;
+                            field.draw(
+                                &mut out,
+                                &layout,
+                                (x, y),
+                                kit.caret.then_some(c.ink),
+                                c.selection,
+                            );
+                            kit.text(&mut out, field.text(), x, rect.y, rect.height, value, ink);
+                        }
+                        None => {
+                            kit.text(&mut out, text, x, rect.y, rect.height, value, ink);
+                        }
+                    }
+                }
+                ControlKind::Note { text } => {
+                    kit.text(
+                        &mut out,
+                        text,
+                        rect.x,
+                        rect.y,
+                        rect.height,
+                        name,
+                        c.secondary,
+                    );
                 }
                 ControlKind::Button { label, icon } => match icon {
                     Some(icon) => {

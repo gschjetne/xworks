@@ -408,6 +408,13 @@ fn lengths_show_in_the_unit_chosen() {
             ("space-after", Unit::Point),
             ("size", Unit::Point),
             ("tab-stop-place", unit),
+            // The Style tab's: the paragraph style's size and spacing, in
+            // points, and its indents (M2's stage 9).
+            ("style-set", Unit::Point),
+            ("style-set", Unit::Point),
+            ("style-set", Unit::Point),
+            ("style-set", unit),
+            ("style-set", unit),
             ("page-margin", unit),
             ("page-margin", unit),
             ("page-margin", unit),

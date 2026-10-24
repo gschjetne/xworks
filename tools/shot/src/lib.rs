@@ -131,6 +131,13 @@ pub fn scenes() -> &'static [Scene] {
             pages: None,
         },
         Scene {
+            name: "chrome-style",
+            description: "M2's chrome with the inspector's Style tab open: the paragraph's style, its values and where each comes from (M2's stage 9)",
+            ppi: 96.0,
+            page: chrome::style_tab,
+            pages: None,
+        },
+        Scene {
             name: "chrome-pages-dark",
             description: "M2's chrome, built: the same, dark, as mockup-pages-dark shows it",
             ppi: 96.0,

@@ -327,6 +327,8 @@ fn main() -> anyhow::Result<()> {
             config.join("settings.ron"),
             system::units(),
         ));
+        // The person's own stylesheets, beside the settings (M2's stage 9).
+        res.own = Arc::new(app::OwnSheets::load(config.join("stylesheets")));
     }
     let recordings = Recordings::default();
     write_when_failing(

@@ -20,7 +20,7 @@ use crate::settings::RulerFrom;
 const LINE_HEIGHTS: &[i64] = &[0, 1000, 1150, 1200, 1500, 2000];
 
 /// How a line height reads: "1.2 × the font".
-fn line_height_label(per_mille: i64) -> String {
+pub(super) fn line_height_label(per_mille: i64) -> String {
     if per_mille == 0 {
         return "As its fonts".to_string();
     }
@@ -132,7 +132,20 @@ impl Editor {
         }
         let int = |i: usize| args.get(i).and_then(Arg::int);
         let text = |i: usize| args.get(i).and_then(Arg::text);
+        if self.style_command(id, args) {
+            return Vec::new();
+        }
         match id {
+            "new-with-stylesheet" => {
+                if let Some(key) = text(0) {
+                    return self.new_with_stylesheet(key);
+                }
+            }
+            "replace-stylesheet" => {
+                if let Some(key) = text(0) {
+                    self.replace_stylesheet(key);
+                }
+            }
             "paragraph-style" => {
                 // A style by ID, as the inspector gives it, or by name, as a
                 // script may; "clear" after it takes the text's own
@@ -326,20 +339,27 @@ impl Editor {
         let paragraph = self.paragraph(at.paragraph);
         let sheet = &self.sheet;
 
-        // The paragraph.
-        let style = &sheet.style_of(paragraph).name;
+        // The paragraph: its style, by ID, with a mark after its name where
+        // the selection has formatting of its own (project owner,
+        // 2026-10-24, review 30dmn1js), as InDesign's "+".
+        let style = sheet.style_of(paragraph).id;
+        let marked = self.has_direct_formatting();
         let styles: Vec<Choice> = sheet
             .paragraph
             .iter()
             .map(|s| Choice {
-                value: Arg::Text(s.name.clone()),
-                label: s.name.clone(),
+                value: Arg::Int(s.id.map_or(0, |id| id.0 as i64)),
+                label: if marked && s.id == style {
+                    format!("{} +", s.name)
+                } else {
+                    s.name.clone()
+                },
             })
             .collect();
         let same_style = self
             .selected_paragraphs()
             .iter()
-            .all(|&id| &sheet.style_of(self.paragraph(id)).name == style);
+            .all(|&id| sheet.style_of(self.paragraph(id)).id == style);
         let style_row = Row {
             label: "Style".to_string(),
             controls: vec![control(
@@ -348,7 +368,7 @@ impl Editor {
                 writable,
                 ControlKind::Choice {
                     selected: same_style
-                        .then(|| sheet.paragraph.iter().position(|s| &s.name == style))
+                        .then(|| sheet.paragraph.iter().position(|s| s.id == style))
                         .flatten(),
                     choices: styles,
                     plain: false,
@@ -615,15 +635,11 @@ impl Editor {
             )],
         });
 
-        // The page: the document can't hold its own size and margins yet,
-        // so they're shown, and can't be changed.
+        // The page: the document's page style, its size and margins
+        // (project owner, 2026-10-24, review 30dmn1js).
         let page = &self.sheet.page;
-        let sizes = [
-            ("A4", 210 * MILLIMETRE, 297 * MILLIMETRE),
-            ("A5", 148 * MILLIMETRE, 210 * MILLIMETRE),
-            ("US Letter", 2159 * MILLIMETRE / 10, 2794 * MILLIMETRE / 10),
-            ("US Legal", 2159 * MILLIMETRE / 10, 3556 * MILLIMETRE / 10),
-        ];
+        let sizes = super::styling::PAGE_SIZES;
+        let page_writable = writable && self.document.sheet().is_some();
         let size = sizes.iter().position(|(_, w, h)| {
             (w - page.width).abs() < MILLIMETRE && (h - page.height).abs() < MILLIMETRE
         });
@@ -631,7 +647,7 @@ impl Editor {
             control(
                 "page-margin",
                 vec![Arg::Text(side.to_string())],
-                false,
+                page_writable,
                 ControlKind::Length {
                     value: length(value, unit),
                     prefix: label.to_string(),
@@ -649,7 +665,7 @@ impl Editor {
                         controls: vec![control(
                             "page-size",
                             Vec::new(),
-                            false,
+                            page_writable,
                             ControlKind::Choice {
                                 selected: size,
                                 choices: sizes
@@ -704,6 +720,7 @@ impl Editor {
                         },
                     ],
                 },
+                self.style_tab(),
                 page_tab,
             ],
         }

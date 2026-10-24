@@ -344,6 +344,24 @@ impl Window {
             |id| match id {
                 // Read only while a menu is open: the list's file isn't
                 // touched until File, Open Recent can show it.
+                // The stylesheets a document can be made in, or take, read
+                // only while a menu is open, as people's own are files.
+                "new-with-stylesheet" | "replace-stylesheet"
+                    if self.menu.is_some_and(|m| m.open) =>
+                {
+                    Editor::stylesheet_choices(&self.res)
+                        .into_iter()
+                        .map(|(key, name)| MenuItem::Command {
+                            id: id.to_string(),
+                            title: name,
+                            args: vec![Arg::Text(key)],
+                            access: None,
+                            shortcut: None,
+                            enabled: self.state(id).enabled,
+                            checked: false,
+                        })
+                        .collect()
+                }
                 "open-recent" if self.menu.is_some_and(|m| m.open) => self
                     .res
                     .recent
@@ -795,7 +813,8 @@ impl Window {
         self.moved(&from);
     }
 
-    /// Runs the length typed into the inspector, if it reads as one.
+    /// Runs the length typed into the inspector, if it reads as one, or
+    /// the text typed, if it changed.
     fn finish_editing(&mut self) -> Vec<Effect> {
         let Some((at, field)) = self.editing.take() else {
             return Vec::new();
@@ -804,6 +823,15 @@ impl Window {
         let Some(control) = Window::control(&model, self.tab, at) else {
             return Vec::new();
         };
+        if let ControlKind::Text { value } = &control.kind {
+            let typed = field.text().trim();
+            if typed.is_empty() || typed == value {
+                return Vec::new();
+            }
+            let args = control.with(Arg::Text(typed.to_string()));
+            let command = control.command.clone();
+            return self.run(&command, args);
+        }
         let ControlKind::Length { value, .. } = &control.kind else {
             return Vec::new();
         };
@@ -1194,6 +1222,10 @@ impl Window {
                                 let shown = value.map_or_else(String::new, |v| v.to_string());
                                 self.editing = Some((at, Field::new(&shown)));
                             }
+                            ControlKind::Text { value } => {
+                                self.editing = Some((at, Field::new(value)));
+                            }
+                            ControlKind::Note { .. } => {}
                             ControlKind::Segments { segments, .. } => {
                                 if let Some(command) = segments.get(k).map(|s| s.command.clone()) {
                                     effects.extend(self.run(&command, Vec::new()));

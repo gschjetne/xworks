@@ -314,6 +314,23 @@ impl Editor {
         let Some(md) = &mut self.markdown else {
             return Ok(());
         };
+        // A Markdown file takes the program's stylesheet, as it can't hold
+        // one: a change to it is asked about.
+        let restyles = |op: &Op| {
+            matches!(
+                op,
+                Op::InsertStyle { .. }
+                    | Op::DeleteStyle { .. }
+                    | Op::SetStyleProp { .. }
+                    | Op::SetBase { .. }
+            )
+        };
+        if t.ops.iter().any(restyles) {
+            return Err(markdown::Unheld {
+                block: self.document.sheet().unwrap_or(self.document.root()),
+                what: markdown::What::Stylesheet,
+            });
+        }
         let bytes = md.file.write(&self.document, &self.sheet)?;
         md.log.push((logged, t.clone()));
         if let Err(e) = write_whole(&self.path, &bytes) {

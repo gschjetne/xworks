@@ -96,6 +96,10 @@ pub struct Resources {
     /// file said: shared by every window, so a version opens in one of
     /// its own.
     pub(crate) markdown_versions: Arc<Mutex<MarkdownVersions>>,
+    /// What Copy kept beside the text it put on the system's clipboard,
+    /// shared by every window, so pasting from one document into another
+    /// brings structure and styles along.
+    pub(crate) clip: Arc<Mutex<Option<crate::editor::Fragment>>>,
 }
 
 /// Markdown documents' named versions: each file's, and what it said.
@@ -271,6 +275,7 @@ impl Resources {
                 loaded: Mutex::default(),
             }),
             markdown_versions: Arc::default(),
+            clip: Arc::default(),
         })
     }
 

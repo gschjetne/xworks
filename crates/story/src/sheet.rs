@@ -784,6 +784,38 @@ impl Ids {
     }
 }
 
+/// The values a stylesheet's defaults take where its file leaves them
+/// out: off, none or nothing.
+fn zeros() -> Vec<(&'static str, Value)> {
+    let off = |key| (key, Value::Bool(false));
+    let none = |key| (key, Value::Int(0));
+    vec![
+        off(keys::BOLD),
+        off(keys::ITALIC),
+        off(keys::UNDERLINE),
+        off(keys::STRIKETHROUGH),
+        off(keys::KEEP_WITH_NEXT),
+        off(keys::CODE),
+        off(keys::NUMBERED),
+        (
+            keys::ALIGN,
+            Value::Text(align_name(Align::Start).to_string()),
+        ),
+        none(keys::SPACE_BEFORE),
+        none(keys::SPACE_AFTER),
+        none(keys::LINE_HEIGHT),
+        none(keys::INDENT_START),
+        none(keys::INDENT_END),
+        none(keys::INDENT_FIRST),
+        none(keys::HEADING),
+        (keys::TABS, Value::Text(String::new())),
+        (
+            keys::LIGATURES,
+            Value::Text(format_ligatures(Ligatures::default())),
+        ),
+    ]
+}
+
 fn stops_of(stops: &[TabStopSpec]) -> Vec<TabStop> {
     stops
         .iter()
@@ -917,10 +949,15 @@ impl SheetSpec {
                 },
             ));
         }
-        // The sheet: its defaults, where it came from, and what the
-        // document shares.
+        // The sheet: its defaults, complete, so every chain ends in a value
+        // and says it does; where it came from; and what the document
+        // shares. A value the file leaves out of its defaults is off, none
+        // or nothing; hyphenation alone is left to the alignment.
         let mut props = ids.values(&self.defaults);
         props.remove(keys::NAME);
+        for (key, zero) in zeros() {
+            props.entry(key.to_string()).or_insert(zero);
+        }
         props.insert(keys::ORIGIN.to_string(), Value::Text(self.name.clone()));
         props.insert(
             keys::ORIGIN_VERSION.to_string(),

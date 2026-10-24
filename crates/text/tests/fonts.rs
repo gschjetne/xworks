@@ -44,13 +44,22 @@ fn every_bundled_face_loads_with_its_family_weight_and_slant() {
     ] {
         want.push(("Inter".to_string(), weight, italic));
     }
-    // Documents' serif and code.
-    for family in ["Source Serif 4", "JetBrains Mono"] {
+    // Documents' serif and code, and the Literary stylesheet's Alegreya
+    // (M2's stage 9).
+    for family in ["Source Serif 4", "JetBrains Mono", "Alegreya"] {
         for weight in [400, 700] {
             for italic in [false, true] {
                 want.push((family.to_string(), weight, italic));
             }
         }
+    }
+    // The Book stylesheet's EB Garamond, with a semibold, and Literary's
+    // headings' small capitals.
+    for (weight, italic) in [(400, false), (400, true), (600, false), (700, false), (700, true)] {
+        want.push(("EB Garamond".to_string(), weight, italic));
+    }
+    for weight in [400, 700] {
+        want.push(("Alegreya SC".to_string(), weight, false));
     }
     want.sort();
     assert_eq!(faces, want);

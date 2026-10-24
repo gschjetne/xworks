@@ -19,15 +19,18 @@ use text::units::{PIXEL, POINT};
 use text::{Affinity, Cursor};
 
 mod access;
+mod clip;
 mod file;
 mod format;
 mod markdown;
 mod part;
 mod pictures;
 mod recording;
+mod styling;
 mod units;
 mod versions;
 
+pub(crate) use clip::Fragment;
 pub(crate) use markdown::is_markdown;
 pub(crate) use part::view_look;
 use units::Unit;
@@ -255,6 +258,10 @@ enum Pick {
     Convert,
     /// Leaves it Markdown, without the edit.
     Keep,
+    /// Takes the stylesheet this names, a newer version of the document's.
+    Stylesheet(String),
+    /// Nothing but closing the panel.
+    Nothing,
 }
 
 /// One document in one window.
@@ -417,6 +424,7 @@ impl Editor {
         );
         editor.load_pictures(story::pictures(&editor.document));
         editor.unwritable();
+        editor.offer_update();
         Ok(editor)
     }
 
@@ -1708,6 +1716,11 @@ impl Editor {
     }
 
     fn paste(&mut self, text: &str) {
+        // What Copy kept in the program, structure and styles, while the
+        // clipboard holds what it put there.
+        if self.paste_fragment(text) {
+            return;
+        }
         let mut text = text.replace("\r\n", "\n").replace('\r', "\n");
         // Code takes lines as lines, and a table's cell as one.
         let at = self.ordered().0.paragraph;
@@ -2110,6 +2123,14 @@ impl Editor {
             | "list-bullets" | "list-numbers" | "list-tasks" | "quote" | "insert-table"
             | "insert-picture" => writable,
             "task-toggle" => writable && self.task_at_caret().is_some(),
+            "clear-formatting" => writable && self.has_direct_formatting(),
+            "redefine-style" | "new-style" | "replace-stylesheet" => {
+                writable && self.document.sheet().is_some()
+            }
+            "save-stylesheet" => self.document.sheet().is_some() && self.res.own.folder().is_some(),
+            "update-stylesheet" => writable && self.newer_stylesheet().is_some(),
+            "style-set" | "style-toggle" | "style-reset" | "style-base" | "style-rename"
+            | "page-size" | "page-margin" => writable,
             _ if id.starts_with("language-") || id.starts_with("align-") => writable,
             _ => true,
         };
@@ -2196,9 +2217,15 @@ impl Editor {
             }
             "undo" => self.undo(false),
             "redo" => self.undo(true),
-            "copy" => effects.push(Effect::Copy(self.selected_text())),
+            "copy" => {
+                let text = self.selected_text();
+                self.keep_fragment(&text);
+                effects.push(Effect::Copy(text));
+            }
             "cut" => {
-                effects.push(Effect::Copy(self.selected_text()));
+                let text = self.selected_text();
+                self.keep_fragment(&text);
+                effects.push(Effect::Copy(text));
                 let (ops, at) = self.deletion();
                 if self.commit("Cut", ops, false) {
                     self.go(at, false);
@@ -2218,6 +2245,11 @@ impl Editor {
             "strikethrough" => self.toggle("Strikethrough", keys::STRIKETHROUGH),
             "code" => self.toggle("Code", keys::CODE),
             "list-tasks" => self.toggle_tasks(),
+            "clear-formatting" => self.clear_formatting(),
+            "redefine-style" => self.redefine_style(),
+            "new-style" => self.new_style(),
+            "save-stylesheet" => self.save_stylesheet(),
+            "update-stylesheet" => self.update_panel(),
             "task-toggle" => self.check_off(),
             "list-bullets" | "list-numbers" | "quote" | "insert-table" => {
                 let (start, end) = self.ordered();
@@ -2309,7 +2341,7 @@ impl Editor {
 
     /// The panel open, if one is: its title, its rows' names, and the row
     /// lit.
-    pub(crate) fn panel(&self) -> Option<(&str, Vec<String>, usize)> {
+    pub fn panel(&self) -> Option<(&str, Vec<String>, usize)> {
         let panel = self.panel.as_ref()?;
         let names = panel.rows.iter().map(|(name, _)| name.clone()).collect();
         Some((panel.title.as_str(), names, panel.selected))
@@ -2331,6 +2363,11 @@ impl Editor {
         match chosen {
             Some(Pick::Effect(effect)) => vec![effect],
             Some(Pick::Convert) => self.convert(),
+            Some(Pick::Stylesheet(key)) => {
+                self.take_update(&key);
+                Vec::new()
+            }
+            Some(Pick::Nothing) => Vec::new(),
             Some(Pick::Keep) | None => {
                 self.keep_markdown();
                 Vec::new()

@@ -76,6 +76,28 @@ fn pages(dark: bool) -> Page {
     window.view()
 }
 
+/// The sample on pages with the inspector's Style tab open (M2's stage
+/// 9): the caret's paragraph's style, Body, each of its values and where
+/// it comes from, and the stylesheet it was copied from.
+pub(crate) fn style_tab() -> Page {
+    let mut window = sample("A walking skeleton", false);
+    window.update(Event::Command("toggle-inspector".to_string()));
+    // The Style tab's title, the second of three across the inspector's
+    // top.
+    for event in [
+        Event::Press {
+            x: 1130.0,
+            y: 66.0,
+            shift: false,
+            count: 1,
+        },
+        Event::Release,
+    ] {
+        window.update(event);
+    }
+    window.view()
+}
+
 /// The real chrome: a document on pages, with the ruler and the
 /// inspector, as `mockup-pages` shows it.
 pub(crate) fn pages_light() -> Page {

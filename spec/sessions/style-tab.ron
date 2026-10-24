@@ -1,0 +1,27 @@
+// The inspector's Style tab (M2's stage 9), at 1280 by 800: Body's size
+// typed into it makes every paragraph in Body that size, as Body's own
+// value, and Undo takes it back; then Body renamed, one edit, which the
+// paragraphs, naming it by ID, follow.
+(
+    size: (1280, 800),
+    events: [
+        Type("Restyled"),
+        Command("toggle-inspector"),
+        // The Style tab, second of three.
+        Click(1130, 66),
+        // Size, in Body's Text section.
+        Click(1110, 278),
+        Type("13 pt"),
+        Key("Enter"),
+        Expect([("Body", "Restyled")]),
+        Key("Primary+Z"),
+        Key("Primary+Shift+Z"),
+        // Body's name.
+        Click(1160, 136),
+        Key("Primary+A"),
+        Type("Text Body"),
+        Key("Enter"),
+    ],
+    expect: [("Text Body", "Restyled")],
+    status: Some("Page 1 of 1   ·   Text Body   ·   13 pt   ·   1 words"),
+)

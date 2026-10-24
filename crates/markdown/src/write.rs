@@ -67,6 +67,9 @@ pub enum What {
     Marks,
     /// Another property of the story's.
     Property(String),
+    /// A change to the document's stylesheet, which Markdown has no room
+    /// for: a Markdown file takes the program's.
+    Stylesheet,
 }
 
 impl fmt::Display for What {
@@ -88,6 +91,7 @@ impl fmt::Display for What {
             What::TaskStart => f.write_str("a task that doesn't start with text"),
             What::Marks => f.write_str("marks where Markdown can't write them"),
             What::Property(key) => write!(f, "{key}"),
+            What::Stylesheet => f.write_str("a change to the stylesheet"),
         }
     }
 }
