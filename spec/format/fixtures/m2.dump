@@ -1,0 +1,208 @@
+xworks schema 2
+kind story
+document
+root #0
+#0 story [#1, #2, #3, #5, #12, #18, #22, #23, #24, #25, #27, #26, #34, #35, #36, #37, #38]
+#1 paragraph in #0 "The M2 fixture" {"style": Text("Heading 1")}
+    14 {}
+#2 paragraph in #0 "A document written by M2, kept to show that later versions open its blocks, its marks, its code, struck text and its history." {"style": Text("Body")}
+    68 {}
+    6 {"bold": Bool(true)}
+    6 {}
+    5 {"italic": Bool(true)}
+    6 {}
+    4 {"code": Bool(true)}
+    2 {}
+    6 {"strikethrough": Bool(true)}
+    22 {}
+#3 paragraph in #0 "Lists, quotes and code" {"style": Text("Heading 2")}
+    22 {}
+#4 paragraph in #6 "A bullet" {"style": Text("Body")}
+    8 {}
+#5 list in #0 [#6] {}
+#6 item in #5 [#4, #9] {}
+#7 paragraph in #8 "and a nested one" {"style": Text("Body")}
+    16 {}
+#8 item in #9 [#7] {}
+#9 list in #6 [#8] {}
+#10 paragraph in #13 "One" {"style": Text("Body")}
+    3 {}
+#12 list in #0 [#13, #15] {"ordered": Bool(true)}
+#13 item in #12 [#10] {}
+#14 paragraph in #15 "Two" {"style": Text("Body")}
+    3 {}
+#15 item in #12 [#14] {}
+#16 paragraph in #19 "A task, done" {"style": Text("Body")}
+    12 {}
+#18 list in #0 [#19] {}
+#19 item in #18 [#16] {"task": Bool(true)}
+#20 paragraph in #22 "A quotation, quoted." {"style": Text("Body")}
+    20 {}
+#22 quote in #0 [#20] {}
+#23 paragraph in #0 "let answer = 42;\u{2028}println!(\"{answer}\");" {"style": Text("Code")}
+    38 {}
+#24 paragraph in #0 "After the code." {"style": Text("Body")}
+    15 {}
+#25 paragraph in #0 "A table and a picture" {"style": Text("Heading 2")}
+    21 {}
+#26 paragraph in #0 "A picture: ￼" {"style": Text("Body")}
+    11 {}
+    1 {"picture": Text("3af5ab1b47f86f9c2927ae82d8271a40f994dad2783dc7cb2ac05d5aca9ae894"), "picture-alt": Text("gradient"), "picture-height": Int(228600), "picture-width": Int(304800)}
+#27 table in #0 [#28, #31] {}
+#28 row in #27 [#29, #30] {}
+#29 paragraph in #28 "Name" {}
+    4 {}
+#30 paragraph in #28 "Size" {}
+    4 {}
+#31 row in #27 [#32, #33] {}
+#32 paragraph in #31 "Pear" {}
+    4 {}
+#33 paragraph in #31 "Small" {}
+    5 {}
+#34 paragraph in #0 "Paragraphs of their own" {"style": Text("Heading 2")}
+    23 {}
+#35 paragraph in #0 "Centred, spaced, indented and tabbed:\tand in German." {"align": Text("center"), "indent-start": Int(360000), "language": Text("de"), "line-height": Int(1500), "space-before": Int(127000), "style": Text("Body"), "tabs": Text("center 1800000")}
+    52 {}
+#36 paragraph in #0 "Larger" {"align": Text("start"), "indent-start": Int(360000), "language": Text("de"), "line-height": Int(1500), "space-before": Int(127000), "style": Text("Body"), "tabs": Text("center 1800000")}
+    6 {"size": Int(177800)}
+#37 paragraph in #0 "Typed a word at a time" {"align": Text("start"), "indent-start": Int(360000), "language": Text("de"), "line-height": Int(1500), "space-before": Int(127000), "style": Text("Heading 3"), "tabs": Text("center 1800000")}
+    22 {}
+#38 paragraph in #0 "Every word of this paragraph was typed as a step of its own, so the file's log runs past a hundred entries and holds a second snapshot. A file M2 wrote must open in every later xWorks with the same blocks, the same formatting and the same history." {"align": Text("start"), "indent-start": Int(360000), "language": Text("de"), "line-height": Int(1500), "space-before": Int(127000), "style": Text("Body"), "tabs": Text("center 1800000")}
+    247 {}
+log
+    1 commit "Heading 1"
+    2 commit "Typing"
+    3 commit "New Paragraph"
+    4 commit "Typing"
+    5 commit "Typing"
+    6 commit "Typing"
+    7 commit "Typing"
+    8 commit "Typing"
+    9 commit "Typing"
+    10 commit "Typing"
+    11 commit "Typing"
+    12 commit "Typing"
+    13 commit "New Paragraph"
+    14 commit "Heading 2"
+    15 commit "Typing"
+    16 commit "New Paragraph"
+    17 commit "Bullets"
+    18 commit "Typing"
+    19 commit "New Item"
+    20 commit "Typing"
+    21 commit "Indent"
+    22 commit "New Item"
+    23 commit "Outdent"
+    24 commit "Outdent"
+    25 commit "Numbers"
+    26 commit "Typing"
+    27 commit "New Item"
+    28 commit "Typing"
+    29 commit "New Item"
+    30 commit "Outdent"
+    31 commit "Task List"
+    32 commit "Typing"
+    33 commit "Check Off"
+    34 commit "New Item"
+    35 commit "Outdent"
+    36 commit "Quote"
+    37 commit "Typing"
+    38 commit "New Paragraph"
+    39 commit "New Paragraph"
+    40 commit "Typing"
+    41 commit "New Paragraph"
+    42 commit "Typing"
+    43 commit "Code"
+    44 commit "Typing"
+    45 continue "Typing"
+    46 commit "New Paragraph"
+    47 commit "Heading 2"
+    48 commit "Typing"
+    49 commit "New Paragraph"
+    50 commit "Table"
+    51 commit "Typing"
+    52 commit "Typing"
+    53 commit "Typing"
+    54 commit "Typing"
+    55 commit "Typing"
+    56 commit "Insert Picture"
+    57 commit "New Paragraph"
+    58 commit "Heading 2"
+    59 commit "Typing"
+    60 commit "New Paragraph"
+    61 commit "Typing"
+    62 commit "Alignment"
+    63 commit "Spacing"
+    64 commit "Indent"
+    65 commit "Line Height"
+    66 commit "Tab Stop"
+    67 commit "Language"
+    68 commit "New Paragraph"
+    69 commit "Alignment"
+    70 commit "Typing"
+    71 commit "Size"
+    72 commit "New Paragraph"
+    73 commit "Heading 3"
+    74 commit "Typing"
+    75 commit "New Paragraph"
+    76 commit "Typing"
+    77 continue "Typing"
+    78 continue "Typing"
+    79 continue "Typing"
+    80 continue "Typing"
+    81 continue "Typing"
+    82 continue "Typing"
+    83 continue "Typing"
+    84 continue "Typing"
+    85 continue "Typing"
+    86 continue "Typing"
+    87 continue "Typing"
+    88 continue "Typing"
+    89 continue "Typing"
+    90 continue "Typing"
+    91 continue "Typing"
+    92 continue "Typing"
+    93 continue "Typing"
+    94 continue "Typing"
+    95 continue "Typing"
+    96 continue "Typing"
+    97 continue "Typing"
+    98 continue "Typing"
+    99 continue "Typing"
+    100 continue "Typing"
+    101 continue "Typing"
+    102 continue "Typing"
+    103 continue "Typing"
+    104 continue "Typing"
+    105 continue "Typing"
+    106 continue "Typing"
+    107 continue "Typing"
+    108 continue "Typing"
+    109 continue "Typing"
+    110 continue "Typing"
+    111 continue "Typing"
+    112 continue "Typing"
+    113 continue "Typing"
+    114 continue "Typing"
+    115 continue "Typing"
+    116 continue "Typing"
+    117 continue "Typing"
+    118 continue "Typing"
+    119 continue "Typing"
+    120 continue "Typing"
+    121 continue "Typing"
+    122 continue "Typing"
+    123 continue "Typing"
+    124 commit "New Paragraph"
+    125 commit "Typing"
+    126 undo "Typing"
+    127 undo "New Paragraph"
+    128 redo "New Paragraph"
+    129 undo "New Paragraph"
+versions
+    12 "Version 1"
+    123 "Version 2"
+fonts
+images
+    3af5ab1b47f86f9c2927ae82d8271a40f994dad2783dc7cb2ac05d5aca9ae894 jpeg 934 bytes
+undo Some("Typing") redo Some("New Paragraph")
