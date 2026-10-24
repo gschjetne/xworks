@@ -545,6 +545,34 @@ fn the_language_of_all_the_text_is_the_front_matters() {
     assert_eq!(refused.what, markdown::What::Language);
 }
 
+/// A task whose item starts with another block than text, as `- [x]` with
+/// a list under it, is written with its box alone on its line, and reads
+/// back the same, written afresh or edited; one whose block starts on the
+/// box's line can't be (found by fuzzing).
+#[test]
+fn a_task_starting_with_a_block_has_its_box_alone() {
+    let sheet = sheet();
+    let bytes = b"- [x]\n    - climbing beans on canes\n- Carrots\n";
+    let read = read(bytes, &sheet);
+    let fresh = markdown::File::empty(read.file.language())
+        .write(&read.document, &sheet)
+        .expect("it writes afresh");
+    assert_eq!(
+        String::from_utf8_lossy(&fresh),
+        "- [x]\n  - climbing beans on canes\n- Carrots\n"
+    );
+    assert_eq!(
+        shape(&self::read(&fresh, &sheet).document, &sheet),
+        shape(&read.document, &sheet)
+    );
+    let edited = replace(&read.document, "climbing", "tall");
+    let written = read.file.clone().write(&edited, &sheet).expect("it writes");
+    assert_eq!(
+        shape(&self::read(&written, &sheet).document, &sheet),
+        shape(&edited, &sheet)
+    );
+}
+
 /// The file's front matter is kept, and its language is the paragraphs'.
 #[test]
 fn front_matter_is_kept_and_gives_the_language() {

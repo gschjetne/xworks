@@ -891,8 +891,11 @@ impl<'a> Writer<'a> {
             Some(Value::Bool(done)) => Some(*done),
             _ => None,
         };
+        // A task's box goes before text; before another block, alone on
+        // its line, as `- [ ]` with a list under it reads, but not where
+        // the block starts on the box's line in the file.
+        let mut box_alone = false;
         if task.is_some() {
-            // A task's box goes before text.
             let first = b.children.iter().find(|&&c| match document.object(c) {
                 Some(Object::Paragraph(p)) => !vanishes(p, self.sheet),
                 _ => true,
@@ -902,10 +905,18 @@ impl<'a> Writer<'a> {
                     .paragraph(first)
                     .is_some_and(|p| text_kind(p, self.sheet).is_empty())
             {
-                return Err(Unheld {
-                    block: id,
-                    what: What::TaskStart,
-                });
+                let on_its_line = self
+                    .file
+                    .sources
+                    .get(&first)
+                    .is_some_and(|s| s.first_of.contains(&id));
+                if on_its_line {
+                    return Err(Unheld {
+                        block: id,
+                        what: What::TaskStart,
+                    });
+                }
+                box_alone = true;
             }
         }
         let list = self.open.last().expect("its list");
@@ -961,6 +972,9 @@ impl<'a> Writer<'a> {
         open.rest = rest;
         open.splices = splices;
         self.open.push(open);
+        if box_alone {
+            self.fresh("");
+        }
         Ok(())
     }
 
