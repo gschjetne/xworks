@@ -502,6 +502,73 @@ the stage's own, open to the owner's review.
 - **Markdown files have `.xw` files' budgets:** a 500-page file opens in
   200 ms, and a keystroke takes 16.7 ms.
 
+**What stage 6's follow-up built** (from review jy4a2tx5). The choices
+below are its own, open to the owner's review.
+
+- **Saving on a worker.** An edit still makes the file's bytes as it's
+  made, as that's what checks Markdown holds it; what moves off the
+  keystroke is the writing. A thread of each open Markdown document's
+  own, not a task on the worker pool, as it sleeps while it gathers,
+  writes the latest bytes 500 ms after the first edit not yet written
+  (`spec/editing.ron`): beside the file, flushed to disk, renamed into
+  place, and the folder flushed on Linux and macOS
+  (`store::write_whole`). Closing a window writes at once, and so does
+  quitting, which closes them all.
+- **Another program's changes** are told by the file's stamp: its size,
+  its modified time and which file it is, its inode, or on Windows its
+  volume and file index, through winapi-util, a new dependency already
+  in the build. With nothing unwritten, the file is read again as one
+  edit, Read Again, which Undo takes back, writing from the file as it
+  was, so byte for byte. Otherwise xWorks asks: keep its version, read
+  again, with yours a step back in Undo; keep yours, written over it; or
+  keep yours as "NAME (xWorks).md" beside it, which the window then
+  shows, the file as the other program left it. Escape asks again at the
+  next edit or when the window comes forward, nothing written meanwhile;
+  a window closed unanswered keeps yours as the copy. A file another
+  program took away is written again by the next write.
+- **The lock's folder** is `locks` in xWorks' folder for settings and
+  the documents opened lately, its name the file's and the first sixteen
+  hexadecimal digits of the SHA-256 of its canonical path; the system's
+  folder for temporary files where the shell names none. It's per
+  person: two people on one computer, with folders of their own, don't
+  see each other's locks.
+- **`lang` in the front matter:** with every paragraph in one other
+  language, its text too, the front matter's `lang` says that one,
+  edited in place, YAML's or TOML's, or added, with `---` front matter
+  of `lang` alone and a blank line where the file has none. Until the
+  file is read again, each writing after such a change takes time in the
+  whole story, as every paragraph differs from the file as read.
+- **A rule** is a block of a kind of its own, the sixth, holding nothing.
+  Having no text, it goes with the paragraph after it in reading order,
+  or after the last; the editor's reading order stays paragraphs, so the
+  caret steps over it, Backspace after it and Delete before it take it,
+  and a selection across it takes it. It's drawn a hairline wide in the
+  rules' colour with 9 points above and below (`rule_space`), across its
+  column, in a quote under its bar. Written afresh it's `---`, or `***`
+  or `___` beside an item's `-` on its line, which would make the line
+  itself a rule. Insert, Rule splits the caret's paragraph there. A
+  schema 2 reader from before rules refuses a file with one as damaged;
+  stage 9's schema 3 is the change of format that covers it.
+- **Alerts:** the `[!NOTE]` alone on a quote's first line is a run of
+  kept Markdown, "alert"; written afresh, it stays alone on its line.
+- **Autolinks** follow GitHub's spec for the extension, for www.,
+  http:// and https:// and e-mail addresses: not its extended protocols,
+  `mailto:` and `xmpp:`, and not `http://localhost`, whose domain has no
+  period, which the spec asks for and GitHub doesn't. An address with a
+  character from an escape or entity in it isn't one, so plain text that
+  would read as one is written with its `.` after `www`, `:` after its
+  scheme or `@` escaped. Typing makes a link when whitespace, a line's
+  end, or one of `,;:!?)"'` follows the address, but not a period, as
+  addresses have them inside; Undo right after takes the link off and
+  leaves the caret, and typing on in a link made so takes it along, as
+  part of the typing. Pasting makes none. In `.xw` documents it's off
+  until the owner says (`spec/editing.ron`).
+- **Measured** (under WSL, render-cpu, the 95th percentile): a 500-page
+  Markdown file, 0.6 MB and 13,545 paragraphs, opens in 160 ms, once it
+  was laid out once rather than on pages and again as a draft; a
+  keystroke in it takes 8.3 ms, of which making the file's bytes is
+  about 3 ms and laying out what changed the most of the rest.
+
 **A document carries its own stylesheet and page style** (project owner,
 2026-10-24, review ydqhfds0), edited by operations like the rest of it, so
 it looks the same wherever it opens.
