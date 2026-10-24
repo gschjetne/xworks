@@ -11,8 +11,11 @@
 //! - [`Store::embed_font`] and [`Store::add_image`]: fonts and pictures the
 //!   document carries, each kept once by its hash.
 //! - [`lock_path`]: the file whose lock says a program has the document
-//!   open to write; [`acquire`] takes it, for a document of any kind, as
-//!   a Markdown file is.
+//!   open to write; [`acquire`] takes it. A Markdown file's lives in
+//!   xWorks' own folder instead ([`lock_in`], [`acquire_at`]).
+//! - [`write_whole`] and [`stamp`]: a file of another format, as a
+//!   Markdown file is, written whole and durably, and what it is on disk,
+//!   to see another program's changes.
 //! - [`dump`]: a document file in canonical text form.
 //!
 //! store is an impure crate: it reads and writes files.
@@ -31,13 +34,15 @@
 //! - Nothing read from a file is trusted: what doesn't hold together is an
 //!   error, never a panic or a broken document.
 
+mod file;
 mod lock;
 mod v1;
 mod v2;
 
 use std::path::{Path, PathBuf};
 
-pub use lock::{Acquired, Lock, acquire, lock_path};
+pub use file::{Stamp, stamp, write_whole};
+pub use lock::{Acquired, Lock, acquire, acquire_at, lock_in, lock_path};
 
 use doc::{Document, History, Op, Snapshot, Transaction};
 use rusqlite::{Connection, OpenFlags, OptionalExtension, params};

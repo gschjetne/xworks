@@ -68,6 +68,7 @@ sys-locale = "0.3.2"    # the system's language, which new documents are in (rev
 thiserror = "2.0.21"    # error types in libraries
 vello_cpu = { version = "=0.3.0", default-features = false, features = ["std", "text", "u8_pipeline"] }  # the CPU renderer (D7, docs/ARCHITECTURE.md, section 10); single-threaded, so render-cpu stays pure
 winit = "0.30.13"       # the generic shell's windows and input (docs/ARCHITECTURE.md, section 8)
+winapi-util = "=0.1.11"  # which file a Markdown file is on Windows, its volume and file index, to see another program put a file in its place (review jy4a2tx5): a safe API over GetFileInformationByHandle, which std has only on nightly; Unlicense OR MIT, already in the build through walkdir and termcolor
 windows-registry = "0.6.1"  # the caret's blink rate and the measurement system, read from Windows' registry by the generic shell (review ydqhfds0): Microsoft's, MIT OR Apache-2.0, a safe API over the registry's functions, so the shell needs no unsafe; it shares windows-link, -result and -strings with the windows crate already in the build
 zip = { version = "9.0.5", default-features = false, features = ["deflate-flate2"] }  # fetch-fonts takes fonts that come only in zip archives, such as Inter's static faces, out of them; deflate only, which flate2 already in the build reads
 vello_gpu = "=0.3.0"    # the GPU renderer (D7, docs/ARCHITECTURE.md, section 10), vello_cpu's twin

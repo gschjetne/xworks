@@ -3861,6 +3861,7 @@ dependencies = [
  "testkit",
  "text",
  "thiserror 2.0.21",
+ "winapi-util",
 ]
 
 [[package]]
