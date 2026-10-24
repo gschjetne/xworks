@@ -409,7 +409,9 @@ the document is open.
     them, and edited blocks follow the file's own habits where they're
     clear (its bullets, emphasis and wrapping), or else a standard style;
   - GitHub's strikethrough and task lists are read and written besides
-    CommonMark with tables, and other extensions are kept as written;
+    CommonMark with tables, and so are its autolinks, bare web addresses,
+    which the owner took after trying stage 6 (review jy4a2tx5); other
+    extensions are kept as written;
   - a picture is linked where it is, by its path, relative to the file
     where one exists, not copied.
 - **Its tables are Markdown's** in M2: a header row, rows of cells of one
@@ -474,6 +476,31 @@ the stage's own, open to the owner's review.
   needed a draft to draw only what's in view, and the writer to find
   what was edited from the document's difference from the file's
   (`Document::changed_since`).
+
+**From stage 6's review** (project owner, 2026-10-24, review jy4a2tx5):
+- **A Markdown file is saved on a worker, gathered:** written within a
+  second of an edit, flushed to disk before it's renamed into place, and
+  at once on close. A crash loses at most the last second, never the
+  file, as with `.xw` files.
+- **Changes other programs make are noticed,** before xWorks writes and
+  when its window comes forward. With nothing of its own unwritten,
+  xWorks reads the file again, as an edit Undo takes back; otherwise it
+  asks whether to keep the file's version, its own, or its own as a copy
+  beside it.
+- **A Markdown file's lock lives in xWorks' own folder,** out of git's
+  sight, and still keeps a second xWorks from writing the file. An `.xw`
+  file's stays hidden beside it.
+- **Changing the language of all the text writes `lang`** into the front
+  matter, adding front matter where there is none. Part of the text in
+  another language still asks to make the file an `.xw` file.
+- **Thematic breaks are drawn as rules:** a block the story holds, which
+  `.xw` documents get too, from Insert.
+- **GitHub's alerts are shown as written,** the `[!NOTE]` kept as source
+  at the quote's start, as the extensions not taken are.
+- **Ctrl+Enter is kept for a page break,** as Word, Writer and Google Docs
+  have it; Check Off has no shortcut for now.
+- **Markdown files have `.xw` files' budgets:** a 500-page file opens in
+  200 ms, and a keystroke takes 16.7 ms.
 
 **A document carries its own stylesheet and page style** (project owner,
 2026-10-24, review ydqhfds0), edited by operations like the rest of it, so
