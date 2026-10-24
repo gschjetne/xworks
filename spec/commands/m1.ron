@@ -102,9 +102,11 @@
         (id: "list-numbers", title: "&Numbered List", shortcut: Some("Primary+Shift+7")),
         // GitHub's task lists (review ys9vyag1): the items selected made
         // tasks, or items again; and the caret's task's box ticked or not,
-        // as clicking it does, Ctrl+Enter as Notion has it.
+        // as clicking it does. Check Off has no shortcut: Ctrl+Enter is
+        // kept for a page break, as Word, Writer and Google Docs have it
+        // (project owner, 2026-10-24, review jy4a2tx5).
         (id: "list-tasks", title: "&Task List"),
-        (id: "task-toggle", title: "Check &Off", shortcut: Some("Primary+Enter")),
+        (id: "task-toggle", title: "Check &Off"),
         (id: "quote", title: "&Quote", shortcut: Some("Primary+Shift+9")),
         (id: "align-start", title: "Align to &Start", kind: Some("Alignment"), shortcut: Some("Primary+L")),
         (id: "align-center", title: "&Centre", kind: Some("Alignment"), shortcut: Some("Primary+E")),

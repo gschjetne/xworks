@@ -114,3 +114,25 @@ fn the_menus_hold_every_command() {
         commands.all().iter().filter(|c| c.arg.is_none()).count()
     );
 }
+
+/// Ctrl+Enter is kept for a page break, as Word, Writer and Google Docs
+/// have it, so Check Off has no shortcut (project owner, 2026-10-24,
+/// review jy4a2tx5).
+#[test]
+fn ctrl_enter_is_kept_for_a_page_break() {
+    let commands = commands();
+    let check_off = commands.get("task-toggle").expect("Check Off");
+    assert_eq!(check_off.shortcut, None);
+    assert_eq!(check_off.mac, None);
+    let primary = chrome::Modifiers {
+        primary: true,
+        shift: false,
+        alt: false,
+    };
+    for mac in [false, true] {
+        assert!(
+            commands.for_key(chrome::Key::Enter, primary, mac).is_none(),
+            "nothing takes Primary+Enter"
+        );
+    }
+}
