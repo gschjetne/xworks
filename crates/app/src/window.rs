@@ -958,7 +958,7 @@ impl Window {
             return self.palette_key(key, modifiers);
         }
         if self.choosing.is_some() {
-            return self.choice_key(key);
+            return self.choice_key(key, modifiers.shift);
         }
         if self.menu.is_some() {
             return self.menu_key(key, modifiers);
@@ -988,7 +988,7 @@ impl Window {
         self.give_part(Input::Key { key, modifiers })
     }
 
-    fn choice_key(&mut self, key: Key) -> Vec<Effect> {
+    fn choice_key(&mut self, key: Key, shift: bool) -> Vec<Effect> {
         let model = Part::inspector(&self.editor);
         let Some((at, lit)) = self.choosing else {
             return Vec::new();
@@ -1007,7 +1007,7 @@ impl Window {
             Key::Up => self.choosing = Some((at, Some(lit.map_or(0, |l| l.saturating_sub(1))))),
             Key::Enter => {
                 if let Some(l) = lit {
-                    return self.choose(&model, at, l);
+                    return self.choose(&model, at, l, shift);
                 }
                 self.choosing = None;
             }
@@ -1017,8 +1017,17 @@ impl Window {
         Vec::new()
     }
 
-    /// Runs choice `i` of the inspector's control `at`.
-    fn choose(&mut self, model: &chrome::Inspector, at: ControlRef, i: usize) -> Vec<Effect> {
+    /// Runs choice `i` of the inspector's control `at`. A paragraph style
+    /// chosen with Shift held takes the text's own formatting away too, as
+    /// well as the paragraph's (M2's stage 9; the modifier the owner left
+    /// to the stage, review 30dmn1js), as InDesign's Alt+Shift-click does.
+    fn choose(
+        &mut self,
+        model: &chrome::Inspector,
+        at: ControlRef,
+        i: usize,
+        shift: bool,
+    ) -> Vec<Effect> {
         self.choosing = None;
         let Some(control) = Window::control(model, self.tab, at) else {
             return Vec::new();
@@ -1028,7 +1037,10 @@ impl Window {
         };
         match choices.get(i) {
             Some(choice) => {
-                let args = control.with(choice.value.clone());
+                let mut args = control.with(choice.value.clone());
+                if shift && control.command == "paragraph-style" {
+                    args.push(Arg::Text("clear".to_string()));
+                }
                 let command = control.command.clone();
                 self.run(&command, args)
             }
@@ -1099,7 +1111,7 @@ impl Window {
                 && let Some(row) = popup.hit(x, y)
             {
                 if let (Some(row), Some((at, _))) = (row, self.choosing) {
-                    effects.extend(self.choose(&model, at, row));
+                    effects.extend(self.choose(&model, at, row, shift));
                 }
                 return effects;
             }

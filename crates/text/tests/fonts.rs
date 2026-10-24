@@ -55,7 +55,13 @@ fn every_bundled_face_loads_with_its_family_weight_and_slant() {
     }
     // The Book stylesheet's EB Garamond, with a semibold, and Literary's
     // headings' small capitals.
-    for (weight, italic) in [(400, false), (400, true), (600, false), (700, false), (700, true)] {
+    for (weight, italic) in [
+        (400, false),
+        (400, true),
+        (600, false),
+        (700, false),
+        (700, true),
+    ] {
         want.push(("EB Garamond".to_string(), weight, italic));
     }
     for weight in [400, 700] {
