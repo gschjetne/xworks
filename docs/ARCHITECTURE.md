@@ -1373,6 +1373,12 @@ WSL's figure for information.
 | Scroll any document | every frame at the display's rate |
 | Save after a small edit, any document size | 50 ms |
 | Memory for an empty document window | 120 MB |
+| Open a 500-page Markdown file, first page shown | 200 ms |
+| Keystroke in a Markdown file to the glyph on screen | one frame at 60 Hz (16 ms) |
+
+A Markdown file has an `.xw` file's budgets (project owner, 2026-10-24,
+review jy4a2tx5): `tools/budgets` makes one of Markdown files of our own,
+over and over, until it fills as many automatic pages as the report.
 
 **Measured at M1's exit** (2026-10-22), on the owner's workstation: 16
 threads, a GeForce GTX 1070. Windows draws with render-gpu on Vulkan;

@@ -39,5 +39,19 @@
             // Revised from 60 MB (project owner, 2026-10-22, review 094846qg).
             budget: Megabytes(120.0),
         ),
+        // A Markdown file has an .xw file's budgets (project owner,
+        // 2026-10-24, review jy4a2tx5): the file is Markdown files of our
+        // own over and over, until it fills as many automatic pages as the
+        // report.
+        (
+            id: "open-markdown",
+            interaction: "Open a 500-page Markdown file, first page shown",
+            budget: Millis(200.0),
+        ),
+        (
+            id: "keystroke-markdown",
+            interaction: "Keystroke in a Markdown file to the glyph on screen",
+            budget: Millis(16.7),
+        ),
     ],
 )

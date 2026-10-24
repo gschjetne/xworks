@@ -23,9 +23,11 @@
 //!   window's canvas where the view changed, and the canvas copied to the
 //!   frame. A frame counts until the GPU has finished it.
 //!
-//! - **A large Markdown file** (M2's stage 6), which has no budgets of its
-//!   own yet: opening one as large as the report, first frame shown, and a
-//!   keystroke in its middle, which writes the whole file back.
+//! - **A 500-page Markdown file** (M2's stage 6), which has an `.xw`
+//!   file's budgets (review jy4a2tx5): opening one that fills as many
+//!   automatic pages as the report, first frame shown, and a keystroke in
+//!   its middle, which makes the file's bytes, to check Markdown holds the
+//!   edit, and leaves writing them to the document's worker.
 //!
 //! Measure on a quiet machine. Each line gives the median and the worst,
 //! and the parts of a frame where the time goes.
@@ -159,17 +161,31 @@ fn main() -> anyhow::Result<()> {
     println!("budgets: frames drawn by {}", frames.by());
     measured.extend(in_editor(&res, &path, &mut frames, runs)?);
     measured.push(saving(&path)?);
-    let markdown = markdown(&root, &res, &scratch, &mut frames, runs)?;
+    measured.extend(markdown(
+        &root,
+        &res,
+        &scratch,
+        &mut frames,
+        runs,
+        spec.report_pages,
+    )?);
 
     println!();
+    // As wide as the longest interaction's name.
+    let w = spec
+        .budgets
+        .iter()
+        .map(|b| b.interaction.chars().count())
+        .max()
+        .unwrap_or(0);
     println!(
-        "{:<44} {:>9} {:>9} {:>9} {:>9}",
+        "{:<w$} {:>9} {:>9} {:>9} {:>9}",
         "", "budget", "median", "95th", "worst"
     );
     for budget in &spec.budgets {
         let Some(m) = measured.iter().find(|m| m.id == budget.id) else {
             println!(
-                "{:<44} {:>9}  not measured",
+                "{:<w$} {:>9}  not measured",
                 budget.interaction,
                 budget.budget.show(budget.budget.value())
             );
@@ -190,7 +206,7 @@ fn main() -> anyhow::Result<()> {
             "OVER"
         };
         println!(
-            "{:<44} {:>9} {:>9} {:>9} {:>9}  {verdict}",
+            "{:<w$} {:>9} {:>9} {:>9} {:>9}  {verdict}",
             budget.interaction,
             amount.show(amount.value()),
             amount.show(percentile(&m.samples, 50)),
@@ -209,39 +225,13 @@ fn main() -> anyhow::Result<()> {
             println!("    {}", m.note);
         }
     }
-    println!();
-    println!(
-        "{:<44} {:>9} {:>9} {:>9}",
-        "No budget yet", "median", "95th", "worst"
-    );
-    for (what, m) in &markdown {
-        let ms = |v: f64| format!("{v:.1} ms");
-        let worst = m.samples.iter().copied().fold(0.0, f64::max);
-        println!(
-            "{what:<44} {:>9} {:>9} {:>9}",
-            ms(percentile(&m.samples, 50)),
-            ms(percentile(&m.samples, 95)),
-            ms(worst)
-        );
-        if !m.parts.is_empty() {
-            let parts: Vec<String> = m
-                .parts
-                .iter()
-                .map(|(what, v)| format!("{what} {}", ms(percentile(v, 50))))
-                .collect();
-            println!("    parts, medians: {}", parts.join(", "));
-        }
-        if !m.note.is_empty() {
-            println!("    {}", m.note);
-        }
-    }
     let _ = std::fs::remove_dir_all(&scratch);
     Ok(())
 }
 
-/// A Markdown file of about a megabyte: the Markdown files of
-/// `spec/markdown/files/` over and over, their front matter left out.
-fn large_markdown(root: &Path) -> anyhow::Result<String> {
+/// The Markdown files of `spec/markdown/files/` over and over, `copies`
+/// times, their front matter left out.
+fn copies_of_markdown(root: &Path, copies: usize) -> anyhow::Result<String> {
     let mut parts = Vec::new();
     for name in ["readme", "notes", "changelog", "guide"] {
         let text = std::fs::read_to_string(root.join(format!("spec/markdown/files/{name}.md")))?;
@@ -254,7 +244,7 @@ fn large_markdown(root: &Path) -> anyhow::Result<String> {
         parts.push(text);
     }
     let mut out = String::new();
-    while out.len() < 1 << 20 {
+    for _ in 0..copies {
         for part in &parts {
             out.push_str(part);
             out.push('\n');
@@ -263,18 +253,46 @@ fn large_markdown(root: &Path) -> anyhow::Result<String> {
     Ok(out)
 }
 
-/// Opening a large Markdown file, as the report is opened, and typing in
-/// its middle, each keystroke writing the whole file back.
+/// A Markdown file at `path` that fills `pages` automatic pages, as the
+/// report does: the files of `spec/markdown/files/` over and over. Its
+/// text, and its pages.
+fn large_markdown(
+    root: &Path,
+    res: &Arc<Resources>,
+    path: &Path,
+    pages: usize,
+) -> anyhow::Result<(String, usize)> {
+    let count = |copies: usize| -> anyhow::Result<(String, usize)> {
+        let text = copies_of_markdown(root, copies)?;
+        std::fs::write(path, &text)?;
+        let editor = app::Editor::open(res.clone(), path)?;
+        Ok((text, editor.pages().pages.len()))
+    };
+    // Twenty copies say how many pages a copy fills.
+    let (_, twenty) = count(20)?;
+    let mut copies = (pages * 20).div_ceil(twenty.max(1));
+    loop {
+        let (text, made) = count(copies)?;
+        if made >= pages {
+            return Ok((text, made));
+        }
+        copies += 1;
+    }
+}
+
+/// Opening a Markdown file as large as the report, as the report is
+/// opened, and typing in its middle, each keystroke making the file's
+/// bytes and handing them to the worker that writes them.
 fn markdown(
     root: &Path,
     res: &Arc<Resources>,
     scratch: &Path,
     frames: &mut Frames,
     runs: usize,
-) -> anyhow::Result<Vec<(String, Measured)>> {
-    let text = large_markdown(root)?;
+    pages: usize,
+) -> anyhow::Result<Vec<Measured>> {
     let path = scratch.join("large.md");
-    std::fs::write(&path, &text)?;
+    let (text, made) = large_markdown(root, res, &path, pages)?;
     let window = || Event::Resize {
         width: WINDOW.0,
         height: WINDOW.1,
@@ -295,6 +313,10 @@ fn markdown(
         blocks = editor.editor().document().paragraphs().len();
     }
     let [read, draw] = parts;
+    let size = format!(
+        "a file of {:.1} MB, {blocks} paragraphs, {made} pages",
+        text.len() as f64 / 1e6
+    );
     let open = Measured {
         id: "open-markdown",
         samples: opening,
@@ -304,6 +326,7 @@ fn markdown(
         ],
         note: "",
     };
+    println!("budgets: {size}");
     let mut editor = Window::open(res.clone(), &path)?;
     editor.update(window());
     let paragraphs = editor.editor().document().paragraphs().to_vec();
@@ -332,17 +355,10 @@ fn markdown(
     let keystroke = Measured {
         id: "keystroke-markdown",
         samples: typing,
-        parts: named(parts, "update and write the file"),
-        note: "",
+        parts: named(parts, "update, the file's bytes made"),
+        note: "the bytes are written on the document's worker, a moment later",
     };
-    let size = format!("{:.1} MB, {blocks} paragraphs", text.len() as f64 / 1e6);
-    Ok(vec![
-        (format!("Open a Markdown file of {size}"), open),
-        (
-            "Keystroke in it, the file written back".to_string(),
-            keystroke,
-        ),
-    ])
+    Ok(vec![open, keystroke])
 }
 
 fn millis(d: Duration) -> f64 {
