@@ -29,6 +29,7 @@ jobs:
         target:
           - font_file
           - hyphenation_patterns
+          - markdown_file
           - paragraph
           - picture_gif
           - picture_jpeg
@@ -51,13 +52,15 @@ jobs:
       # cargo-fuzz, built once and kept by the cache above.
       - run: cargo install cargo-fuzz --version 0.13.2 --locked
       # The bundled fonts and hyphenation patterns, which the targets that
-      # lay out text use, as CI fetches and caches them.
+      # lay out text use, as CI fetches and caches them, with CommonMark's
+      # examples, which fetch-fonts fetches too.
       - uses: actions/cache@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
         with:
           path: |
             fonts
             hyphenation
-          key: fonts-${{ hashFiles('spec/text/fonts.ron', 'spec/text/hyphenation.ron') }}
+            commonmark
+          key: fonts-${{ hashFiles('spec/text/fonts.ron', 'spec/text/hyphenation.ron', 'spec/markdown/commonmark.ron') }}
       - run: cargo run -p fetch-fonts
       # The corpus the target's last run kept, if there's one.
       - uses: actions/cache/restore@caa296126883cff596d87d8935842f9db880ef25 # v5.1.0
@@ -80,6 +83,7 @@ jobs:
             store_file) seeds=(../spec/format/fixtures) ;;
             session_file) seeds=(../spec/sessions) ;;
             picture_jpeg) seeds=(../crates/app/tests/pictures) ;;
+            markdown_file) seeds=(../spec/markdown/files) ;;
           esac
           cargo +nightly fuzz run "$TARGET" "corpus/$TARGET" "${seeds[@]}" -- \
             -max_total_time="$SECONDS_EACH" -rss_limit_mb=4096

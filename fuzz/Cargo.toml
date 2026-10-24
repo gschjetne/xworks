@@ -22,6 +22,7 @@ chrome = { path = "../crates/chrome" }
 doc = { path = "../crates/doc" }
 libfuzzer-sys = "0.4.12"  # cargo-fuzz's harness
 locale = { path = "../crates/locale" }
+markdown = { path = "../crates/markdown" }
 ron = "0.12.2"
 scene = { path = "../crates/scene" }
 store = { path = "../crates/store" }
@@ -95,6 +96,13 @@ bench = false
 [[bin]]
 name = "paragraph_settings"
 path = "fuzz_targets/paragraph_settings.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "markdown_file"
+path = "fuzz_targets/markdown_file.rs"
 test = false
 doc = false
 bench = false
