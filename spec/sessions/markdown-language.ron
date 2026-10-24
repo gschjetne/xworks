@@ -1,0 +1,22 @@
+// Changing the language of all a Markdown file's text writes `lang` into
+// its front matter, front matter added where it has none (review
+// jy4a2tx5). Part of its text in another language is still what Markdown
+// can't hold: it asks, and Escape keeps it Markdown, without the change.
+(
+    size: (900, 700),
+    language: Some("en-US"),
+    open: Some(("Notes.md", "# Notes\n\nText.\n")),
+    events: [
+        Command("select-all"),
+        Command("language-nb"),
+        Saved("Notes.md", "---\nlang: nb\n---\n\n# Notes\n\nText.\n"),
+        Key("Primary+End"),
+        Key("Shift+Home"),
+        Command("language-de"),
+        Key("Escape"),
+        Message("Kept it Markdown, without the language"),
+    ],
+    expect: [("Heading 1", "Notes"), ("Body", "Text.")],
+    languages: [("Notes", "nb"), ("Text.", "nb")],
+    files: [("Notes.md", Some("---\nlang: nb\n---\n\n# Notes\n\nText.\n"))],
+)

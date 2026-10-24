@@ -465,6 +465,86 @@ fn rules_written_afresh_read_back_as_rules() {
     assert_eq!(shape(&again.document, &sheet), shape(&document, &sheet));
 }
 
+/// `document` with every paragraph's language `tag`, as Select All and a
+/// language command make it.
+fn all_in(document: &Document, tag: &str) -> Document {
+    let mut out = document.clone();
+    for id in document.paragraphs() {
+        out.apply(&Op::SetParaProp {
+            paragraph: id,
+            key: keys::LANGUAGE.to_string(),
+            value: Some(Value::Text(tag.to_string())),
+        })
+        .expect("it applies");
+    }
+    out
+}
+
+/// The language of all the text, changed, is written into the front
+/// matter as `lang` (review jy4a2tx5): edited in place where there's one,
+/// YAML's or TOML's, added where front matter has none, and front matter
+/// added where there's none; the rest of the file as it was, and back as
+/// it was when the change is undone. Part of the text in another language
+/// is still what Markdown can't hold.
+#[test]
+fn the_language_of_all_the_text_is_the_front_matters() {
+    let sheet = sheet();
+    let settings = Settings {
+        sheet: objects(),
+        language: Some("en-US"),
+        sizes: &|_| None,
+    };
+    for (before, after) in [
+        (
+            "---\ntitle: Notes\nlang: en-GB  # the team's\n---\n\n# Notes\n\nText.\n",
+            "---\ntitle: Notes\nlang: nb  # the team's\n---\n\n# Notes\n\nText.\n",
+        ),
+        (
+            "---\nlang: \"en-GB\"\n---\nText.\n",
+            "---\nlang: \"nb\"\n---\nText.\n",
+        ),
+        (
+            "+++\ntitle = \"Notes\"\nlang = \"de\"\n+++\nText.\n",
+            "+++\ntitle = \"Notes\"\nlang = \"nb\"\n+++\nText.\n",
+        ),
+        (
+            "---\ntitle: Notes\n---\nText.\n",
+            "---\ntitle: Notes\nlang: nb\n---\nText.\n",
+        ),
+        (
+            "+++\ntitle = \"Notes\"\n+++\nText.\n",
+            "+++\ntitle = \"Notes\"\nlang = \"nb\"\n+++\nText.\n",
+        ),
+        (
+            "# Notes\r\n\r\n- Text\r\n",
+            "---\r\nlang: nb\r\n---\r\n\r\n# Notes\r\n\r\n- Text\r\n",
+        ),
+        ("", "---\nlang: nb\n---\n\n"),
+    ] {
+        let read = markdown::read(before.as_bytes(), &settings).expect("it reads");
+        let changed = all_in(&read.document, "nb");
+        let mut file = read.file.clone();
+        let written = file.write(&changed, &sheet).expect("it writes");
+        assert_eq!(String::from_utf8_lossy(&written), after);
+        let again = markdown::read(&written, &settings).expect("it reads");
+        assert_eq!(again.file.language(), Some("nb"));
+        // Undone, as it was.
+        let undone = file.write(&read.document, &sheet).expect("it writes");
+        assert_eq!(String::from_utf8_lossy(&undone), before);
+    }
+    // Part of the text in another language: Markdown can't hold it.
+    let read = markdown::read(b"One.\n\nTwo.\n", &settings).expect("it reads");
+    let mut part = read.document.clone();
+    part.apply(&Op::SetParaProp {
+        paragraph: read.document.paragraphs()[1],
+        key: keys::LANGUAGE.to_string(),
+        value: Some(Value::Text("nb".into())),
+    })
+    .expect("it applies");
+    let refused = read.file.clone().write(&part, &sheet).unwrap_err();
+    assert_eq!(refused.what, markdown::What::Language);
+}
+
 /// The file's front matter is kept, and its language is the paragraphs'.
 #[test]
 fn front_matter_is_kept_and_gives_the_language() {

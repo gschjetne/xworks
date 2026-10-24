@@ -25,7 +25,9 @@
 //!   address is written bare, as GitHub reads it, where that reads back
 //!   the same, and plain text that would read as one has a character of
 //!   it escaped. Line endings, the byte order mark and the front matter
-//!   stay as they were.
+//!   stay as they were, but for the front matter's `lang`, which all the
+//!   text put in another language changes, or adds, with front matter
+//!   where there's none.
 //! - [`Unheld`]: what Markdown can't hold, such as a font or a paragraph's
 //!   spacing, which [`File::write`] refuses so the app can ask before the
 //!   document becomes an `.xw` file.

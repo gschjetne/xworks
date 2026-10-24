@@ -195,11 +195,16 @@ impl File {
     /// can't, which nothing is written for.
     pub fn write(&mut self, document: &Document, sheet: &StyleSheet) -> Result<Vec<u8>, Unheld> {
         let cache = self.cache.take();
+        let diff = document.changed_since(&self.baseline);
+        let file = self.language.as_deref();
+        let language = story_language(document, &diff, file);
+        let changed = changed(document, &self.baseline, &diff, language.as_deref(), file);
         let mut writer = Writer {
             file: self,
             document,
             sheet,
-            changed: changed(document, &self.baseline),
+            changed,
+            language,
             baseline: &self.baseline,
             out: String::new(),
             open: Vec::new(),
@@ -240,15 +245,81 @@ impl File {
     }
 }
 
+/// The language `document`'s story is in, for its file's front matter
+/// (review jy4a2tx5): the file's, `file`, unless every paragraph has been
+/// put in one other language, its text all in it too. `diff` is what
+/// differs from the story as the file was read.
+fn story_language(document: &Document, diff: &[ObjectId], file: Option<&str>) -> Option<String> {
+    let the_files = || file.map(str::to_string);
+    let same = |a: &str, b: &str| a.eq_ignore_ascii_case(b);
+    let mut other: Option<&str> = None;
+    let mut count = 0;
+    for &id in diff {
+        let Some(p) = document.paragraph(id) else {
+            continue;
+        };
+        let Some(Value::Text(tag)) = p.props.get(keys::LANGUAGE) else {
+            continue;
+        };
+        if file.is_some_and(|f| same(f, tag)) {
+            continue;
+        }
+        match other {
+            Some(o) if !same(o, tag) => return the_files(),
+            _ => other = Some(tag),
+        }
+        let own = |r: &doc::Run| matches!(r.props.get(keys::LANGUAGE), Some(Value::Text(t)) if !same(t, tag));
+        if p.runs.iter().any(own) {
+            return the_files();
+        }
+        count += 1;
+    }
+    match other {
+        // Every paragraph: the reader gave each the file's language, so
+        // only a story wholly changed has none in it.
+        Some(o) if count == document.paragraphs().len() => Some(o.to_string()),
+        _ => the_files(),
+    }
+}
+
+/// Whether `a` is `b`, as the file had it, but for being in `language`,
+/// the story's, where `b` was in `file`'s: as Markdown writes them alike.
+fn only_language(a: &Object, b: &Object, language: Option<&str>, file: Option<&str>) -> bool {
+    let (Object::Paragraph(a), Object::Paragraph(b), Some(language)) = (a, b, language) else {
+        return false;
+    };
+    let tag = |p: &Paragraph| match p.props.get(keys::LANGUAGE) {
+        Some(Value::Text(t)) => Some(t.to_lowercase()),
+        _ => None,
+    };
+    if tag(a) != Some(language.to_lowercase()) || tag(b) != file.map(str::to_lowercase) {
+        return false;
+    }
+    let mut props = a.props.clone();
+    props.remove(keys::LANGUAGE);
+    let mut had = b.props.clone();
+    had.remove(keys::LANGUAGE);
+    props == had && a.parent == b.parent && a.text == b.text && a.runs == b.runs
+}
+
 /// The blocks of `document` that aren't as `baseline` has them, with
-/// everything in them, and the containers they're in: found past every
-/// object the two share, so it takes time in what was edited.
-fn changed(document: &Document, baseline: &Document) -> HashSet<ObjectId> {
+/// everything in them, and the containers they're in: of `diff`, those
+/// not as the very objects the two share, so it takes time in what was
+/// edited. A paragraph put in `language`, the story's, where it was in
+/// `file`'s, is as it was: its language is the front matter's.
+fn changed(
+    document: &Document,
+    baseline: &Document,
+    diff: &[ObjectId],
+    language: Option<&str>,
+    file: Option<&str>,
+) -> HashSet<ObjectId> {
     let mut out = HashSet::new();
-    for id in document.changed_since(baseline) {
+    let moved = language.map(str::to_lowercase) != file.map(str::to_lowercase);
+    for &id in diff {
         // Undone, an edit leaves an object as it was, if not the very one.
         if let (Some(a), Some(b)) = (document.object(id), baseline.object(id))
-            && a == b
+            && (a == b || (moved && only_language(a, b, language, file)))
         {
             continue;
         }
@@ -270,6 +341,8 @@ struct Writer<'a> {
     /// What's been edited since the file was read, and the containers
     /// it's in.
     changed: HashSet<ObjectId>,
+    /// The language the story is in, which its front matter says.
+    language: Option<String>,
     baseline: &'a Document,
     out: String,
     open: Vec<Open>,
@@ -299,9 +372,9 @@ impl<'a> Writer<'a> {
     }
 
     fn run(&mut self) -> Result<(), Unheld> {
-        if let Some(front) = self.file.front.clone() {
-            let text = self.text()[front].to_string();
-            self.out.push_str(&text);
+        let (front, added) = self.front_matter();
+        if let Some(front) = front {
+            self.out.push_str(&front);
         }
         let root = self.document.root();
         let children = self.document.children(root).to_vec();
@@ -324,10 +397,33 @@ impl<'a> Writer<'a> {
         }
         // A thematic break first would be read as front matter's start,
         // if another follows: a blank line first.
-        if self.file.front.is_none() && read::front_matter(&self.out).is_some() {
+        if !added && self.file.front.is_none() && read::front_matter(&self.out).is_some() {
             self.out.insert_str(0, self.file.ending);
         }
         Ok(())
+    }
+
+    /// The front matter to write, and whether it's added, the file having
+    /// none: the file's as it was, unless the story is in another
+    /// language than it says, when its `lang` says that one, edited in
+    /// place or added; or, with none, YAML's, `lang` alone, and a blank
+    /// line after it.
+    fn front_matter(&self) -> (Option<String>, bool) {
+        let front = self.file.front.clone().map(|r| self.text()[r].to_string());
+        let same = match (&self.language, &self.file.language) {
+            (Some(a), Some(b)) => a.eq_ignore_ascii_case(b),
+            (a, b) => a == b,
+        };
+        let Some(tag) = self.language.as_deref().filter(|_| !same) else {
+            return (front, false);
+        };
+        match front {
+            Some(front) => (Some(with_lang(&front, tag)), false),
+            None => {
+                let e = self.ending();
+                (Some(format!("---{e}lang: {tag}{e}---{e}{e}")), true)
+            }
+        }
     }
 
     fn top(&mut self) -> &mut Open {
@@ -986,9 +1082,10 @@ impl<'a> Writer<'a> {
         Ok(())
     }
 
-    /// Whether `value` is the file's language.
+    /// Whether `value` is the story's language, which its front matter
+    /// says.
     fn file_language(&self, value: &Value) -> bool {
-        match (value, &self.file.language) {
+        match (value, &self.language) {
             (Value::Text(tag), Some(language)) => tag.eq_ignore_ascii_case(language),
             _ => false,
         }
@@ -1599,6 +1696,56 @@ enum Within {
     Story,
     Cell,
     Quote,
+}
+
+/// `front`, front matter, saying `lang` is `tag`: its `lang` line's value
+/// replaced, quoted as it was and with any comment after it kept, at its
+/// top level; or, with none, a line added before its closing fence, YAML's
+/// or TOML's as the front matter is.
+fn with_lang(front: &str, tag: &str) -> String {
+    let lines: Vec<&str> = front.split_inclusive('\n').collect();
+    let first = lines.first().copied().unwrap_or("");
+    let ending = &first[first.trim_end_matches(['\n', '\r']).len()..];
+    let toml = first.starts_with("+++");
+    let mut out = String::with_capacity(front.len() + tag.len() + 10);
+    let mut done = false;
+    for (i, line) in lines.iter().enumerate() {
+        let body = line.trim_end_matches(['\n', '\r']);
+        if !done && i > 0 && i + 1 < lines.len() {
+            let value = body
+                .strip_prefix("lang")
+                .map(str::trim_start)
+                .and_then(|r| r.strip_prefix(':').or_else(|| r.strip_prefix('=')));
+            if let Some(value) = value {
+                let start = body.len() - value.len();
+                let lead = value.len() - value.trim_start().len();
+                let value = value.trim_start();
+                let (old, comment) = value.find(" #").map_or((value, ""), |k| value.split_at(k));
+                let trimmed = old.trim_end();
+                let quoted = match trimmed.chars().next() {
+                    Some(q @ ('"' | '\'')) => format!("{q}{tag}{q}"),
+                    _ => tag.to_string(),
+                };
+                out.push_str(&body[..start + lead]);
+                out.push_str(&quoted);
+                out.push_str(&old[trimmed.len()..]);
+                out.push_str(comment);
+                out.push_str(&line[body.len()..]);
+                done = true;
+                continue;
+            }
+        }
+        if !done && i > 0 && i + 1 == lines.len() {
+            if toml {
+                out.push_str(&format!("lang = \"{tag}\"{ending}"));
+            } else {
+                out.push_str(&format!("lang: {tag}{ending}"));
+            }
+            done = true;
+        }
+        out.push_str(line);
+    }
+    out
 }
 
 /// A task's box: `[x]` when it's done, `[ ]` when not.
