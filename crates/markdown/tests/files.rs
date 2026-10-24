@@ -359,3 +359,30 @@ fn lists_begun_on_one_line_and_emptied_stay_lists() {
         }
     }
 }
+
+/// An HTML block that ends its list item, and the blank line after it
+/// with it, is written and read back without another blank line in it
+/// each time.
+#[test]
+fn an_html_block_ending_an_item_keeps_its_lines() {
+    let sheet = sheet();
+    let read = read(b"- <!-- a note\n\nText\n", &sheet);
+    let document = replace(&read.document, "note", "memo");
+    let edited = read
+        .file
+        .clone()
+        .write(&document, &sheet)
+        .expect("it writes");
+    let fresh = markdown::File::empty(read.file.language())
+        .write(&document, &sheet)
+        .expect("it writes");
+    for written in [edited, fresh] {
+        let again = self::read(&written, &sheet);
+        assert_eq!(
+            shape(&again.document, &sheet),
+            shape(&document, &sheet),
+            "{}",
+            String::from_utf8_lossy(&written)
+        );
+    }
+}

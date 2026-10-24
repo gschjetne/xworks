@@ -731,6 +731,16 @@ impl<'a> Builder<'a> {
                 if text.ends_with('\n') {
                     text.pop();
                 }
+                // Blank lines an HTML block ends in, where it ends with
+                // its container, are the blank line after it, which a
+                // block written after it has anyway.
+                if p.kind == ParaKind::Html {
+                    while let Some(end) = text.rfind('\n')
+                        && text[end + 1..].trim_matches([' ', '\t']).is_empty()
+                    {
+                        text.truncate(end);
+                    }
+                }
                 p.text = text.replace('\n', "\u{2028}");
                 p.runs = runs_of(&p.text);
             }
