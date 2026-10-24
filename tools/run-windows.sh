@@ -37,6 +37,11 @@ shift 4
 local=$(wslpath "$(cmd.exe /c "echo %LOCALAPPDATA%" 2>/dev/null | tr -d '\r')")/xworks-dev
 mkdir -p "$local"
 rsync -a --delete spec fonts hyphenation icons "$local/"
+if [ "$run" = shot ]; then
+    # shot's Markdown scene links a picture from the app's tests.
+    mkdir -p "$local/crates/app/tests"
+    rsync -a --delete crates/app/tests/pictures "$local/crates/app/tests/"
+fi
 cp "target/x86_64-pc-windows-msvc/$profile/xworks.exe" "target/x86_64-pc-windows-msvc/$profile/$run.exe" "$local/"
 XWORKS_ROOT="$(wslpath -w "$local")"
 export XWORKS_ROOT
