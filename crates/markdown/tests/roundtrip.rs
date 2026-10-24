@@ -71,9 +71,22 @@ fn run() -> impl Strategy<Value = R> {
     let title = prop::sample::select(vec!["", "", "Title", "say \"hi\""]);
     // Mostly text whose marks start and end on letters, as Markdown can
     // always write them; now and then any text at all.
+    // And now and then a web or e-mail address, or what nearly is one,
+    // which GitHub's autolinks read (review jy4a2tx5).
+    let address = prop::sample::select(vec![
+        "www.example.net",
+        "www.example.net.",
+        "https://example.net/a_(b)",
+        "me@example.net",
+        "x.y-z@a.b_",
+        "(www.a.b)",
+        "www.a",
+    ])
+    .prop_map(str::to_string);
     let text = prop_oneof![
         9 => "[a-zA-Z0-9é日]([a-zA-Z0-9 .,;:!?*_\\[\\]()<>#&`~|+=\\-\\\\'\"é日]{0,8}[a-zA-Z0-9é日])?",
         1 => "[a-zA-Z0-9 .,;:!?*_\\[\\]()<>#&`~|+=\\-\\\\'\"é日]{1,10}",
+        1 => address,
     ];
     (
         text,
@@ -83,13 +96,20 @@ fn run() -> impl Strategy<Value = R> {
         prop::bool::weighted(0.2),
         prop::option::weighted(0.2, (url, title)),
     )
-        .prop_map(|(text, bold, italic, strike, code, link)| R {
-            text,
-            bold,
-            italic,
-            strike,
-            code,
-            link: link.map(|(u, t)| (u.to_string(), t.to_string())),
+        .prop_map(|(text, bold, italic, strike, code, link)| {
+            // An address linked, mostly, to itself.
+            let link = link.map(|(u, t)| match markdown::address(&text) {
+                Some(own) if t.is_empty() => (own, String::new()),
+                _ => (u.to_string(), t.to_string()),
+            });
+            R {
+                text,
+                bold,
+                italic,
+                strike,
+                code,
+                link,
+            }
         })
 }
 

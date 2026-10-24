@@ -1,0 +1,10 @@
+// How editing behaves where that's a choice. Read by the app
+// (crates/app/src/resources.rs) and its tests.
+(
+    // Typing a web or e-mail address makes it a link once a space or
+    // punctuation follows it, as GitHub's autolinks read it, and Undo
+    // right after takes the link off, leaving the text (review jy4a2tx5).
+    // In Markdown documents it must, or the file would read back
+    // otherwise; in xWorks documents it's still open with the owner.
+    links_as_typed: (markdown: true, xworks: false),
+)

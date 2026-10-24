@@ -22,6 +22,7 @@ mod access;
 mod clip;
 mod file;
 mod format;
+mod links;
 mod markdown;
 mod part;
 mod pictures;
@@ -1544,16 +1545,22 @@ impl Editor {
         if text.is_empty() {
             return;
         }
-        let continuing = self.collapsed() && self.typing == Some(self.focus);
+        let collapsed = self.collapsed();
+        let continuing = collapsed && self.typing == Some(self.focus);
         let (mut ops, at) = self.deletion();
         let props = self.typing_props(at);
         let len = chars(&text);
         ops.push(Op::InsertText {
             paragraph: at.paragraph,
             offset: at.offset,
-            text,
+            text: text.clone(),
             runs: vec![Run::new(len, props)],
         });
+        // Typing on in an address linked as typed takes the link along.
+        if collapsed {
+            let relinked = self.relink(&self.document, &ops, at, len);
+            ops.extend(relinked);
+        }
         let pending = std::mem::take(&mut self.pending);
         if self.commit("Typing", ops, continuing) {
             let after = Position {
@@ -1565,6 +1572,8 @@ impl Editor {
             self.focus = after;
             self.typing = Some(after);
             self.pending = pending;
+            // An address it ends becomes a link, an edit of its own.
+            self.link_typed(&text);
         }
     }
 
@@ -1597,7 +1606,10 @@ impl Editor {
                 self.insert_text("\u{2028}");
                 return;
             }
+            let at = self.focus;
             if self.carry_out(enter) {
+                // An address the paragraph ended in becomes a link.
+                self.link_ending(at.paragraph, at.offset as usize, at.offset as usize);
                 return;
             }
         }
@@ -1630,6 +1642,8 @@ impl Editor {
                 upstream: false,
             };
             self.go(after, false);
+            // An address the paragraph ended in becomes a link.
+            self.link_ending(at.paragraph, at.offset as usize, at.offset as usize);
         }
     }
 
@@ -2131,10 +2145,14 @@ impl Editor {
             offset: focus.offset.min(p.len()),
             ..focus
         });
-        let caret = self
-            .after(ops)
-            .or(kept)
-            .unwrap_or_else(|| self.document_edge(false));
+        // An address linked as typed, undone, leaves the caret where it
+        // was, after what ended it.
+        let caret = if t.name == links::LINK {
+            kept
+        } else {
+            self.after(ops)
+        };
+        let caret = caret.or(kept).unwrap_or_else(|| self.document_edge(false));
         self.go(caret, false);
         self.message = format!("{} {}", if redo { "Redid" } else { "Undid" }, t.name);
         self.load_pictures(Editor::pictures_in(ops));

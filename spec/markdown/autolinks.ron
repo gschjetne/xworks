@@ -1,0 +1,103 @@
+// GitHub's autolinks, its "Autolinks (extension)" (review jy4a2tx5): our
+// own cases, after the rules and the behaviour the examples of GitHub's
+// spec show. The spec is under CC-BY-SA, so its examples aren't copied
+// here. Each case is a piece of Markdown and the links it reads as, in
+// order: each link's text and the address it links to. The Markdown
+// crate's tests read each, write it back untouched, byte for byte, and
+// afresh, which reads back as the same story
+// (crates/markdown/tests/autolinks.rs).
+[
+    // www. and a domain, http:// put before it.
+    (markdown: "www.example.net", links: [("www.example.net", "http://www.example.net")]),
+    (
+        markdown: "Read www.example.net/notes before sowing.",
+        links: [("www.example.net/notes", "http://www.example.net/notes")],
+    ),
+    // Punctuation at its end isn't its, inside it is.
+    (markdown: "Read www.example.net.", links: [("www.example.net", "http://www.example.net")]),
+    (
+        markdown: "Read www.example.net/a.b, then sow!",
+        links: [("www.example.net/a.b", "http://www.example.net/a.b")],
+    ),
+    (markdown: "www.example.net/seeds?_~*:", links: [("www.example.net/seeds", "http://www.example.net/seeds")]),
+    // A closing parenthesis is its if one in it opens.
+    (
+        markdown: "www.example.net/find?q=Seed+(beans)",
+        links: [("www.example.net/find?q=Seed+(beans)", "http://www.example.net/find?q=Seed+(beans)")],
+    ),
+    (
+        markdown: "www.example.net/find?q=Seed+(beans)))",
+        links: [("www.example.net/find?q=Seed+(beans)", "http://www.example.net/find?q=Seed+(beans)")],
+    ),
+    (
+        markdown: "(www.example.net/find?q=Seed+(beans))",
+        links: [("www.example.net/find?q=Seed+(beans)", "http://www.example.net/find?q=Seed+(beans)")],
+    ),
+    (
+        markdown: "(www.example.net/find?q=Seed+(beans)",
+        links: [("www.example.net/find?q=Seed+(beans)", "http://www.example.net/find?q=Seed+(beans)")],
+    ),
+    (
+        markdown: "www.example.net/find?q=(beans))+peas",
+        links: [("www.example.net/find?q=(beans))+peas", "http://www.example.net/find?q=(beans))+peas")],
+    ),
+    // An ampersand is its; what looks like an entity at its end isn't.
+    (
+        markdown: "www.example.net/find?q=beans&lang=nb",
+        links: [("www.example.net/find?q=beans&lang=nb", "http://www.example.net/find?q=beans&lang=nb")],
+    ),
+    (
+        markdown: "www.example.net/find?q=beans&xy;",
+        links: [("www.example.net/find?q=beans", "http://www.example.net/find?q=beans")],
+    ),
+    // A < ends it.
+    (markdown: "www.example.net/be<ans", links: [("www.example.net/be", "http://www.example.net/be")]),
+    // No underscore in the domain's last two segments; a period at least.
+    (markdown: "www.seed_shop.example.net", links: [("www.seed_shop.example.net", "http://www.seed_shop.example.net")]),
+    (markdown: "www.example.seed_shop", links: []),
+    (markdown: "www.seed_shop.example", links: []),
+    (markdown: "www.", links: []),
+    // http:// and https://, as they are.
+    (markdown: "http://example.net", links: [("http://example.net", "http://example.net")]),
+    (
+        markdown: "(Go to https://secure.example.net/find?q=Seed+(beans))",
+        links: [("https://secure.example.net/find?q=Seed+(beans)", "https://secure.example.net/find?q=Seed+(beans)")],
+    ),
+    (markdown: "http://localhost:8080", links: []),
+    // E-mail addresses, mailto: put before them.
+    (markdown: "seeds@example.net", links: [("seeds@example.net", "mailto:seeds@example.net")]),
+    (
+        markdown: "seeds@shop+abc.example isn't one, but seeds+abc@shop.example is.",
+        links: [("seeds+abc@shop.example", "mailto:seeds+abc@shop.example")],
+    ),
+    (markdown: "x.y-z_w@x.y", links: [("x.y-z_w@x.y", "mailto:x.y-z_w@x.y")]),
+    (markdown: "x.y-z_w@x.y.", links: [("x.y-z_w@x.y", "mailto:x.y-z_w@x.y")]),
+    (markdown: "x.y-z_w@x.y-", links: []),
+    (markdown: "x.y-z_w@x.y_", links: []),
+    // Only at a line's start, after whitespace, or after *, _, ~ or (.
+    (markdown: "awww.example.net and xhttps://example.net and x!seeds@example.net", links: []),
+    (
+        markdown: "**www.example.net** and _seeds@example.net_",
+        links: [
+            ("www.example.net", "http://www.example.net"),
+            ("seeds@example.net", "mailto:seeds@example.net"),
+        ],
+    ),
+    (
+        markdown: "One line\nwww.example.net",
+        links: [("www.example.net", "http://www.example.net")],
+    ),
+    // Never in code, links or HTML, nor what an escape or entity makes.
+    (markdown: "`www.example.net`", links: []),
+    (markdown: "[www.example.net](https://other.example)", links: [("www.example.net", "https://other.example")]),
+    (markdown: "<a href=\"https://example.net\">x</a>", links: []),
+    (markdown: "<div>\nwww.example.net\n</div>", links: []),
+    (markdown: "www\\.example.net and seeds&#64;example.net", links: []),
+    // In headings and tables' cells too; and in angle brackets as before.
+    (markdown: "# See www.example.net", links: [("www.example.net", "http://www.example.net")]),
+    (
+        markdown: "| Shop |\n| --- |\n| www.example.net |",
+        links: [("www.example.net", "http://www.example.net")],
+    ),
+    (markdown: "<https://example.net>", links: [("https://example.net", "https://example.net")]),
+]

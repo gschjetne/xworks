@@ -1007,6 +1007,7 @@ impl<'a> Writer<'a> {
             literal_breaks: cell,
             spaced_breaks: own.is_some_and(|o| o.spaced_breaks) && !careful,
             references: own.map_or(&[], |o| o.references.as_slice()),
+            angled: own.map_or(&[], |o| o.angled.as_slice()),
         }
     }
 

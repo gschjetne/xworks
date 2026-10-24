@@ -304,6 +304,23 @@ struct Para {
     syntax: Syntax,
     /// How it writes its marks, line breaks and links.
     habits: InlineHabits,
+    /// The plain text read since the last mark, line break or other
+    /// inline, where GitHub's autolinks are found.
+    plain: Plain,
+}
+
+/// Plain text being read, a run of text events one after another in the
+/// file, outside links and pictures: its characters, whether each is as
+/// written rather than from an escape or entity, where it starts in its
+/// paragraph's text, the file's character before it, and where it ends in
+/// the file.
+#[derive(Default)]
+struct Plain {
+    chars: Vec<char>,
+    clean: Vec<bool>,
+    start: u32,
+    before: Option<char>,
+    end: usize,
 }
 
 /// How often the file writes things each way, for its habits.
@@ -534,6 +551,7 @@ impl<'a> Builder<'a> {
             first_of,
             syntax: Syntax::Paragraph(Vec::new()),
             habits: InlineHabits::default(),
+            plain: Plain::default(),
         });
     }
 
@@ -734,6 +752,84 @@ impl<'a> Builder<'a> {
         }
     }
 
+    /// Notes `text`, at `range` in the file, just added to the paragraph
+    /// being read from its character `at`, as plain text GitHub's
+    /// autolinks may be found in: outside links and pictures, and only
+    /// with the text events right before it in the file.
+    fn plain_text(&mut self, text: &str, range: &Range<usize>, at: u32) {
+        let file = self.text;
+        let Some(p) = &mut self.para else {
+            return;
+        };
+        if !p.marks.links.is_empty() || !p.images.is_empty() {
+            self.flush_plain();
+            return;
+        }
+        // An escape's backslash is in no event: the text after it goes on
+        // from the text before, but isn't as written.
+        let escaped = !p.plain.chars.is_empty() && file.get(p.plain.end..range.start) == Some("\\");
+        if !p.plain.chars.is_empty() && p.plain.end != range.start && !escaped {
+            self.flush_plain();
+        }
+        let Some(p) = &mut self.para else {
+            return;
+        };
+        if p.plain.chars.is_empty() {
+            p.plain.start = at;
+            p.plain.before = file[..range.start].chars().next_back();
+        }
+        // Each character as written, or from an escape or an entity, as
+        // the file's text beside it says.
+        let mut raw = file.get(range.clone()).unwrap_or("").chars().peekable();
+        for (i, c) in text.chars().enumerate() {
+            let clean = match raw.peek().copied() {
+                Some(x) if x == c => {
+                    raw.next();
+                    !(escaped && i == 0)
+                }
+                Some('\\') => {
+                    raw.next();
+                    if raw.peek() == Some(&c) {
+                        raw.next();
+                    }
+                    false
+                }
+                Some('&') => {
+                    for x in raw.by_ref() {
+                        if x == ';' {
+                            break;
+                        }
+                    }
+                    false
+                }
+                _ => false,
+            };
+            p.plain.chars.push(c);
+            p.plain.clean.push(clean);
+        }
+        p.plain.end = range.end;
+    }
+
+    /// Ends the plain text being read, linking the autolinks in it.
+    fn flush_plain(&mut self) {
+        let Some(p) = &mut self.para else {
+            return;
+        };
+        let plain = std::mem::take(&mut p.plain);
+        if plain.chars.is_empty() {
+            return;
+        }
+        for link in crate::autolink::find(&plain.chars, &plain.clean, plain.before) {
+            p.runs = with_prop(
+                &p.runs,
+                plain.start + link.start as u32,
+                plain.start + link.end as u32,
+                keys::LINK,
+                Value::Text(link.url),
+            );
+        }
+    }
+
     /// Ends the line of text being read, after a soft or a hard break.
     fn end_line(&mut self, soft: bool) {
         let text = self.text;
@@ -754,6 +850,7 @@ impl<'a> Builder<'a> {
     /// Ends the paragraph-like block being read, adding it to its
     /// container.
     fn close(&mut self) {
+        self.flush_plain();
         self.end_line(false);
         let Some(mut p) = self.para.take() else {
             return;
@@ -964,6 +1061,11 @@ impl<'a> Builder<'a> {
     }
 
     fn event(&mut self, event: Event<'_>, range: Range<usize>) {
+        // Plain text, where autolinks are found, runs only from one text
+        // event to the next.
+        if !matches!(event, Event::Text(_)) {
+            self.flush_plain();
+        }
         if let Some((depth, id, whole)) = &mut self.skip {
             match event {
                 Event::Start(_) => *depth += 1,
@@ -992,7 +1094,9 @@ impl<'a> Builder<'a> {
                     return;
                 }
                 self.inline_at(&range);
+                let at = self.para.as_ref().map_or(0, |p| p.chars);
                 self.push(&text, Props::new());
+                self.plain_text(&text, &range, at);
             }
             Event::Code(text) => {
                 self.inline_at(&range);
@@ -1324,6 +1428,9 @@ impl<'a> Builder<'a> {
                     dest_url.to_string()
                 };
                 if let Some(p) = &mut self.para {
+                    if matches!(link_type, LinkType::Autolink | LinkType::Email) {
+                        p.habits.angled.push(url.clone());
+                    }
                     if matches!(
                         link_type,
                         LinkType::Reference | LinkType::Collapsed | LinkType::Shortcut

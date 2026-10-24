@@ -55,7 +55,7 @@ pub use editor::{
     Choice, Edge, Editor, EditorError, Effect, Event, PointerShape, Position, View, WindowAction,
 };
 pub use recent::Recent;
-pub use resources::{ResourceError, Resources};
+pub use resources::{ByKind, Editing, ResourceError, Resources};
 pub use settings::{RULER_FROM, RulerFrom, Settings, UNITS, units_of_locale};
 pub use stylesheets::{OwnSheet, OwnSheets};
 pub use window::Window;

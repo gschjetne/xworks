@@ -86,6 +86,8 @@ pub struct Resources {
     pub pictures: crate::picture::Limits,
     /// How much of what a person does the session recorder keeps.
     pub recorder: crate::recorder::Spec,
+    /// How editing behaves where that's a choice (`spec/editing.ron`).
+    pub editing: Editing,
     /// The language new documents are in: the system's, as the shell
     /// reads it (project owner, 2026-10-22, review pysc65hp); none until
     /// it's set.
@@ -100,6 +102,23 @@ pub struct Resources {
     /// shared by every window, so pasting from one document into another
     /// brings structure and styles along.
     pub(crate) clip: Arc<Mutex<Option<crate::editor::Fragment>>>,
+}
+
+/// How editing behaves where that's a choice, as `spec/editing.ron` says.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub struct Editing {
+    /// Whether typing a web or e-mail address makes it a link, in each
+    /// kind of document.
+    pub links_as_typed: ByKind,
+}
+
+/// A choice for each kind of document.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Deserialize)]
+pub struct ByKind {
+    /// In Markdown documents.
+    pub markdown: bool,
+    /// In xWorks documents.
+    pub xworks: bool,
 }
 
 /// Markdown documents' named versions: each file's, and what it said.
@@ -248,6 +267,7 @@ impl Resources {
         }
         let pictures = spec(&root.join("spec/pictures.ron"))?;
         let recorder = spec(&root.join("spec/recorder.ron"))?;
+        let editing = spec(&root.join("spec/editing.ron"))?;
         let patterns: PatternSpec = spec(&root.join("spec/text/hyphenation.ron"))?;
         Ok(Resources {
             fonts: Arc::new(fonts),
@@ -268,6 +288,7 @@ impl Resources {
             mac,
             pictures,
             recorder,
+            editing,
             language: Language::und(),
             hyphenation: Arc::new(Patterns {
                 dir: root.join("hyphenation"),

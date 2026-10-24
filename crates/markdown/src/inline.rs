@@ -31,6 +31,9 @@ pub(crate) struct Style<'a> {
     /// The links its paragraph wrote by reference, which it writes so
     /// again.
     pub references: &'a [Reference],
+    /// The addresses its paragraph wrote as links in angle brackets,
+    /// which it writes so again rather than bare.
+    pub angled: &'a [String],
 }
 
 /// A mark that delimits text.
@@ -187,9 +190,11 @@ pub(crate) fn write(
     style: Style<'_>,
 ) -> Vec<Written> {
     let atoms = atoms(chars, from, to);
+    let guards = guards(&atoms);
     let mut w = Writer {
         chars,
         atoms: &atoms,
+        guards: &guards,
         style,
         lines: Vec::new(),
         line: Written::default(),
@@ -261,6 +266,9 @@ pub(crate) fn write(
 struct Writer<'a> {
     chars: &'a [(char, Props)],
     atoms: &'a [Atom],
+    /// The characters of plain text escaped so that what would read as an
+    /// autolink doesn't, by their places in the paragraph.
+    guards: &'a BTreeSet<usize>,
     style: Style<'a>,
     /// The atoms each open link spans, innermost last, and how many lines
     /// were written and how much of the line where its text starts.
@@ -297,7 +305,10 @@ impl Writer<'_> {
             self.line.spaces.push((self.line.text.len(), at));
         }
         let in_link = self.link_depth > 0;
-        let escaped = escape(self.chars, at, in_link, self.style, self.bracket);
+        let mut escaped = escape(self.chars, at, in_link, self.style, self.bracket);
+        if self.guards.contains(&at) && !escaped.starts_with('\\') {
+            escaped.insert(0, '\\');
+        }
         self.line.text.push_str(&escaped);
         if first {
             self.line.starts_with_text = true;
@@ -491,9 +502,11 @@ impl Writer<'_> {
         self.raw(&format!("{fence}{space}{body}{space}{fence}"));
     }
 
-    /// If atom `k` opens a link whose text is its target, as plain text
+    /// If atom `k` opens a link whose text is its address, as plain text
     /// all of one kind, writes it as an autolink and returns the atom
-    /// after it.
+    /// after it: bare, as GitHub reads it, where its text links to it so
+    /// and its paragraph didn't write it in angle brackets, `<…>`; or in
+    /// them, where its text is its target. Writing carefully, never bare.
     fn autolink(&mut self, k: usize) -> Option<usize> {
         let Some(Mark::Link(url, title)) = self.open.last().cloned() else {
             return None;
@@ -511,20 +524,71 @@ impl Writer<'_> {
                 _ => return None,
             }
         }
-        let fits = (url == text && is_uri(&url))
+        let angled = (url == text && is_uri(&url))
             || (url.strip_prefix("mailto:") == Some(text.as_str()) && is_email(&text));
-        if !fits {
+        let before = self.line.text[..self.line.text.len() - 1].chars().last();
+        let bare = !self.style.careful
+            && !self.style.angled.contains(&url)
+            && before.is_none_or(|c| c.is_whitespace() || matches!(c, '*' | '_' | '~' | '('))
+            && crate::autolink::address(&text).as_deref() == Some(url.as_str());
+        if !bare && !angled {
             return None;
         }
-        let shown = text;
         self.line.text.pop();
         self.open.pop();
         self.chosen.pop();
         self.links.pop();
         self.link_depth -= 1;
-        self.raw(&format!("<{shown}>"));
+        if bare {
+            self.raw(&text);
+        } else {
+            self.raw(&format!("<{text}>"));
+        }
         Some(end)
     }
+}
+
+/// The characters of plain text among `atoms` to escape so that nothing
+/// reads as an autolink that isn't a link: in each run of text of the same
+/// marks outside links, which reads as one stretch of plain text, a
+/// character of each address found, again until none is.
+fn guards(atoms: &[Atom]) -> BTreeSet<usize> {
+    let mut out = BTreeSet::new();
+    let plain = |a: &Atom| {
+        matches!(a.what, AtomKind::Text(_)) && !a.marks.iter().any(|m| matches!(m, Mark::Link(..)))
+    };
+    let mut k = 0;
+    while k < atoms.len() {
+        if !plain(&atoms[k]) {
+            k += 1;
+            continue;
+        }
+        let mut j = k;
+        while j < atoms.len() && plain(&atoms[j]) && atoms[j].marks == atoms[k].marks {
+            j += 1;
+        }
+        let text: Vec<char> = atoms[k..j]
+            .iter()
+            .map(|a| match a.what {
+                AtomKind::Text(c) => c,
+                _ => ' ',
+            })
+            .collect();
+        let mut clean = vec![true; text.len()];
+        loop {
+            let found = crate::autolink::find(&text, &clean, None);
+            if found.is_empty() {
+                break;
+            }
+            for link in found {
+                let at = link.breaker(&text);
+                clean[at] = false;
+                out.insert(atoms[k + at].start);
+            }
+        }
+        k = j;
+    }
+    out
 }
 
 /// A link label as CommonMark matches them: case folded, its runs of
@@ -756,6 +820,7 @@ mod tests {
             literal_breaks: false,
             spaced_breaks: false,
             references: &[],
+            angled: &[],
         }
     }
 
@@ -798,7 +863,21 @@ mod tests {
         chars.extend("this".chars().map(|c| (c, link.clone())));
         assert_eq!(
             one_line(&chars),
-            "a **bold*both*** <https://example.com> and [this](https://example.com)"
+            "a **bold*both*** https://example.com and [this](https://example.com)"
+        );
+    }
+
+    #[test]
+    fn plain_text_that_reads_as_an_autolink_is_escaped() {
+        assert_eq!(
+            one_line(&plain(
+                "www.example.org, me@example.org and https://example.org/a"
+            )),
+            "www\\.example.org, me\\@example.org and https\\://example.org/a"
+        );
+        assert_eq!(
+            one_line(&plain("awww.example.org me@x")),
+            "awww.example.org me@x"
         );
     }
 

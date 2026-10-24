@@ -183,6 +183,42 @@ fn a_rule_is_drawn_and_printed_but_isnt_text() {
     assert_eq!(with.view().items.len(), without.view().items.len() + 1);
 }
 
+/// Typing an address makes it a link in an `.xw` document only where
+/// spec/editing.ron says so, which it doesn't yet (review jy4a2tx5); where
+/// it does, Undo right after takes the link off and leaves the text.
+#[test]
+fn links_as_typed_in_xworks_documents_follow_the_switch() {
+    let linked = |res: Arc<Resources>| {
+        let mut editor = Editor::create(res).expect("a document");
+        for typed in ["See www.example.net", " "] {
+            editor.update(Event::Text(typed.to_string()));
+        }
+        let document = editor.document();
+        let p = document
+            .paragraph(document.paragraphs()[0])
+            .expect("a paragraph");
+        let link = p.runs.iter().find_map(|r| r.props.get(keys::LINK).cloned());
+        (editor, link)
+    };
+    let res = resources("links-off");
+    assert!(!res.editing.links_as_typed.xworks);
+    let (_, link) = linked(res);
+    assert_eq!(link, None);
+
+    let mut on = (*resources("links-on")).clone();
+    on.editing.links_as_typed.xworks = true;
+    let (mut editor, link) = linked(Arc::new(on));
+    assert_eq!(link, Some(Value::Text("http://www.example.net".into())));
+    command(&mut editor, "undo");
+    let document = editor.document();
+    let p = document
+        .paragraph(document.paragraphs()[0])
+        .expect("a paragraph");
+    assert_eq!(p.text, "See www.example.net ");
+    assert!(p.runs.iter().all(|r| !r.props.contains_key(keys::LINK)));
+    assert_eq!(editor.selection().1.offset, 20, "the caret stays");
+}
+
 #[test]
 fn versions_of_a_markdown_file_last_while_its_open() {
     let res = resources("versions");

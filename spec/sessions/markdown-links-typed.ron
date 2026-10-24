@@ -1,0 +1,43 @@
+// Typing a web or e-mail address in a Markdown file makes it a link once
+// a space or punctuation that ends it follows (review jy4a2tx5), as
+// GitHub's autolinks read it, so the file has it bare, as people write
+// it. Undo right after takes the link off and leaves the text, which the
+// file then has escaped, so it doesn't read as a link. Typing on in a
+// link made so, past a colon that begins a port, takes the link along; a
+// line's end makes one too.
+(
+    size: (900, 700),
+    open: Some(("Links.md", "")),
+    events: [
+        Type("Visit www.example.net/garden"),
+        Type(","),
+        Type(" or mail me@example.net"),
+        Type("."),
+        Type(" "),
+        Type("Not: www.example.org"),
+        Type(" "),
+        Key("Primary+Z"),
+        Type("Then https://example.net"),
+        Type(":"),
+        Type("8080"),
+        Type("."),
+        Key("Enter"),
+        Type("Last: www.example.com"),
+        Key("Enter"),
+        Type("Done."),
+    ],
+    expect: [
+        ("Body", "Visit www.example.net/garden, or mail me@example.net. Not: www.example.org Then https://example.net:8080."),
+        ("Body", "Last: www.example.com"),
+        ("Body", "Done."),
+    ],
+    marks: [
+        ("www.example.net/garden", ["link"]),
+        ("me@example.net", ["link"]),
+        ("https://example.net:8080", ["link"]),
+        ("www.example.com", ["link"]),
+    ],
+    files: [
+        ("Links.md", Some("Visit www.example.net/garden, or mail me@example.net. Not: www\\.example.org Then https://example.net:8080.\n\nLast: www.example.com\n\nDone.\n")),
+    ],
+)

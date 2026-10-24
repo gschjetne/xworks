@@ -6,8 +6,10 @@
 //!   lists, read with pulldown-cmark into a [`Document`]: headings are the
 //!   Heading styles; paragraphs, lists, quotes, code blocks and tables are
 //!   stage 2's blocks, and thematic breaks are rules; emphasis, strong,
-//!   code, links and lines through text are marks; images are pictures in
-//!   the text, linked by their paths (`story::keys::PICTURE_SRC`). What a
+//!   code, links and lines through text are marks, and GitHub's autolinks,
+//!   bare web and e-mail addresses, are links ([`autolinks`]); images are
+//!   pictures in the text, linked by their paths
+//!   (`story::keys::PICTURE_SRC`). What a
 //!   story doesn't hold, such as HTML, link reference definitions,
 //!   footnotes and the `[!NOTE]` of GitHub's alerts, which are quotes, is
 //!   kept as it was written (`story::keys::SOURCE`). YAML or TOML front
@@ -19,8 +21,11 @@
 //!   the file's own habits where they're clear (its bullets, emphasis,
 //!   numbering and wrapping width) or else a standard style: `#` headings,
 //!   `-` bullets, `1.` numbers, `*emphasis*`, `**strong**`, fenced code
-//!   with backticks, and a paragraph on one line. Line endings, the byte
-//!   order mark and the front matter stay as they were.
+//!   with backticks, and a paragraph on one line. A link whose text is its
+//!   address is written bare, as GitHub reads it, where that reads back
+//!   the same, and plain text that would read as one has a character of
+//!   it escaped. Line endings, the byte order mark and the front matter
+//!   stay as they were.
 //! - [`Unheld`]: what Markdown can't hold, such as a font or a paragraph's
 //!   spacing, which [`File::write`] refuses so the app can ask before the
 //!   document becomes an `.xw` file.
@@ -38,6 +43,7 @@
 //! - Nothing walks the story by recursion, so no file can exhaust the
 //!   stack.
 
+mod autolink;
 mod inline;
 mod read;
 mod shape;
@@ -48,6 +54,7 @@ use std::ops::Range;
 
 use doc::{Document, ObjectId};
 
+pub use autolink::{Autolink, AutolinkKind, address, autolinks};
 pub use read::{ReadError, Settings, links, read};
 pub use shape::{Form, Node, shape};
 pub use write::{Unheld, What};
@@ -198,6 +205,9 @@ pub(crate) struct InlineHabits {
     pub spaced_breaks: bool,
     /// The links it wrote by reference.
     pub references: Vec<Reference>,
+    /// The addresses it wrote as links in angle brackets, `<…>`, which it
+    /// writes so again rather than bare.
+    pub angled: Vec<String>,
 }
 
 /// A link a paragraph wrote by reference to a link reference definition:
