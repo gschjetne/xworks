@@ -3,14 +3,21 @@
 //! of items, quotes, code blocks and tables around paragraphs, with the
 //! marks Markdown needs on their text, laid out with `text`.
 //!
-//! - [`StyleSheet`]: the paragraph styles, the document's default tab
-//!   stops, and how lists, quotes, code and tables look ([`Blocks`]), from
-//!   `spec/styles/`.
+//! - A document's own stylesheet (M2's stage 9): [`SheetSpec`], a
+//!   stylesheet as a file gives it, made the document's own by
+//!   [`new_document`] and [`SheetSpec::objects`]; [`StyleSheet`], its
+//!   styles resolved along their chains, with the named parts they refer
+//!   to, the defaults, the page, its lists and how its blocks look
+//!   ([`Blocks`]); and [`styles::find`], where a value comes from.
+//!   [`merge`] brings another document's styles in, matched by role and
+//!   name, as pasting and replacing a sheet do.
 //! - [`flow`]: the story's paragraphs in reading order, each with its
 //!   [`Place`] in the tree: indent, list marker (numbers computed, not
-//!   stored), quotes, table cell, and the containers around it.
-//! - [`spans`] and [`spans_at`]: a paragraph's text as styled spans, its
-//!   character properties over its style.
+//!   stored), a numbered heading's number, quotes, table cell, and the
+//!   containers around it.
+//! - [`spans`] and [`spans_at`]: a paragraph's text as styled spans: its
+//!   style, its run's character style and marks, and its own formatting
+//!   over them.
 //! - [`lay_out`], [`lay_out_paragraph_with`] and [`lay_out_at`]: a
 //!   document's story's paragraphs laid out at their places, aligned and
 //!   hyphenated as their styles and properties say, with their tab stops.
@@ -34,29 +41,126 @@
 //!
 //! - A paragraph's layout depends only on that paragraph, its style and
 //!   its place: editing one paragraph leaves every other's layout as it
-//!   was, unless it moves others in the tree.
-//! - A property that's unset, or set to a value of the wrong kind, takes
-//!   its style's value; a style that isn't in the sheet is the first one.
-//! - A story of paragraphs alone lays out as M1's did.
+//!   was, unless it moves others in the tree or changes the stylesheet.
+//! - A property that's unset, or set to a value of the wrong kind or past
+//!   its limits, takes its style's value; a style that isn't in the sheet
+//!   is the default one; a value the sheet lacks is the program's.
+//! - Neutral, the sheet new documents take unless the person chooses, lays
+//!   a story out as M2 did before documents held their own styles.
 
 mod flow;
+mod merge;
+pub mod sheet;
+pub mod styles;
 
 pub use flow::{Ancestor, Cell, DEEPEST, Entry, Flow, Place, flow};
+pub use merge::{Change, changes, merge};
+pub use sheet::{SheetError, SheetSpec};
+pub use styles::{
+    Blocks, CharValues, CharacterStyle, DocumentTabs, Level, ListStyle, PageStyle, ParagraphStyle,
+    Part, Rgb, Source, StyleSheet,
+};
 
 use std::ops::Range;
 
-use doc::{Block, Document, Kind, Object, ObjectId, Op, Paragraph, Props, Run, Value};
-use serde::Deserialize;
+use doc::{Block, Document, Kind, Object, ObjectId, Op, Paragraph, Props, Run, Snapshot, Value};
+use serde::{Deserialize, Serialize};
 use text::units::Length;
-use text::{
-    Align, Fonts, Hyphenation, Language, Ligatures, Setting, Span, Style, TabAlign, TabStop, Tabs,
-};
+use text::{Align, Fonts, Hyphenation, Language, Setting, Span, Style, TabAlign, TabStop, Tabs};
 
 /// The names of the properties a story reads, from paragraphs, from runs
-/// of text, and from containers.
+/// of text, from containers, and from the stylesheet's styles, parts and
+/// defaults. A style sets a value under the same key a paragraph or run
+/// sets it under, as its own formatting.
 pub mod keys {
-    /// A paragraph's style, by name (text).
+    /// A paragraph's style, by ID (a reference).
     pub const STYLE: &str = "style";
+    /// A run's character style, by ID (a reference).
+    pub const CHAR_STYLE: &str = "char-style";
+    /// A style's or a part's name (text).
+    pub const NAME: &str = "name";
+    /// What a style or a part is for (text), by which another sheet's
+    /// matches it: "body", "heading-1", "emphasis", "text".
+    pub const ROLE: &str = "role";
+    /// Text's colour (text, `#rrggbb`, or a reference to a colour).
+    pub const COLOR: &str = "color";
+    /// Whether text is underlined (on or off).
+    pub const UNDERLINE: &str = "underline";
+    /// The classes of ligature text is set with (text): those on, by name,
+    /// separated by spaces.
+    pub const LIGATURES: &str = "ligatures";
+    /// Whether a paragraph stays on the page where the next one starts (on
+    /// or off).
+    pub const KEEP_WITH_NEXT: &str = "keep-with-next";
+    /// A paragraph style's level as a heading, 1 to 6; 0 for none (a
+    /// number).
+    pub const HEADING: &str = "heading";
+    /// Whether a paragraph's words are hyphenated (on or off); unset, they
+    /// are where its lines are justified.
+    pub const HYPHENATE: &str = "hyphenate";
+    /// Whether a paragraph style is numbered, as a technical document's
+    /// headings are (on or off).
+    pub const NUMBERED: &str = "numbered";
+    /// A face's font family (text).
+    pub const FAMILY: &str = "family";
+    /// A list definition's bullets, by depth, separated by spaces (text).
+    pub const BULLETS: &str = "bullets";
+    /// How a list definition's numbers read, `1` standing for the number
+    /// (text).
+    pub const NUMBERS: &str = "numbers";
+    /// How far each level of a list indents its items (a number).
+    pub const LIST_INDENT: &str = "list-indent";
+    /// The room between a list item's marker and its text (a number).
+    pub const MARKER_GAP: &str = "marker-gap";
+    /// The list definition a list takes, if not its sheet's for lists
+    /// numbered or not (a reference).
+    pub const LIST: &str = "list";
+    /// A page style's width (a number).
+    pub const PAGE_WIDTH: &str = "page-width";
+    /// A page style's height (a number).
+    pub const PAGE_HEIGHT: &str = "page-height";
+    /// A page style's margin at the top (a number).
+    pub const MARGIN_TOP: &str = "margin-top";
+    /// A page style's margin at the bottom (a number).
+    pub const MARGIN_BOTTOM: &str = "margin-bottom";
+    /// A page style's margin at the left (a number).
+    pub const MARGIN_LEFT: &str = "margin-left";
+    /// A page style's margin at the right (a number).
+    pub const MARGIN_RIGHT: &str = "margin-right";
+    /// The stylesheet a document's was copied from (text).
+    pub const ORIGIN: &str = "origin";
+    /// That stylesheet's version (a number).
+    pub const ORIGIN_VERSION: &str = "origin-version";
+    /// The distance between a document's default tab stops (a number).
+    pub const TAB_INTERVAL: &str = "tab-interval";
+    /// The tab stops every paragraph of a document has besides its style's
+    /// (text, as [`TABS`] holds them, or a reference to a tab layout).
+    pub const DOCUMENT_TABS: &str = "document-tabs";
+    /// How far a quote indents its blocks, its bar included (a number).
+    pub const QUOTE_INDENT: &str = "quote-indent";
+    /// How wide a quote's bar is (a number).
+    pub const QUOTE_BAR: &str = "quote-bar";
+    /// The colour of a quote's bar (as [`COLOR`]).
+    pub const QUOTE_COLOR: &str = "quote-color";
+    /// The tint behind code (as [`COLOR`]).
+    pub const CODE_TINT: &str = "code-tint";
+    /// How far a code block's tint reaches around its text (a number).
+    pub const CODE_PADDING: &str = "code-padding";
+    /// The space above and below a table (a number).
+    pub const TABLE_SPACE: &str = "table-space";
+    /// The room around a cell's text (a number).
+    pub const CELL_PADDING: &str = "cell-padding";
+    /// The width of a table's rules above and below it and under its
+    /// header (a number).
+    pub const RULE: &str = "rule";
+    /// The width of the rules between a table's rows (a number).
+    pub const HAIRLINE: &str = "hairline";
+    /// The colour of a table's rules (as [`COLOR`]).
+    pub const RULE_COLOR: &str = "rule-color";
+    /// The colour of the rules between its rows (as [`COLOR`]).
+    pub const HAIRLINE_COLOR: &str = "hairline-color";
+    /// The colour drawn where a picture can't be (as [`COLOR`]).
+    pub const MISSING_PICTURE: &str = "missing-picture";
     /// Bold (on or off): Markdown's strong emphasis.
     pub const BOLD: &str = "bold";
     /// Italic (on or off): Markdown's emphasis.
@@ -185,21 +289,28 @@ fn number(paragraph: &Paragraph, key: &str, range: std::ops::RangeInclusive<i64>
     }
 }
 
-/// `paragraph`'s own indents; those unset, or past what makes sense, are
-/// 0.
-pub fn indents(paragraph: &Paragraph) -> Indents {
-    let get = |key| number(paragraph, key, -MOST_SPACE..=MOST_SPACE).unwrap_or(0);
+/// `paragraph`'s indents: its own, where it sets them, and otherwise its
+/// style's; those past what makes sense are taken as unset.
+pub fn indents(paragraph: &Paragraph, sheet: &StyleSheet) -> Indents {
+    let style = sheet.style_of(paragraph).indents;
+    let get = |key, or| number(paragraph, key, -MOST_SPACE..=MOST_SPACE).unwrap_or(or);
     Indents {
-        start: get(keys::INDENT_START),
-        end: get(keys::INDENT_END),
-        first: get(keys::INDENT_FIRST),
+        start: get(keys::INDENT_START, style.start),
+        end: get(keys::INDENT_END, style.end),
+        first: get(keys::INDENT_FIRST, style.first),
     }
 }
 
 /// How tall `paragraph`'s lines are, in thousandths of their font size,
-/// if it says: from a quarter of the font to ten times it.
-pub fn line_height(paragraph: &Paragraph) -> Option<i64> {
-    number(paragraph, keys::LINE_HEIGHT, 250..=10_000)
+/// from a quarter of the font to ten times it: its own, where it sets it,
+/// or its style's; none, as tall as their fonts make them, where it's 0
+/// or neither says.
+pub fn line_height(paragraph: &Paragraph, sheet: &StyleSheet) -> Option<i64> {
+    match paragraph.props.get(keys::LINE_HEIGHT) {
+        Some(Value::Int(0)) => None,
+        _ => number(paragraph, keys::LINE_HEIGHT, 250..=10_000)
+            .or(sheet.style_of(paragraph).line_height),
+    }
 }
 
 /// The space above and below `paragraph`: its own where it sets them,
@@ -207,25 +318,28 @@ pub fn line_height(paragraph: &Paragraph) -> Option<i64> {
 pub fn spacing(paragraph: &Paragraph, sheet: &StyleSheet) -> (i64, i64) {
     let style = sheet.style_of(paragraph);
     (
-        number(paragraph, keys::SPACE_BEFORE, 0..=MOST_SPACE)
-            .unwrap_or_else(|| style.space_before.units()),
-        number(paragraph, keys::SPACE_AFTER, 0..=MOST_SPACE)
-            .unwrap_or_else(|| style.space_after.units()),
+        number(paragraph, keys::SPACE_BEFORE, 0..=MOST_SPACE).unwrap_or(style.space_before),
+        number(paragraph, keys::SPACE_AFTER, 0..=MOST_SPACE).unwrap_or(style.space_after),
     )
 }
 
 /// The tab stops `paragraph`'s tabs go to, measured from its place's
-/// start edge: its own, where it sets them, or its style's and the
-/// document's; then the document's default ones.
+/// start edge: its own, where it sets them (stops, or a layout of them
+/// the sheet has), or its style's and the document's; then the document's
+/// default ones.
 pub fn paragraph_tabs(paragraph: &Paragraph, sheet: &StyleSheet) -> Tabs {
     let own = match paragraph.props.get(keys::TABS) {
         Some(Value::Text(stops)) => parse_tabs(stops),
+        Some(Value::Ref(id)) => sheet
+            .part(*id)
+            .filter(|p| p.kind == doc::StyleKind::Tabs)
+            .and_then(|p| parse_tabs(&p.value)),
         _ => None,
     };
     match own {
         Some(stops) => Tabs {
             stops,
-            interval: sheet.tabs.interval.units(),
+            interval: sheet.tabs.interval,
         },
         None => sheet.tabs(sheet.style_of(paragraph)),
     }
@@ -348,190 +462,13 @@ pub fn pictures(document: &Document) -> Vec<String> {
     out
 }
 
-/// A paragraph style, as `spec/styles/` gives it.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-pub struct ParagraphStyle {
-    /// Its name, which paragraphs refer to it by.
-    pub name: String,
-    /// Its font family.
-    pub family: String,
-    /// Its font size.
-    pub size: Length,
-    /// Whether it's bold.
-    #[serde(default)]
-    pub bold: bool,
-    /// Whether it's italic.
-    #[serde(default)]
-    pub italic: bool,
-    /// Space above it.
-    #[serde(default = "zero")]
-    pub space_before: Length,
-    /// Space below it.
-    #[serde(default = "zero")]
-    pub space_after: Length,
-    /// Whether it stays on the page where the next paragraph starts.
-    #[serde(default)]
-    pub keep_with_next: bool,
-    /// How its lines are aligned.
-    #[serde(default)]
-    pub align: Align,
-    /// Its level as a heading, 1 to 6, if it's a heading's style.
-    #[serde(default)]
-    pub heading: Option<u8>,
-    /// Whether its words are hyphenated at lines' ends, by their
-    /// language's patterns; if it doesn't say, they are where its lines
-    /// are justified.
-    #[serde(default)]
-    pub hyphenate: Option<bool>,
-    /// Its tab stops, besides the document's.
-    #[serde(default)]
-    pub tabs: Vec<TabStopSpec>,
-    /// Whether it's a code block's style: its text is code, drawn on a
-    /// tint, and Enter breaks its lines rather than the paragraph.
-    #[serde(default)]
-    pub code: bool,
-    /// Which classes of ligature its text is set with (project owner,
-    /// 2026-10-23, review dcn5ejrd); OpenType's defaults where it doesn't
-    /// say.
-    #[serde(default)]
-    pub ligatures: Ligatures,
-}
-
-/// A tab stop, as `spec/styles/` gives it.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
+/// A tab stop, as a stylesheet file gives it.
+#[derive(Clone, Debug, PartialEq, Deserialize, Serialize)]
 pub struct TabStopSpec {
     /// Its distance from the paragraph's start edge.
     pub at: Length,
     /// How the text after a tab sits at it.
     pub align: TabAlign,
-}
-
-/// The tab stops every paragraph of a document has: stops set, and the
-/// interval of the default stops after them.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-pub struct TabSpec {
-    /// The stops set.
-    #[serde(default)]
-    pub stops: Vec<TabStopSpec>,
-    /// The distance between default stops.
-    pub interval: Length,
-}
-
-impl Default for TabSpec {
-    fn default() -> TabSpec {
-        TabSpec {
-            stops: Vec::new(),
-            interval: zero(),
-        }
-    }
-}
-
-fn zero() -> Length {
-    Length::Pt(0.0)
-}
-
-/// How blocks other than paragraphs look, as `spec/styles/` gives it.
-/// Colours are sRGB.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-pub struct Blocks {
-    /// How far each level of list indents its items.
-    pub list_indent: Length,
-    /// The bullets of lists that aren't numbered, by depth, from the
-    /// outermost, over again when nesting goes deeper.
-    pub bullets: Vec<String>,
-    /// The room between a list item's marker and its text.
-    pub marker_gap: Length,
-    /// How far a quote indents its blocks, its bar included.
-    pub quote_indent: Length,
-    /// How wide a quote's bar is.
-    pub quote_bar: Length,
-    /// The colour of a quote's bar.
-    pub quote_color: (u8, u8, u8),
-    /// The family code is set in, in runs as in code blocks' styles.
-    pub code_family: String,
-    /// The ligatures code in runs is set with: none, so it shows exactly
-    /// what was typed (project owner, 2026-10-23, review dcn5ejrd).
-    pub code_ligatures: Ligatures,
-    /// The tint behind code.
-    pub code_tint: (u8, u8, u8),
-    /// How far a code block's tint reaches around its text.
-    pub code_padding: Length,
-    /// The space above and below a table.
-    pub table_space: Length,
-    /// The room around a cell's text.
-    pub cell_padding: Length,
-    /// The width of a table's rules above and below it, and under its
-    /// header.
-    pub rule: Length,
-    /// The width of the rules between its rows.
-    pub hairline: Length,
-    /// The colour of a table's rules.
-    pub rule_color: (u8, u8, u8),
-    /// The colour of the rules between its rows.
-    pub hairline_color: (u8, u8, u8),
-    /// The colour of links' text.
-    pub link_color: (u8, u8, u8),
-    /// The colour drawn where a picture can't be, as when the document's
-    /// file lacks it.
-    pub missing_picture: (u8, u8, u8),
-}
-
-/// The paragraph styles of a style sheet, and how other blocks look, as
-/// `spec/styles/` gives them. The file says more, for other substrates;
-/// this is what a story reads.
-#[derive(Clone, Debug, PartialEq, Deserialize)]
-pub struct StyleSheet {
-    /// The paragraph styles. The first is the default.
-    pub paragraph: Vec<ParagraphStyle>,
-    /// The document's tab stops, which every paragraph has besides its
-    /// style's.
-    #[serde(default)]
-    pub tabs: TabSpec,
-    /// How lists, quotes, code and tables look.
-    pub blocks: Blocks,
-}
-
-impl StyleSheet {
-    /// The style `name`, or the default if there's none by that name.
-    ///
-    /// # Panics
-    ///
-    /// If the sheet has no paragraph styles.
-    pub fn paragraph_style(&self, name: Option<&str>) -> &ParagraphStyle {
-        name.and_then(|n| self.paragraph.iter().find(|s| s.name == n))
-            .or(self.paragraph.first())
-            .expect("a style sheet has a paragraph style")
-    }
-
-    /// The tab stops of a paragraph in `style`: the style's and the
-    /// document's, by position, the style's where both have one at the
-    /// same place, then the document's default ones.
-    pub fn tabs(&self, style: &ParagraphStyle) -> Tabs {
-        let stop = |s: &TabStopSpec| TabStop {
-            position: s.at.units(),
-            align: s.align,
-        };
-        let mut stops: Vec<TabStop> = style.tabs.iter().map(stop).collect();
-        for s in self.tabs.stops.iter().map(stop) {
-            if !stops.iter().any(|t| t.position == s.position) {
-                stops.push(s);
-            }
-        }
-        stops.sort_by_key(|s| s.position);
-        Tabs {
-            stops,
-            interval: self.tabs.interval.units(),
-        }
-    }
-
-    /// The style `paragraph` names, or the default.
-    pub fn style_of(&self, paragraph: &Paragraph) -> &ParagraphStyle {
-        let name = match paragraph.props.get(keys::STYLE) {
-            Some(Value::Text(name)) => Some(name.as_str()),
-            _ => None,
-        };
-        self.paragraph_style(name)
-    }
 }
 
 /// A paragraph of a story, laid out.
@@ -565,6 +502,8 @@ pub struct ParagraphLayout {
     pub code: bool,
     /// Which of its spans are links.
     pub links: Vec<bool>,
+    /// The colour of each of its spans.
+    pub colors: Vec<Rgb>,
     /// The lines drawn with each of its spans, such as through it.
     pub decorations: Vec<text::Decoration>,
     /// The byte ranges of its text that are code, in runs, or Markdown
@@ -586,7 +525,7 @@ impl ParagraphLayout {
 }
 
 /// `paragraph`'s text as spans: each run of its characters in its style,
-/// with the run's own properties over it.
+/// with the run's character style, marks and own formatting over it.
 pub fn spans(paragraph: &Paragraph, sheet: &StyleSheet) -> Vec<Span> {
     spans_at(paragraph, sheet, None)
 }
@@ -594,82 +533,158 @@ pub fn spans(paragraph: &Paragraph, sheet: &StyleSheet) -> Vec<Span> {
 /// `paragraph`'s text as spans, as [`spans`] gives them, for a paragraph
 /// at `place`: a table's header cells are bold.
 pub fn spans_at(paragraph: &Paragraph, sheet: &StyleSheet, place: Option<&Place>) -> Vec<Span> {
-    let base = base_style(paragraph, sheet, place);
+    styled(paragraph, sheet, place).0
+}
+
+/// How a span of text looks besides its letters: its colour, and the lines
+/// drawn with it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Look {
+    /// Its colour.
+    pub color: Rgb,
+    /// The lines drawn with it.
+    pub decoration: text::Decoration,
+}
+
+/// `paragraph`'s text as spans, and how each looks besides its letters:
+/// its paragraph style's values; then for each run its character style's,
+/// each of its marks' character style's, in [`styles::MARKS`]' order, and
+/// its own formatting's ([`styles::CHARACTER_FORMATTING`]), each over the
+/// last; then its language.
+pub fn styled(
+    paragraph: &Paragraph,
+    sheet: &StyleSheet,
+    place: Option<&Place>,
+) -> (Vec<Span>, Vec<Look>) {
+    let (base, look) = base_style(paragraph, sheet, place);
     let mut chars = paragraph.text.chars();
-    let mut spans: Vec<Span> = paragraph
-        .runs
-        .iter()
-        .map(|run| {
-            let len = chars
-                .by_ref()
-                .take(run.len as usize)
-                .map(char::len_utf8)
-                .sum();
-            let mut style = base.clone();
-            if let Some(Value::Bool(bold)) = run.props.get(keys::BOLD) {
-                style.weight = if *bold { 700 } else { 400 };
+    let mut spans = Vec::with_capacity(paragraph.runs.len().max(1));
+    let mut looks = Vec::with_capacity(paragraph.runs.len().max(1));
+    for run in &paragraph.runs {
+        let len = chars
+            .by_ref()
+            .take(run.len as usize)
+            .map(char::len_utf8)
+            .sum();
+        let mut style = base.clone();
+        let mut seen = look;
+        if let Some(Value::Ref(id)) = run.props.get(keys::CHAR_STYLE)
+            && let Some(c) = sheet.character_style(*id)
+        {
+            apply(&mut style, &mut seen, &c.values);
+        }
+        for (k, (key, _)) in styles::MARKS.iter().enumerate() {
+            if styles::has_mark(&run.props, key) {
+                apply(&mut style, &mut seen, sheet.mark(k));
             }
-            if let Some(Value::Bool(italic)) = run.props.get(keys::ITALIC) {
-                style.italic = *italic;
-            }
-            if is_code(&run.props) {
-                style.family = sheet.blocks.code_family.clone();
-                style.ligatures = sheet.blocks.code_ligatures;
-            }
-            if let Some(Value::Text(family)) = run.props.get(keys::FONT) {
-                style.family = family.clone();
-            }
-            if let Some(Value::Int(size)) = run.props.get(keys::SIZE)
-                && *size > 0
-            {
-                style.size = *size;
-            }
-            if let Some(language) = language(run.props.get(keys::LANGUAGE)) {
-                style.language = language;
-            }
-            Span { len, style }
-        })
-        .collect();
+        }
+        apply(&mut style, &mut seen, &direct(&run.props, sheet));
+        if let Some(language) = language(run.props.get(keys::LANGUAGE)) {
+            style.language = language;
+        }
+        spans.push(Span { len, style });
+        looks.push(seen);
+    }
     if spans.is_empty() {
         spans.push(Span {
             len: 0,
             style: base,
         });
+        looks.push(look);
     }
-    spans
+    (spans, looks)
 }
 
-/// Whether a run with `props` is shown as code: code, or Markdown kept as
-/// it was written ([`keys::SOURCE`]).
-fn is_code(props: &Props) -> bool {
-    matches!(props.get(keys::CODE), Some(Value::Bool(true)))
-        || matches!(props.get(keys::SOURCE), Some(Value::Text(_)))
+/// What `values` set, over `style` and `look`.
+fn apply(style: &mut Style, look: &mut Look, values: &CharValues) {
+    if let Some(family) = &values.family {
+        style.family = family.clone();
+    }
+    if let Some(size) = values.size {
+        style.size = size;
+    }
+    if let Some(bold) = values.bold {
+        style.weight = if bold { 700 } else { 400 };
+    }
+    if let Some(italic) = values.italic {
+        style.italic = italic;
+    }
+    if let Some(ligatures) = values.ligatures {
+        style.ligatures = ligatures;
+    }
+    if let Some(color) = values.color {
+        look.color = color;
+    }
+    if let Some(underline) = values.underline {
+        look.decoration.underline = underline;
+    }
+    if let Some(strikethrough) = values.strikethrough {
+        look.decoration.strikethrough = strikethrough;
+    }
 }
 
-/// The lines drawn with a run of text with `props`: through it, where it's
-/// struck through.
+/// What a run with `props` sets itself, its direct formatting, parts it
+/// names taken from `sheet`.
+pub fn direct(props: &Props, sheet: &StyleSheet) -> CharValues {
+    let part = |value: Option<&Value>, kind: doc::StyleKind| match value {
+        Some(Value::Text(t)) => Some(t.clone()),
+        Some(Value::Ref(id)) => sheet
+            .part(*id)
+            .filter(|p| p.kind == kind)
+            .map(|p| p.value.clone()),
+        _ => None,
+    };
+    let ok = |key: &str, v: &Value| styles::valid(key)(v);
+    CharValues {
+        family: part(props.get(keys::FONT), doc::StyleKind::Face)
+            .filter(|f| ok(keys::FONT, &Value::Text(f.clone()))),
+        size: match props.get(keys::SIZE) {
+            Some(v @ Value::Int(n)) if ok(keys::SIZE, v) => Some(*n),
+            _ => None,
+        },
+        color: part(props.get(keys::COLOR), doc::StyleKind::Colour)
+            .and_then(|c| sheet::parse_colour(&c)),
+        underline: match props.get(keys::UNDERLINE) {
+            Some(Value::Bool(b)) => Some(*b),
+            _ => None,
+        },
+        ..CharValues::default()
+    }
+}
+
+/// The lines drawn with a run of text with `props` that sets them itself:
+/// through it, where it's struck through.
 pub fn decoration(props: &Props) -> text::Decoration {
     text::Decoration {
-        underline: false,
+        underline: matches!(props.get(keys::UNDERLINE), Some(Value::Bool(true))),
         strikethrough: matches!(props.get(keys::STRIKETHROUGH), Some(Value::Bool(true))),
     }
 }
 
-/// The style of `paragraph`'s text before its runs' own properties: its
-/// paragraph style's, and bold in a table's header.
-fn base_style(paragraph: &Paragraph, sheet: &StyleSheet, place: Option<&Place>) -> Style {
+/// The style of `paragraph`'s text before its runs' own properties, and
+/// how it looks: its paragraph style's, and bold in a table's header.
+fn base_style(paragraph: &Paragraph, sheet: &StyleSheet, place: Option<&Place>) -> (Style, Look) {
     let style = sheet.style_of(paragraph);
     let header = place
         .and_then(|p| p.cell)
         .is_some_and(|cell| cell.index == 0);
-    Style {
-        family: style.family.clone(),
-        size: style.size.units(),
-        weight: if style.bold || header { 700 } else { 400 },
-        italic: style.italic,
-        language: language(paragraph.props.get(keys::LANGUAGE)).unwrap_or_default(),
-        ligatures: style.ligatures,
-    }
+    (
+        Style {
+            family: style.family.clone(),
+            size: style.size,
+            weight: if style.bold || header { 700 } else { 400 },
+            italic: style.italic,
+            language: language(paragraph.props.get(keys::LANGUAGE)).unwrap_or_default(),
+            ligatures: style.ligatures,
+        },
+        Look {
+            color: style.color,
+            decoration: text::Decoration {
+                underline: style.underline,
+                strikethrough: style.strikethrough,
+            },
+        },
+    )
 }
 
 fn language(value: Option<&Value>) -> Option<Language> {
@@ -682,13 +697,9 @@ fn language(value: Option<&Value>) -> Option<Language> {
 /// How `paragraph`'s lines are aligned: as it says, or as its style does.
 pub fn align(paragraph: &Paragraph, sheet: &StyleSheet) -> Align {
     match paragraph.props.get(keys::ALIGN) {
-        Some(Value::Text(align)) => match align.as_str() {
-            "start" => Align::Start,
-            "center" => Align::Center,
-            "end" => Align::End,
-            "justify" => Align::Justify,
-            _ => sheet.style_of(paragraph).align,
-        },
+        Some(Value::Text(align)) => {
+            sheet::align_of(align).unwrap_or_else(|| sheet.style_of(paragraph).align)
+        }
         _ => sheet.style_of(paragraph).align,
     }
 }
@@ -758,17 +769,17 @@ pub fn lay_out_at(
 ) -> ParagraphLayout {
     let paragraph = document.paragraph(id).expect("a paragraph of the document");
     let style = sheet.style_of(paragraph);
-    let spans = spans_at(paragraph, sheet, Some(place));
+    let (spans, looks) = styled(paragraph, sheet, Some(place));
     let align = align(paragraph, sheet);
     let inset = if style.code {
-        sheet.blocks.code_padding.units()
+        sheet.blocks.code_padding
     } else {
         0
     };
     // Its own indents narrow it, but never to less than a quarter of its
     // room; its tab stops stay where they are on the ruler, measured from
     // its place's start edge; its pictures fit what's left.
-    let indents = indents(paragraph);
+    let indents = indents(paragraph, sheet);
     let room = (place.width - 2 * inset).max(1);
     let width = (room - indents.start - indents.end).max(room / 4).max(1);
     let mut tabs = paragraph_tabs(paragraph, sheet);
@@ -789,7 +800,7 @@ pub fn lay_out_at(
             hyphenate: style.hyphenate.unwrap_or(align == Align::Justify),
             hyphenation: Some(hyphenation),
             tabs: Some(&tabs),
-            line_height: line_height(paragraph),
+            line_height: line_height(paragraph, sheet),
             indent: indents.first.clamp(-width, width),
             objects: &objects,
         },
@@ -802,7 +813,7 @@ pub fn lay_out_at(
     let figure = pictures.len() == 1 && paragraph.text.chars().eq([OBJECT]);
     // The marker is in the paragraph's style, whatever its runs say.
     let marker = place.marker.as_ref().map(|marker| {
-        let style = base_style(paragraph, sheet, Some(place));
+        let style = base_style(paragraph, sheet, Some(place)).0;
         text::layout(
             fonts,
             &text::Paragraph {
@@ -818,7 +829,8 @@ pub fn lay_out_at(
         )
     });
     let mut links = Vec::with_capacity(paragraph.runs.len());
-    let mut decorations = Vec::with_capacity(paragraph.runs.len());
+    let colors = looks.iter().map(|l| l.color).collect();
+    let decorations = looks.iter().map(|l| l.decoration).collect();
     let mut inline_code: Vec<Range<usize>> = Vec::new();
     let mut at = 0;
     let mut chars = paragraph.text.chars();
@@ -828,9 +840,8 @@ pub fn lay_out_at(
             .take(run.len as usize)
             .map(char::len_utf8)
             .sum();
-        links.push(matches!(run.props.get(keys::LINK), Some(Value::Text(_))));
-        decorations.push(decoration(&run.props));
-        if is_code(&run.props) {
+        links.push(styles::has_mark(&run.props, keys::LINK));
+        if styles::has_mark(&run.props, keys::CODE) {
             match inline_code.last_mut() {
                 Some(last) if last.end == at => last.end = at + len,
                 _ => inline_code.push(at..at + len),
@@ -852,6 +863,7 @@ pub fn lay_out_at(
         marker,
         code: style.code,
         links,
+        colors,
         decorations,
         inline_code,
         pictures,
@@ -917,11 +929,104 @@ pub fn lay_out(
         .collect()
 }
 
-/// A document whose story holds `paragraphs`, each a style's name and its
-/// text in runs, each run with its character properties. It's made with
-/// `doc`'s operations, as an importer would make it.
-pub fn document<S: AsRef<str>, T: AsRef<str>>(paragraphs: &[(S, Vec<(T, Props)>)]) -> Document {
-    let mut document = Document::new();
+/// Where a new document's stylesheet's objects start, a Markdown file's
+/// read among them: #2, after the story and its first paragraph.
+pub const SHEET_AT: u64 = 2;
+
+/// A new document in the stylesheet `spec` gives, holding one empty
+/// paragraph in its default style: the story at #0, the paragraph at #1,
+/// and the stylesheet's objects from [`SHEET_AT`] on.
+pub fn new_document(spec: &SheetSpec) -> Document {
+    let (root, first) = (ObjectId(0), ObjectId(1));
+    let sheet = spec.objects(SHEET_AT);
+    let next_id = SHEET_AT + sheet.len() as u64;
+    let body = default_style_id(&sheet);
+    let mut props = Props::new();
+    if let Some(body) = body {
+        props.insert(keys::STYLE.to_string(), Value::Ref(body));
+    }
+    let mut objects = vec![
+        (
+            root,
+            Object::Story(doc::Story {
+                blocks: vec![first],
+            }),
+        ),
+        (
+            first,
+            Object::Paragraph(Paragraph {
+                parent: root,
+                text: String::new(),
+                runs: Vec::new(),
+                props,
+            }),
+        ),
+    ];
+    objects.extend(sheet);
+    Document::from_snapshot(Snapshot {
+        root,
+        next_id,
+        objects,
+    })
+    .unwrap_or_default()
+}
+
+/// `document`'s stylesheet as objects, the sheet first and then its styles
+/// and parts in order, each by its ID: none if it has no sheet.
+pub fn sheet_objects(document: &Document) -> Vec<(ObjectId, Object)> {
+    let Some(sheet) = document.sheet() else {
+        return Vec::new();
+    };
+    std::iter::once(sheet)
+        .chain(document.styles().iter().copied())
+        .filter_map(|id| Some((id, document.object(id)?.clone())))
+        .collect()
+}
+
+/// The paragraph style among a sheet's objects that paragraphs naming
+/// none take: the one with the role "body", or the first.
+pub fn default_style_id(objects: &[(ObjectId, Object)]) -> Option<ObjectId> {
+    let paragraph_styles = || {
+        objects.iter().filter_map(|(id, o)| match o {
+            Object::Style(s) if s.kind == doc::StyleKind::Paragraph => Some((*id, s)),
+            _ => None,
+        })
+    };
+    paragraph_styles()
+        .find(|(_, s)| s.props.get(keys::ROLE) == Some(&Value::Text("body".into())))
+        .or_else(|| paragraph_styles().next())
+        .map(|(id, _)| id)
+}
+
+/// The ID of `document`'s paragraph style named `name`, if it has one.
+pub fn style_named(document: &Document, name: &str) -> Option<ObjectId> {
+    document.styles().iter().copied().find(|&id| {
+        document.style(id).is_some_and(|s| {
+            s.kind == doc::StyleKind::Paragraph
+                && s.props.get(keys::NAME) == Some(&Value::Text(name.to_string()))
+        })
+    })
+}
+
+/// The ID of `document`'s paragraph style with role `role`, if it has one.
+pub fn style_with_role(document: &Document, role: &str) -> Option<ObjectId> {
+    document.styles().iter().copied().find(|&id| {
+        document.style(id).is_some_and(|s| {
+            s.kind == doc::StyleKind::Paragraph
+                && s.props.get(keys::ROLE) == Some(&Value::Text(role.to_string()))
+        })
+    })
+}
+
+/// A document in the stylesheet `spec` gives, whose story holds
+/// `paragraphs`, each a style's name and its text in runs, each run with
+/// its character properties. It's made with `doc`'s operations, as an
+/// importer would make it; a name the sheet hasn't is the default style.
+pub fn document<S: AsRef<str>, T: AsRef<str>>(
+    spec: &SheetSpec,
+    paragraphs: &[(S, Vec<(T, Props)>)],
+) -> Document {
+    let mut document = new_document(spec);
     let mut current = document.paragraphs()[0];
     let apply = |document: &mut Document, op: Op| {
         document.apply(&op).expect("building a document applies");
@@ -941,12 +1046,13 @@ pub fn document<S: AsRef<str>, T: AsRef<str>>(paragraphs: &[(S, Vec<(T, Props)>)
             );
             current = new;
         }
+        let id = style_named(&document, style.as_ref());
         apply(
             &mut document,
             Op::SetParaProp {
                 paragraph: current,
                 key: keys::STYLE.to_string(),
-                value: Some(Value::Text(style.as_ref().to_string())),
+                value: id.map(Value::Ref),
             },
         );
         let mut offset = 0;
@@ -985,19 +1091,19 @@ pub enum BlockSpec {
     Table(Vec<String>, Vec<Vec<Vec<(String, Props)>>>),
 }
 
-/// The name of the style of code blocks, in M2's sheet.
-pub const CODE_STYLE: &str = "Code";
-
-/// A document whose story holds `blocks`, made with `doc`'s operations as
-/// an importer would make it: each block inserted whole.
-pub fn build(blocks: &[BlockSpec]) -> Document {
-    let mut document = Document::new();
+/// A document in the stylesheet `spec` gives, whose story holds
+/// `blocks`, made with `doc`'s operations as an importer would make it:
+/// each block inserted whole. Paragraphs name styles by name, a name the
+/// sheet hasn't the default style; code blocks take the sheet's style
+/// with the role "code".
+pub fn build(spec: &SheetSpec, blocks: &[BlockSpec]) -> Document {
+    let mut document = new_document(spec);
     let root = document.root();
     let first = document.paragraphs()[0];
     let mut after = Some(first);
-    for spec in blocks {
+    for block in blocks {
         let mut objects = Vec::new();
-        let id = objects_of(&mut document, spec, root, &mut objects);
+        let id = objects_of(&mut document, block, root, &mut objects);
         document
             .apply(&Op::InsertBlock {
                 parent: root,
@@ -1034,7 +1140,8 @@ fn objects_of(
     let at = out.len();
     match spec {
         BlockSpec::Paragraph(style, runs) => {
-            out.push((id, styled(parent, style, runs, Props::new())));
+            let style = style_named(document, style);
+            out.push((id, paragraph_object(parent, style, runs, Props::new())));
         }
         BlockSpec::Code(info, lines) => {
             let mut props = Props::new();
@@ -1042,9 +1149,10 @@ fn objects_of(
                 props.insert(keys::INFO.to_string(), Value::Text(info.clone()));
             }
             let text = lines.join("\u{2028}");
+            let style = style_with_role(document, "code");
             out.push((
                 id,
-                styled(parent, CODE_STYLE, &[(text, Props::new())], props),
+                paragraph_object(parent, style, &[(text, Props::new())], props),
             ));
         }
         BlockSpec::List(ordered, items) => {
@@ -1103,7 +1211,7 @@ fn objects_of(
                         props.insert(keys::ALIGN.to_string(), Value::Text(a.clone()));
                     }
                     // Cells name no style: they're in the default one.
-                    out.push((cell, styled(row, "", runs, props)));
+                    out.push((cell, paragraph_object(row, None, runs, props)));
                     children.push(cell);
                 }
                 set_children(&mut out[row_at].1, children);
@@ -1114,15 +1222,15 @@ fn objects_of(
     id
 }
 
-/// A paragraph in `parent` in style `style` (none if empty), of `runs`.
-fn styled<T: AsRef<str>>(
+/// A paragraph in `parent` in style `style`, if it names one, of `runs`.
+fn paragraph_object<T: AsRef<str>>(
     parent: ObjectId,
-    style: &str,
+    style: Option<ObjectId>,
     runs: &[(T, Props)],
     mut props: Props,
 ) -> Object {
-    if !style.is_empty() {
-        props.insert(keys::STYLE.to_string(), Value::Text(style.to_string()));
+    if let Some(style) = style {
+        props.insert(keys::STYLE.to_string(), Value::Ref(style));
     }
     let mut text = String::new();
     let mut out: Vec<Run> = Vec::new();

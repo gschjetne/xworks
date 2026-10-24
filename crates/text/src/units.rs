@@ -13,7 +13,7 @@ pub const MILLIMETRE: i64 = 36_000;
 pub const PIXEL: i64 = 9_525;
 
 /// A length as specs write it: points, millimetres, inches or pixels.
-#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, serde::Deserialize, serde::Serialize)]
 pub enum Length {
     /// Typographic points.
     Pt(f64),

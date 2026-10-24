@@ -10,11 +10,12 @@ publish.workspace = true
 [dependencies]
 doc.workspace = true
 locale.workspace = true
+ron.workspace = true
 serde.workspace = true
 text.workspace = true
+thiserror.workspace = true
 
 [dev-dependencies]
-ron.workspace = true
 testkit.workspace = true
 
 [lints]

@@ -38,7 +38,7 @@ pub struct Style {
 /// (ARCHITECTURE.md section 9). A style says, class by class; code sets
 /// none, so it shows exactly what was typed. As specs write it, a class
 /// left out keeps its default.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 #[serde(default)]
 pub struct Ligatures {
     /// Standard ligatures, such as "fi" and "ffl" (`liga`, `clig`): on by
@@ -109,7 +109,9 @@ pub struct Span {
 }
 
 /// Where lines sit between the paragraph's edges.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Deserialize)]
+#[derive(
+    Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize,
+)]
 pub enum Align {
     /// Against the edge the paragraph's direction starts from: the left
     /// in a left-to-right paragraph, the right in a right-to-left one.

@@ -10,14 +10,20 @@ use story::{OBJECT, StyleSheet, keys, props};
 use text::Fonts;
 use text::units::INCH;
 
-fn sheet() -> StyleSheet {
+/// Neutral, the stylesheet documents take unless the person chooses.
+fn neutral() -> story::SheetSpec {
     let source = testkit::specs("styles")
         .expect("spec/styles")
         .into_iter()
-        .find(|(name, _)| name == "m1")
-        .expect("spec/styles/m1.ron")
+        .find(|(name, _)| name == "neutral")
+        .expect("spec/styles/neutral.ron")
         .1;
-    ron::from_str(&source).expect("m1.ron is a style sheet")
+    story::SheetSpec::parse(&source).expect("neutral.ron is a stylesheet")
+}
+
+/// Neutral resolved, as a document made in it has it.
+fn sheet() -> StyleSheet {
+    StyleSheet::from_spec(&neutral())
 }
 
 fn fonts() -> &'static Fonts {
@@ -47,28 +53,31 @@ fn picture(id: &str, alt: &str, width: i64, height: i64) -> Props {
 #[test]
 fn a_picture_in_text_is_placed_scaled_to_its_paragraph() {
     let object = OBJECT.to_string();
-    let document = story::document(&[
-        (
-            "Body",
-            vec![
-                ("Before ".to_string(), Props::new()),
-                (
-                    object.clone(),
-                    picture("a1", "A wide view", 10 * INCH, 5 * INCH),
-                ),
-                (" after.".to_string(), Props::new()),
-            ],
-        ),
-        (
-            "Body",
-            vec![(object.clone(), picture("b2", "", 2 * INCH, INCH))],
-        ),
-        // Text that names a picture but isn't its character shows none.
-        (
-            "Body",
-            vec![("x".to_string(), picture("c3", "", INCH, INCH))],
-        ),
-    ]);
+    let document = story::document(
+        &neutral(),
+        &[
+            (
+                "Body",
+                vec![
+                    ("Before ".to_string(), Props::new()),
+                    (
+                        object.clone(),
+                        picture("a1", "A wide view", 10 * INCH, 5 * INCH),
+                    ),
+                    (" after.".to_string(), Props::new()),
+                ],
+            ),
+            (
+                "Body",
+                vec![(object.clone(), picture("b2", "", 2 * INCH, INCH))],
+            ),
+            // Text that names a picture but isn't its character shows none.
+            (
+                "Body",
+                vec![("x".to_string(), picture("c3", "", INCH, INCH))],
+            ),
+        ],
+    );
     let laid = story::lay_out(&document, &sheet(), fonts(), 6 * INCH);
     let first = &laid[0];
     assert_eq!(first.pictures.len(), 1);

@@ -1,7 +1,7 @@
 //! Tab stops: where the text after a tab character goes.
 
 /// How the text after a tab sits at its stop.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub enum TabAlign {
     /// It starts at the stop: a left tab in left-to-right text.
     Start,
@@ -15,7 +15,7 @@ pub enum TabAlign {
 }
 
 /// A tab stop.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Deserialize, serde::Serialize)]
 pub struct TabStop {
     /// Its distance from the paragraph's start edge: the left in
     /// left-to-right text, the right in right-to-left text.

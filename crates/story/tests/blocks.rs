@@ -9,14 +9,20 @@ use story::{BlockSpec, StyleSheet, keys, props};
 use text::Fonts;
 use text::units::POINT;
 
-fn sheet() -> StyleSheet {
+/// Neutral, the stylesheet documents take unless the person chooses.
+fn neutral() -> story::SheetSpec {
     let source = testkit::specs("styles")
         .expect("spec/styles")
         .into_iter()
-        .find(|(name, _)| name == "m1")
-        .expect("spec/styles/m1.ron")
+        .find(|(name, _)| name == "neutral")
+        .expect("spec/styles/neutral.ron")
         .1;
-    ron::from_str(&source).expect("m1.ron is a style sheet")
+    story::SheetSpec::parse(&source).expect("neutral.ron is a stylesheet")
+}
+
+/// Neutral resolved, as a document made in it has it.
+fn sheet() -> StyleSheet {
+    StyleSheet::from_spec(&neutral())
 }
 
 fn fonts() -> &'static Fonts {
@@ -67,7 +73,7 @@ fn every_kind() -> Vec<BlockSpec> {
 #[test]
 fn the_tree_reads_in_order_with_its_places() {
     let sheet = sheet();
-    let document = story::build(&every_kind());
+    let document = story::build(&neutral(), &every_kind());
     let flow = story::flow(&document, &sheet, WIDTH).entries;
     let texts: Vec<&str> = flow
         .iter()
@@ -91,8 +97,8 @@ fn the_tree_reads_in_order_with_its_places() {
             "1"
         ]
     );
-    let list = sheet.blocks.list_indent.units();
-    let quote = sheet.blocks.quote_indent.units();
+    let list = sheet.list(false, None).indent;
+    let quote = sheet.blocks.quote_indent;
     let at = |k: usize| &flow[k].place;
     assert_eq!(*at(0), story::Place::top(WIDTH));
     // Bullets by depth, numbers counted, not stored.
@@ -132,7 +138,7 @@ fn the_tree_reads_in_order_with_its_places() {
 #[test]
 fn blocks_lay_out_in_their_places() {
     let sheet = sheet();
-    let document = story::build(&every_kind());
+    let document = story::build(&neutral(), &every_kind());
     let laid = story::lay_out(&document, &sheet, fonts(), WIDTH);
     // Markers are laid out; a code block is code, in its face, its lines
     // broken where its line separators are.
@@ -161,18 +167,21 @@ fn blocks_lay_out_in_their_places() {
 #[test]
 fn marks_set_code_and_links_apart() {
     let sheet = sheet();
-    let document = story::build(&[BlockSpec::Paragraph(
-        "Body".into(),
-        vec![
-            ("Call ".into(), props(&[])),
-            ("main()".into(), props(&[(keys::CODE, Value::Bool(true))])),
-            (" or read ".into(), props(&[])),
-            (
-                "the guide".into(),
-                props(&[(keys::LINK, Value::Text("https://example.com".into()))]),
-            ),
-        ],
-    )]);
+    let document = story::build(
+        &neutral(),
+        &[BlockSpec::Paragraph(
+            "Body".into(),
+            vec![
+                ("Call ".into(), props(&[])),
+                ("main()".into(), props(&[(keys::CODE, Value::Bool(true))])),
+                (" or read ".into(), props(&[])),
+                (
+                    "the guide".into(),
+                    props(&[(keys::LINK, Value::Text("https://example.com".into()))]),
+                ),
+            ],
+        )],
+    );
     let id = document.paragraphs()[0];
     let spans = story::spans(document.paragraph(id).unwrap(), &sheet);
     let families: Vec<&str> = spans.iter().map(|s| s.style.family.as_str()).collect();
@@ -196,10 +205,13 @@ fn marks_set_code_and_links_apart() {
 #[test]
 fn a_story_of_paragraphs_lays_out_as_m1s_did() {
     let sheet = sheet();
-    let document = story::document(&[
-        ("Heading 1", vec![("A heading", props(&[]))]),
-        ("Body", vec![("Some text.", props(&[]))]),
-    ]);
+    let document = story::document(
+        &neutral(),
+        &[
+            ("Heading 1", vec![("A heading", props(&[]))]),
+            ("Body", vec![("Some text.", props(&[]))]),
+        ],
+    );
     for (laid, id) in story::lay_out(&document, &sheet, fonts(), WIDTH)
         .iter()
         .zip(document.paragraphs())
@@ -213,7 +225,7 @@ fn a_story_of_paragraphs_lays_out_as_m1s_did() {
 
 #[test]
 fn the_outline_shows_the_tree() {
-    let document = story::build(&every_kind());
+    let document = story::build(&neutral(), &every_kind());
     let outline = story::outline(&document, &sheet());
     assert_eq!(
         outline[..9],
@@ -286,17 +298,20 @@ fn nesting_past_the_deepest_lays_out_as_if_it_stopped() {
 #[test]
 fn tasks_have_boxes_in_their_bullets_place() {
     let sheet = sheet();
-    let mut document = story::build(&[
-        BlockSpec::List(
-            false,
-            vec![
-                vec![p("to do"), p("more")],
-                vec![p("done")],
-                vec![p("plain")],
-            ],
-        ),
-        BlockSpec::List(true, vec![vec![p("numbered")]]),
-    ]);
+    let mut document = story::build(
+        &neutral(),
+        &[
+            BlockSpec::List(
+                false,
+                vec![
+                    vec![p("to do"), p("more")],
+                    vec![p("done")],
+                    vec![p("plain")],
+                ],
+            ),
+            BlockSpec::List(true, vec![vec![p("numbered")]]),
+        ],
+    );
     let root = document.root();
     let lists = document.children(root).to_vec();
     let items: Vec<doc::ObjectId> = lists
@@ -334,21 +349,24 @@ fn tasks_have_boxes_in_their_bullets_place() {
 #[test]
 fn struck_text_and_kept_source_are_marked() {
     let sheet = sheet();
-    let document = story::build(&[BlockSpec::Paragraph(
-        "Body".into(),
-        vec![
-            ("Plain ".into(), props(&[])),
-            (
-                "gone".into(),
-                props(&[(keys::STRIKETHROUGH, Value::Bool(true))]),
-            ),
-            (" and ".into(), props(&[])),
-            (
-                "<br>".into(),
-                props(&[(keys::SOURCE, Value::Text("html".into()))]),
-            ),
-        ],
-    )]);
+    let document = story::build(
+        &neutral(),
+        &[BlockSpec::Paragraph(
+            "Body".into(),
+            vec![
+                ("Plain ".into(), props(&[])),
+                (
+                    "gone".into(),
+                    props(&[(keys::STRIKETHROUGH, Value::Bool(true))]),
+                ),
+                (" and ".into(), props(&[])),
+                (
+                    "<br>".into(),
+                    props(&[(keys::SOURCE, Value::Text("html".into()))]),
+                ),
+            ],
+        )],
+    );
     let laid = story::lay_out(&document, &sheet, fonts(), WIDTH);
     let struck: Vec<bool> = laid[0]
         .decorations

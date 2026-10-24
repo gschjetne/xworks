@@ -1,6 +1,6 @@
 // A sample document for M1 (docs/ROADMAP.md, stage 7): headings, body
 // text with bold and italic, and paragraphs in every M1 script, about three
-// A4 pages in spec/styles/m1.ron's styles. Each paragraph is its style's
+// A4 pages in Neutral (spec/styles/neutral.ron). Each paragraph is its style's
 // name and its text in runs, each with its character properties. The
 // pangrams are traditional; the English is xWorks' own.
 [

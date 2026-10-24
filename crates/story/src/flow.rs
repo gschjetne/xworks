@@ -1,6 +1,7 @@
 //! The story's tree as a reading-order list of paragraphs, each with its
-//! place: how far it's indented, the marker of the list item it starts,
-//! the quotes it's in, the table cell it is, and the containers around it.
+//! place: how far it's indented, the marker of the list item it starts or
+//! the number of the numbered heading it is, the quotes it's in, the table
+//! cell it is, and the containers around it.
 
 use doc::{Document, Kind, Object, ObjectId, Value};
 
@@ -47,8 +48,10 @@ pub struct Place {
     /// How wide its text is.
     pub width: i64,
     /// The marker before its first line, if it starts a list item: a
-    /// bullet, or the item's number.
+    /// bullet, or the item's number; or a numbered heading's number.
     pub marker: Option<String>,
+    /// The room between its marker and its text.
+    pub gap: i64,
     /// The box before its first line, if it starts a task's item, in place
     /// of a bullet: whether it's checked.
     pub task: Option<bool>,
@@ -105,8 +108,18 @@ pub struct Flow {
 /// so a deeply nested document can't exhaust the stack.
 pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
     let blocks = &sheet.blocks;
-    let (list_indent, quote_indent) = (blocks.list_indent.units(), blocks.quote_indent.units());
-    let padding = blocks.cell_padding.units();
+    let quote_indent = blocks.quote_indent;
+    let padding = blocks.cell_padding;
+    // How a numbered heading's number reads: as the list definition with
+    // the role "headings" writes numbers, or as numbered lists do.
+    let headings = sheet
+        .lists
+        .iter()
+        .find(|l| l.role.as_deref() == Some("headings"))
+        .unwrap_or_else(|| sheet.list(true, None));
+    // How many numbered headings of each level there have been since the
+    // last of a level above it.
+    let mut counters = [0i64; 6];
     let mut out = Vec::new();
     let mut containers = Vec::new();
     let mut stack = vec![(document.root(), Place::top(width))];
@@ -118,7 +131,23 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
             containers.push(id);
         }
         let block = match object {
-            Object::Paragraph(_) => {
+            Object::Paragraph(p) => {
+                let mut place = place;
+                let style = sheet.style_of(p);
+                if let Some(level) = style.heading.filter(|l| (1..=6).contains(l)) {
+                    let level = usize::from(level);
+                    if style.numbered {
+                        counters[level - 1] = counters[level - 1].saturating_add(1);
+                        counters[level..].fill(0);
+                        let number: Vec<String> =
+                            counters[..level].iter().map(|n| n.to_string()).collect();
+                        if place.marker.is_none() {
+                            place.marker = Some(headings.format(&number.join(".")));
+                            place.gutter = place.indent;
+                            place.gap = headings.gap;
+                        }
+                    }
+                }
                 out.push(Entry { id, place });
                 continue;
             }
@@ -150,9 +179,20 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
                     Some(Value::Int(n)) => *n,
                     _ => 1,
                 };
-                inner.indent = place.indent + list_indent;
+                let own = match block.props.get(keys::LIST) {
+                    Some(Value::Ref(id)) => Some(*id),
+                    _ => None,
+                };
+                let look = sheet.list(ordered, own);
+                let bullets = if look.bullets.is_empty() {
+                    &sheet.list(false, None).bullets
+                } else {
+                    &look.bullets
+                };
+                inner.indent = place.indent + look.indent;
                 inner.gutter = inner.indent;
-                inner.width = place.width - list_indent;
+                inner.gap = look.gap;
+                inner.width = place.width - look.indent;
                 for (i, &item) in block.children.iter().enumerate() {
                     let mut p = inner.clone();
                     // A task's box takes a bullet's place, but not a
@@ -163,14 +203,13 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
                     };
                     p.task = task;
                     p.marker = if ordered {
-                        Some(format!("{}.", start.saturating_add(i as i64)))
+                        Some(look.number(start.saturating_add(i as i64)))
                     } else if task.is_some() {
                         None
                     } else {
                         Some(
-                            blocks
-                                .bullets
-                                .get(depth % blocks.bullets.len().max(1))
+                            bullets
+                                .get(depth % bullets.len().max(1))
                                 .cloned()
                                 .unwrap_or_default(),
                         )

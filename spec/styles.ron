@@ -1,0 +1,7 @@
+// The stylesheets that come with xWorks (project owner, 2026-10-24, review
+// 30dmn1js), by their files in spec/styles/, in the order File, New with
+// Stylesheet lists them. New documents copy the first unless the person
+// chooses another.
+(
+    stylesheets: ["neutral"],
+)
