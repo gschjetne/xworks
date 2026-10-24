@@ -52,7 +52,7 @@ enum B {
     /// A list, numbered from a start, and its items: each one's task, if
     /// it's one, and its blocks.
     List(Option<i64>, Vec<(Option<bool>, Vec<B>)>),
-    Quote(Option<String>, Vec<B>),
+    Quote(Vec<B>),
     /// A table: its columns' alignments, and its rows of cells.
     Table(Vec<String>, Vec<Vec<Vec<R>>>),
 }
@@ -125,14 +125,7 @@ fn block() -> impl Strategy<Value = B> {
                 )
             )
                 .prop_map(|(start, items)| B::List(start, items)),
-            (
-                prop::option::weighted(
-                    0.3,
-                    prop::sample::select(vec!["NOTE".to_string(), "WARNING".to_string()])
-                ),
-                prop::collection::vec(inner, 1..3)
-            )
-                .prop_map(|(alert, blocks)| B::Quote(alert, blocks)),
+            prop::collection::vec(inner, 1..3).prop_map(B::Quote),
         ]
     })
 }
@@ -268,12 +261,8 @@ fn objects(next: &mut u64, b: &B, parent: ObjectId, out: &mut Vec<(ObjectId, Obj
                 push(out, at, item);
             }
         }
-        B::Quote(alert, blocks) => {
-            let mut props = Props::new();
-            if let Some(kind) = alert {
-                props.insert(keys::ALERT.to_string(), Value::Text(kind.clone()));
-            }
-            out.push((id, container(Kind::Quote, props)));
+        B::Quote(blocks) => {
+            out.push((id, container(Kind::Quote, Props::new())));
             for b in blocks {
                 let child = objects(next, b, id, out);
                 push(out, at, child);

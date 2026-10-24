@@ -37,8 +37,8 @@ pub enum Form {
     List(Option<i64>),
     /// A list's item: whether it's a task, and done.
     Item(Option<bool>),
-    /// A quote, and its kind, as GitHub's alerts name it.
-    Quote(String),
+    /// A quote.
+    Quote,
     /// A table.
     Table,
     /// A table's row.
@@ -120,10 +120,7 @@ pub(crate) fn shape_of(document: &Document, sheet: &StyleSheet, id: ObjectId) ->
                         Some(Value::Bool(done)) => Some(*done),
                         _ => None,
                     }),
-                    Kind::Quote => Form::Quote(match b.props.get(keys::ALERT) {
-                        Some(Value::Text(kind)) => kind.to_uppercase(),
-                        _ => String::new(),
-                    }),
+                    Kind::Quote => Form::Quote,
                     Kind::Table => Form::Table,
                     Kind::Row => Form::Row,
                 };

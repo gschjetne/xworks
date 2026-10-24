@@ -247,19 +247,16 @@ pub mod keys {
     /// A line through the text (on or off): GitHub's `~~strikethrough~~`.
     pub const STRIKETHROUGH: &str = "strikethrough";
     /// Markdown kept as it was written (text, saying what it is: "html",
-    /// "rule", "definition", "footnote" or "metadata"): what a story
-    /// doesn't hold, such as HTML, a thematic break or a link reference
-    /// definition, as its source. On a code block it's a block of it, on a
-    /// run of text it's inline, as inline HTML is; either way it's shown as
-    /// code is, and written back as it is.
+    /// "definition", "footnote", "metadata", "alert" and the like): what a
+    /// story doesn't hold, such as HTML, a link reference definition or
+    /// GitHub's alert's `[!NOTE]`, as its source. On a code block it's a
+    /// block of it, on a run of text it's inline, as inline HTML is;
+    /// either way it's shown as code is, and written back as it is.
     pub const SOURCE: &str = "source";
     /// Whether a list item is a task, and done (on or off): its box,
     /// checked or not, as GitHub's task lists' `- [ ]` and `- [x]`. Unset,
     /// it's an item as any other.
     pub const TASK: &str = "task";
-    /// A quote's kind (text), as GitHub's alerts give it: "NOTE", "TIP",
-    /// "IMPORTANT", "WARNING" or "CAUTION".
-    pub const ALERT: &str = "alert";
 }
 
 /// The most a paragraph's space above or below, or an indent, may be: ten

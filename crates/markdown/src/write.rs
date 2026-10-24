@@ -143,10 +143,6 @@ struct Open {
     splices: Vec<(Range<usize>, String)>,
     /// The block last written in it, and whether as it was.
     prev: Option<(ObjectId, bool)>,
-    /// A quote's alert's line: where it ended in the file, if it was
-    /// written as it was, or whether it was written afresh.
-    alert_end: Option<usize>,
-    alert_fresh: bool,
     /// The marker of a list written just before the next block, which a
     /// list there mustn't share, or it would join it.
     after_list: Option<char>,
@@ -173,8 +169,6 @@ impl Open {
             pending: true,
             splices: Vec::new(),
             prev: None,
-            alert_end: None,
-            alert_fresh: false,
             after_list: None,
             marker: '-',
             ordered: false,
@@ -545,28 +539,6 @@ impl<'a> Writer<'a> {
         let src = self.file.sources.get(&id);
         let Some((prev, prev_whole)) = top.prev else {
             // The first in its container.
-            if top.frame == Frame::Quote {
-                // After an alert's line: what the file had, or a blank
-                // line before what isn't text, which would otherwise be
-                // taken for the alert's paragraph's.
-                if let (Some(end), Some(src)) = (top.alert_end, src)
-                    && top.original
-                    && src.prev.is_none()
-                    && src.lines.start >= end
-                {
-                    let gap = &self.text()[end..src.lines.start];
-                    self.out.push_str(gap);
-                    return;
-                }
-                let text = self
-                    .document
-                    .paragraph(id)
-                    .is_some_and(|p| text_kind(p, self.sheet).is_empty());
-                if (top.alert_fresh || top.alert_end.is_some()) && !text {
-                    self.fresh("");
-                }
-                return;
-            }
             if top.frame == Frame::Root {
                 let start = self.file.front.as_ref().map_or(0, |f| f.end);
                 match src {
@@ -828,20 +800,7 @@ impl<'a> Writer<'a> {
 
     fn open_quote(&mut self, id: ObjectId) -> Result<(), Unheld> {
         let b = self.document.block(id).expect("a quote");
-        check_props(id, &b.props, &[keys::ALERT])?;
-        let alert = match b.props.get(keys::ALERT) {
-            Some(Value::Text(kind)) => {
-                let kind = kind.to_uppercase();
-                if !["NOTE", "TIP", "IMPORTANT", "WARNING", "CAUTION"].contains(&kind.as_str()) {
-                    return Err(Unheld {
-                        block: id,
-                        what: What::Property(keys::ALERT.to_string()),
-                    });
-                }
-                Some(kind)
-            }
-            _ => None,
-        };
+        check_props(id, &b.props, &[])?;
         let parent = self.open.last().expect("open");
         let src = self.file.sources.get(&id).filter(|s| s.parent == parent.id);
         let had = match src.map(|s| &s.syntax) {
@@ -850,33 +809,11 @@ impl<'a> Writer<'a> {
         };
         let original = parent.original && had.is_some();
         let prefix = had.unwrap_or_else(|| "> ".to_string());
-        let had_alert = self
-            .file
-            .baseline
-            .block(id)
-            .and_then(|b| b.props.get(keys::ALERT))
-            .cloned();
-        let alert_whole = original
-            && alert.is_some()
-            && had_alert == b.props.get(keys::ALERT).cloned()
-            && src.is_some_and(|s| self.pending_items() == s.first_of);
         let children = b.children.clone();
         let mut open = Open::new(id, Frame::Quote, children, original);
         open.first = prefix.clone();
         open.rest = prefix;
         self.open.push(open);
-        if let Some(kind) = alert {
-            if alert_whole {
-                let start = src.expect("checked").lines.start;
-                let end = line_end(self.text(), start);
-                let splices = self.pending_splices();
-                self.whole(start..end, &splices);
-                self.top().alert_end = Some(end);
-            } else {
-                self.fresh(&format!("[!{kind}]"));
-                self.top().alert_fresh = true;
-            }
-        }
         Ok(())
     }
 
@@ -1065,6 +1002,14 @@ impl<'a> Writer<'a> {
         let (text, props) = canonical(p);
         let chars: Vec<(char, Props)> = text.chars().zip(props).collect();
         let expected = shape_of(self.document, self.sheet, id);
+        // A quote's first paragraph that starts with a GitHub alert's
+        // `[!NOTE]` reads back as one only in its quote.
+        let alert = self.alert_len(id, &chars);
+        let within = if alert.is_some() {
+            Within::Quote
+        } else {
+            Within::Story
+        };
         let had = match self.file.sources.get(&id).map(|s| &s.syntax) {
             Some(Syntax::Paragraph(lines)) if !lines.is_empty() => Some(lines.clone()),
             _ => None,
@@ -1076,7 +1021,7 @@ impl<'a> Writer<'a> {
         if rest
             && let (Some(lines), Some((true, base))) = (&had, &base)
             && let Some(out) = self.reuse(id, &chars, base, lines, first)
-            && self.reads_back(&self.content(&out), &expected, false)
+            && self.reads_back(&self.content(&out), &expected, within)
         {
             return Ok(out);
         }
@@ -1101,11 +1046,15 @@ impl<'a> Writer<'a> {
                 }
             }
         }
+        // An alert's `[!NOTE]` stays alone on its line, as GitHub reads it.
+        let alert =
+            alert.filter(|&n| chars.get(n).is_some_and(|(c, p)| *c == ' ' && p.is_empty()));
+        kept.extend(alert);
         let width = self.width();
         for (careful, breaks, width) in [
             (false, kept.clone(), width),
             (true, kept, width),
-            (true, BTreeSet::new(), None),
+            (true, alert.into_iter().collect(), None),
         ] {
             let written = wrap(
                 &chars,
@@ -1119,7 +1068,7 @@ impl<'a> Writer<'a> {
                 .iter()
                 .map(|w| Line::Fresh(inline::guard_start(w)))
                 .collect();
-            if self.reads_back(&self.content(&out), &expected, false) {
+            if self.reads_back(&self.content(&out), &expected, within) {
                 return Ok(out);
             }
         }
@@ -1127,6 +1076,21 @@ impl<'a> Writer<'a> {
             block: id,
             what: What::Marks,
         })
+    }
+
+    /// How many of the characters `chars` of paragraph `id` starts with
+    /// are a GitHub alert's `[!NOTE]` kept as written, if it starts with
+    /// one as its quote's first block.
+    fn alert_len(&self, id: ObjectId, chars: &[(char, Props)]) -> Option<usize> {
+        let quote = self.document.parent(id)?;
+        if self.document.block(quote)?.kind != Kind::Quote
+            || self.document.children(quote).first() != Some(&id)
+        {
+            return None;
+        }
+        let is_alert = |p: &Props| matches!(p.get(keys::SOURCE), Some(Value::Text(k)) if k == "alert");
+        let n = chars.iter().take_while(|(_, p)| is_alert(p)).count();
+        (n > 0).then_some(n)
     }
 
     /// A paragraph's lines, of the file's `lines` it had, as `base`, those
@@ -1222,13 +1186,14 @@ impl<'a> Writer<'a> {
     }
 
     /// Whether `markdown`, read back as the file would read it, is one
-    /// block of `expected`'s shape; with `cell`, a table of one column
-    /// whose header cell that is.
-    fn reads_back(&self, markdown: &str, expected: &[Node], cell: bool) -> bool {
-        let mut text = if cell {
-            format!("| {markdown} |\n| --- |\n")
-        } else {
-            markdown.to_string()
+    /// block of `expected`'s shape: on its own, as a table of one column
+    /// whose header cell it is, or as a quote's first block.
+    fn reads_back(&self, markdown: &str, expected: &[Node], within: Within) -> bool {
+        let cell = within == Within::Cell;
+        let mut text = match within {
+            Within::Story => markdown.to_string(),
+            Within::Cell => format!("| {markdown} |\n| --- |\n"),
+            Within::Quote => markdown.split('\n').map(|l| format!("> {l}\n")).collect(),
         };
         // The definitions it might name: all of them, or of many, those
         // whose labels it has, case folded.
@@ -1261,17 +1226,24 @@ impl<'a> Writer<'a> {
         let Some(&first) = document.children(document.root()).first() else {
             return false;
         };
-        let first = if cell {
-            let Some(&cell) = document
-                .children(first)
-                .first()
-                .and_then(|&row| document.children(row).first())
-            else {
-                return false;
-            };
-            cell
-        } else {
-            first
+        let first = match within {
+            Within::Story => first,
+            Within::Cell => {
+                let Some(&cell) = document
+                    .children(first)
+                    .first()
+                    .and_then(|&row| document.children(row).first())
+                else {
+                    return false;
+                };
+                cell
+            }
+            Within::Quote => {
+                let Some(&inner) = document.children(first).first() else {
+                    return false;
+                };
+                inner
+            }
         };
         let mut got = shape_of(document, self.sheet, first);
         let mut expected = expected.to_vec();
@@ -1366,7 +1338,7 @@ impl<'a> Writer<'a> {
                     }
                 }
             };
-            if self.reads_back(&self.content(&lines), &expected, false) {
+            if self.reads_back(&self.content(&lines), &expected, Within::Story) {
                 return Ok(lines);
             }
         }
@@ -1579,7 +1551,7 @@ impl<'a> Writer<'a> {
                 self.style(id, careful, true),
             );
             let line = written.first().map(|w| w.text.clone()).unwrap_or_default();
-            if self.reads_back(&line, &expected, true) {
+            if self.reads_back(&line, &expected, Within::Cell) {
                 return Ok(line);
             }
         }
@@ -1588,6 +1560,15 @@ impl<'a> Writer<'a> {
             what: What::Marks,
         })
     }
+}
+
+/// Where a block written afresh is read back, to check it: on its own, as
+/// a table's cell, or as a quote's first block.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Within {
+    Story,
+    Cell,
+    Quote,
 }
 
 /// A task's box: `[x]` when it's done, `[ ]` when not.

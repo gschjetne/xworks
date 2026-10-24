@@ -6,9 +6,7 @@ use std::collections::HashMap;
 use std::ops::Range;
 
 use doc::{Block, Document, Kind, Object, ObjectId, Paragraph, Props, Run, Snapshot, Value};
-use pulldown_cmark::{
-    Alignment, BlockQuoteKind, CodeBlockKind, Event, LinkType, Parser, Tag, TagEnd,
-};
+use pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Parser, Tag, TagEnd};
 use story::{OBJECT, keys};
 
 use crate::{File, Habits, InlineHabits, OPTIONS, Read, Reference, Source, Syntax, TextLine};
@@ -782,6 +780,9 @@ impl<'a> Builder<'a> {
             _ => {}
         }
         let lines = whole_lines(self.text, &p.range);
+        if p.kind == ParaKind::Paragraph {
+            self.alert(&mut p);
+        }
         let syntax = match p.kind {
             ParaKind::Paragraph => {
                 if p.lines.len() > 1 {
@@ -810,6 +811,38 @@ impl<'a> Builder<'a> {
             self.inline.insert(p.id, p.habits);
         }
         self.add(p.id, object, lines, p.first_of, syntax);
+    }
+
+    /// GitHub's alert, `[!NOTE]` and the like alone on the first line of
+    /// a quote's first paragraph, kept as Markdown kept as written
+    /// (review jy4a2tx5), as the extensions not taken are: shown as
+    /// source, and written back as it was.
+    fn alert(&self, p: &mut Para) {
+        let Some(frame) = self.stack.last() else {
+            return;
+        };
+        let Some(first) = p.lines.first() else {
+            return;
+        };
+        if frame.kind != FrameKind::Quote
+            || !frame.children.is_empty()
+            || line_start(self.text, frame.range.start) != line_start(self.text, first.content)
+        {
+            return;
+        }
+        let line = self.text[first.content.min(first.whole.end)..first.whole.end].trim_end();
+        let is_alert = line
+            .strip_prefix("[!")
+            .and_then(|rest| rest.strip_suffix(']'))
+            .is_some_and(|kind| {
+                ["note", "tip", "important", "warning", "caution"]
+                    .iter()
+                    .any(|k| kind.eq_ignore_ascii_case(k))
+            });
+        if is_alert && p.text.starts_with(line) {
+            let n = line.chars().count() as u32;
+            p.runs = with_prop(&p.runs, 0, n, keys::SOURCE, Value::Text("alert".into()));
+        }
     }
 
     /// Starts reading a container of `kind` at `range`.
@@ -1182,15 +1215,8 @@ impl<'a> Builder<'a> {
                 );
                 self.top().width = indent.unwrap_or(0) + marker.len() + spaces;
             }
-            Tag::BlockQuote(kind) => {
+            Tag::BlockQuote(_) => {
                 self.block_start(&range);
-                let mut props = Props::new();
-                if let Some(kind) = kind {
-                    props.insert(
-                        keys::ALERT.to_string(),
-                        Value::Text(alert_name(kind).into()),
-                    );
-                }
                 let gt = self.text[range.start..]
                     .find('>')
                     .map_or(range.start, |i| range.start + i);
@@ -1205,14 +1231,9 @@ impl<'a> Builder<'a> {
                 self.push_frame(
                     FrameKind::Quote,
                     range.clone(),
-                    props,
+                    Props::new(),
                     Syntax::Quote(prefix),
                 );
-                if kind.is_some() {
-                    // The alert's line is the quote's own.
-                    let end = line_end(self.text, range.start);
-                    self.top().cursor = end;
-                }
             }
             Tag::Table(aligns) => {
                 self.block_start(&range);
@@ -1514,20 +1535,41 @@ fn runs_of(text: &str) -> Vec<Run> {
     }
 }
 
+/// `runs` with `key` set to `value` on characters `from..to`, the runs
+/// split where that starts and ends and joined where they come out the
+/// same.
+pub(crate) fn with_prop(runs: &[Run], from: u32, to: u32, key: &str, value: Value) -> Vec<Run> {
+    let mut out: Vec<Run> = Vec::with_capacity(runs.len() + 2);
+    let mut push = |len: u32, props: Props| {
+        if len == 0 {
+            return;
+        }
+        match out.last_mut() {
+            Some(last) if *last.props == props => last.len += len,
+            _ => out.push(Run::new(len, props)),
+        }
+    };
+    let mut at = 0;
+    for run in runs {
+        let (start, end) = (at, at + run.len);
+        at = end;
+        let (a, b) = (from.clamp(start, end), to.clamp(start, end));
+        if a >= b {
+            push(run.len, (*run.props).clone());
+            continue;
+        }
+        push(a - start, (*run.props).clone());
+        let mut marked = (*run.props).clone();
+        marked.insert(key.to_string(), value.clone());
+        push(b - a, marked);
+        push(end - b, (*run.props).clone());
+    }
+    out
+}
+
 /// Properties of one key.
 fn one(key: &str, value: Value) -> Props {
     Props::from([(key.to_string(), value)])
-}
-
-/// An alert's name, as GitHub writes it.
-fn alert_name(kind: BlockQuoteKind) -> &'static str {
-    match kind {
-        BlockQuoteKind::Note => "NOTE",
-        BlockQuoteKind::Tip => "TIP",
-        BlockQuoteKind::Important => "IMPORTANT",
-        BlockQuoteKind::Warning => "WARNING",
-        BlockQuoteKind::Caution => "CAUTION",
-    }
 }
 
 /// `line` without what `depth` quotes put before it: spaces, and a `>`

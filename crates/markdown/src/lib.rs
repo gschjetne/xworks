@@ -8,8 +8,9 @@
 //!   stage 2's blocks; emphasis, strong, code, links and lines through
 //!   text are marks; images are pictures in the text, linked by their
 //!   paths (`story::keys::PICTURE_SRC`). What a story doesn't hold, such
-//!   as HTML, thematic breaks, link reference definitions and footnotes,
-//!   is kept as it was written (`story::keys::SOURCE`). YAML or TOML front
+//!   as HTML, thematic breaks, link reference definitions, footnotes and
+//!   the `[!NOTE]` of GitHub's alerts, which are quotes, is kept as it was
+//!   written (`story::keys::SOURCE`). YAML or TOML front
 //!   matter is kept as it was, outside the story, and its `lang` is the
 //!   paragraphs' language.
 //! - [`File`]: what the file said, kept for writing it back:
@@ -52,13 +53,14 @@ pub use shape::{Form, Node, shape};
 pub use write::{Unheld, What};
 
 /// The extensions read, besides CommonMark: GitHub's tables,
-/// strikethrough, task lists, footnotes and alerts. Footnotes are read so
-/// they're kept as they were written rather than taken for links.
+/// strikethrough, task lists and footnotes. Footnotes are read so they're
+/// kept as they were written rather than taken for links. GitHub's alerts
+/// are read as the quotes they are, their `[!NOTE]` kept as written
+/// (review jy4a2tx5).
 pub(crate) const OPTIONS: pulldown_cmark::Options = pulldown_cmark::Options::ENABLE_TABLES
     .union(pulldown_cmark::Options::ENABLE_STRIKETHROUGH)
     .union(pulldown_cmark::Options::ENABLE_TASKLISTS)
-    .union(pulldown_cmark::Options::ENABLE_FOOTNOTES)
-    .union(pulldown_cmark::Options::ENABLE_GFM);
+    .union(pulldown_cmark::Options::ENABLE_FOOTNOTES);
 
 /// A Markdown file, read: its story, and what writing it back needs.
 #[derive(Clone, Debug)]

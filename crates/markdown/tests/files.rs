@@ -317,6 +317,59 @@ fn a_task_toggled_changes_its_box_alone() {
     );
 }
 
+/// GitHub's alerts are shown as written (review jy4a2tx5): the quote is a
+/// quote, its `[!NOTE]` kept as Markdown kept as written at the start of
+/// its first paragraph, and written back as it was, also when the text
+/// after it is edited, and alone on its line when it's written afresh.
+#[test]
+fn alerts_are_kept_as_written() {
+    let sheet = sheet();
+    let bytes = file("notes.md");
+    let read = read(&bytes, &sheet);
+    let (id, at) = find(&read.document, "[!NOTE]");
+    assert_eq!(at, 0);
+    let p = read.document.paragraph(id).expect("a paragraph");
+    assert!(p.text.starts_with("[!NOTE] The forum's"), "{:?}", p.text);
+    assert_eq!(p.runs[0].len, 7);
+    assert_eq!(
+        p.runs[0].props.get(keys::SOURCE),
+        Some(&Value::Text("alert".into()))
+    );
+    assert!(!p.runs[1].props.contains_key(keys::SOURCE));
+    let quote = read.document.block(p.parent).expect("a quote");
+    assert_eq!(quote.kind, doc::Kind::Quote);
+    assert!(quote.props.is_empty(), "{:?}", quote.props);
+
+    let edited = replace(&read.document, "spam filter", "filter");
+    let mut file = read.file.clone();
+    let written = file.write(&edited, &sheet).expect("it writes");
+    assert_eq!(
+        changed(&bytes, &written),
+        [(
+            "> The forum's spam filter is still too keen. Ade will look at it.".to_string(),
+            "> The forum's filter is still too keen. Ade will look at it.".to_string()
+        )]
+    );
+
+    let fresh = markdown::File::empty(read.file.language())
+        .write(&edited, &sheet)
+        .expect("it writes");
+    let fresh = String::from_utf8(fresh).expect("UTF-8");
+    assert!(
+        fresh.contains("> [!NOTE]\n> The forum's filter"),
+        "written afresh as\n{fresh}"
+    );
+    assert_eq!(
+        shape(&edited, &sheet),
+        shape(&self::read(fresh.as_bytes(), &sheet).document, &sheet)
+    );
+    // Anywhere else, it's text.
+    let read = self::read(b"Not an alert:\n\n> Text\n> [!NOTE]\n", &sheet);
+    let (id, _) = find(&read.document, "[!NOTE]");
+    let p = read.document.paragraph(id).expect("a paragraph");
+    assert!(p.runs.iter().all(|r| !r.props.contains_key(keys::SOURCE)));
+}
+
 /// The file's front matter is kept, and its language is the paragraphs'.
 #[test]
 fn front_matter_is_kept_and_gives_the_language() {
