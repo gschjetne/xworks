@@ -1179,6 +1179,7 @@ pub fn outline(document: &Document, sheet: &StyleSheet) -> Vec<String> {
                         Value::Bool(false) => {}
                         Value::Int(n) => line.push_str(&format!(" {key} {n}")),
                         Value::Text(t) => line.push_str(&format!(" {key} {t:?}")),
+                        Value::Ref(id) => line.push_str(&format!(" {key} {id}")),
                     }
                 }
                 out.push(line);

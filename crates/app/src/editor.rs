@@ -1937,6 +1937,12 @@ impl Editor {
                 .and_then(|p| at(p, 0))
                 .or_else(|| self.after(&ops[..ops.len() - 1])),
             Op::DeleteBlock { .. } => self.after(&ops[..ops.len() - 1]),
+            // Styles move no text: the caret goes where the operations
+            // before say.
+            Op::InsertStyle { .. }
+            | Op::DeleteStyle { .. }
+            | Op::SetStyleProp { .. }
+            | Op::SetBase { .. } => self.after(&ops[..ops.len() - 1]),
         }
     }
 

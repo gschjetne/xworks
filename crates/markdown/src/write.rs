@@ -493,7 +493,7 @@ impl<'a> Writer<'a> {
                 Kind::Table => self.table(id)?,
                 Kind::Row => {}
             },
-            Object::Story(_) => {}
+            Object::Story(_) | Object::Sheet(_) | Object::Style(_) => {}
         }
         Ok(())
     }

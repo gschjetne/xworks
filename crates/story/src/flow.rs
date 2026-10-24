@@ -131,6 +131,8 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
                 continue;
             }
             Object::Block(block) => block,
+            // The stylesheet isn't in the story.
+            Object::Sheet(_) | Object::Style(_) => continue,
         };
         let mut inner = place.clone();
         let ordered = matches!(block.props.get(keys::ORDERED), Some(Value::Bool(true)));

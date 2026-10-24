@@ -31,6 +31,20 @@
 //! - **A paragraph split or joined while it's deleted or moved:** both
 //!   halves go, or move, together; deleting the paragraph joined away
 //!   deletes its text from the one it joined.
+//! - **Styles put in the same place** in the stylesheet: the first one's
+//!   style comes first; a place after a deleted style becomes the place
+//!   after the one before it.
+//! - **A deleted style** takes every change to it with it. Paragraphs
+//!   that name it, and styles that refer to it, take what they would
+//!   without it.
+//! - **The same style's property, or its base, set twice:** the later
+//!   one wins.
+//!
+//! Two bases that would together make a style based on itself, a base on
+//! a style deleted meanwhile, and a style deleted while another is based
+//! on it meanwhile, can't both have their way: the first one wins, and
+//! the one rebased over it is dropped (project owner, 2026-10-24, review
+//! 30dmn1js).
 //!
 //! Some pairs can't both have their way, whatever the rules: two moves
 //! that together would put a block inside itself, deletions that together
@@ -43,8 +57,8 @@
 //! seldom they don't for blocks.
 
 use crate::Op::{
-    DeleteBlock, DeleteText, InsertBlock, InsertText, JoinParagraphs, MoveBlock, SetBlockProp,
-    SetCharProp, SetParaProp, SplitParagraph,
+    DeleteBlock, DeleteStyle, DeleteText, InsertBlock, InsertStyle, InsertText, JoinParagraphs,
+    MoveBlock, SetBase, SetBlockProp, SetCharProp, SetParaProp, SetStyleProp, SplitParagraph,
 };
 use crate::{Document, ObjectId, Op};
 
@@ -99,7 +113,53 @@ fn transform(base: &Document, op: &Op, over: &Op, first: bool) -> Vec<Op> {
     {
         return Vec::new();
     }
+    // And a deleted style every change to it.
+    if let DeleteStyle { style } = over
+        && matches!(op,
+            SetStyleProp { style: s, .. } | SetBase { style: s, .. } | DeleteStyle { style: s }
+                if s == style)
+    {
+        return Vec::new();
+    }
     match (op, over) {
+        (
+            InsertStyle {
+                sheet,
+                after,
+                id,
+                style,
+            },
+            _,
+        ) => {
+            let mut after = *after;
+            match over {
+                DeleteStyle { style: gone } if after == Some(*gone) => {
+                    after = base.previous(*gone);
+                }
+                InsertStyle {
+                    sheet: q,
+                    after: a,
+                    id: other,
+                    ..
+                } if q == sheet && *a == after && !first => after = Some(*other),
+                _ => {}
+            }
+            vec![InsertStyle {
+                sheet: *sheet,
+                after,
+                id: *id,
+                style: style.clone(),
+            }]
+        }
+        (
+            SetStyleProp { style, key, .. },
+            SetStyleProp {
+                style: s,
+                key: key2,
+                ..
+            },
+        ) if style == s && key == key2 && first => Vec::new(),
+        (SetBase { style, .. }, SetBase { style: s, .. }) if style == s && first => Vec::new(),
         (
             InsertBlock {
                 parent,
@@ -318,6 +378,7 @@ fn inside(base: &Document, op: &Op, block: ObjectId) -> bool {
         MoveBlock {
             block: m, parent, ..
         } => base.contains(block, *m) || base.contains(block, *parent),
+        InsertStyle { .. } | DeleteStyle { .. } | SetStyleProp { .. } | SetBase { .. } => false,
     }
 }
 

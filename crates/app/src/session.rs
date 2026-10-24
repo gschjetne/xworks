@@ -686,6 +686,7 @@ pub fn check(session: &Session, played: &Played) -> Vec<String> {
                 Value::Text(t) => t.clone(),
                 Value::Int(n) => n.to_string(),
                 Value::Bool(b) => b.to_string(),
+                Value::Ref(id) => id.to_string(),
             });
         if &got != want {
             problems.push(format!("{stretch:?}'s {key} is {got:?}, expected {want:?}"));

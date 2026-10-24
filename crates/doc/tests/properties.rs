@@ -9,14 +9,18 @@
 //!   have their way: the rules alone converge;
 //! - a snapshot is unchanged by later edits;
 //! - a transaction applies all or nothing, and undo and redo are exact;
-//! - documents and operations survive serialization.
+//! - documents and operations survive serialization;
+//! - styles are never based on themselves, through any chain, whatever
+//!   bases are set, alone or concurrently (M2 stage 9).
 //!
 //! Random documents are trees: paragraphs in lists, quotes and tables,
-//! nested, made by applying random operations to a new document.
+//! nested, made by applying random operations to a new document, which
+//! now and then has a stylesheet of styles based on each other and named
+//! parts.
 
 use doc::{
-    Block, Document, History, Kind, Object, ObjectId, Op, Paragraph, Props, Run, Snapshot, Value,
-    conflict, rebase,
+    Block, Document, History, Kind, Object, ObjectId, Op, Paragraph, Props, Run, Sheet, Snapshot,
+    Style, StyleKind, Value, conflict, rebase,
 };
 use proptest::prelude::*;
 
@@ -352,6 +356,9 @@ fn block_op(doc: &Document, ids: &mut u64, c: &mut Choices<'_>) -> Op {
 
 /// A random operation of any kind that's valid on `doc`.
 fn op(doc: &Document, ids: &mut u64, c: &mut Choices<'_>) -> Op {
+    if doc.sheet().is_some() && c.below(3) == 0 {
+        return style_op(doc, ids, c);
+    }
     if c.below(5) < 2 {
         block_op(doc, ids, c)
     } else {
@@ -359,11 +366,199 @@ fn op(doc: &Document, ids: &mut u64, c: &mut Choices<'_>) -> Op {
     }
 }
 
+const KINDS: [StyleKind; 7] = [
+    StyleKind::Paragraph,
+    StyleKind::Character,
+    StyleKind::Paragraph,
+    StyleKind::Face,
+    StyleKind::Colour,
+    StyleKind::Page,
+    StyleKind::Tabs,
+];
+
+/// A style's properties: its name, and a value or two, a face by ID among
+/// them, where `faces` has one.
+fn style_props(c: &mut Choices<'_>, n: u64, faces: &[ObjectId]) -> Props {
+    let mut props = Props::new();
+    props.insert("name".into(), Value::Text(format!("Style {n}")));
+    if c.below(2) == 0 {
+        props.insert("size".into(), Value::Int(c.below(4) as i64 + 9));
+    }
+    if let Some(face) = c.pick(faces) {
+        props.insert("font".into(), Value::Ref(face));
+    }
+    props
+}
+
+/// The styles of `kind` among `styles`.
+fn of_kind(styles: &[(ObjectId, Style)], kind: StyleKind) -> Vec<ObjectId> {
+    styles
+        .iter()
+        .filter(|(_, s)| s.kind == kind)
+        .map(|(id, _)| *id)
+        .collect()
+}
+
+/// A new document with a stylesheet of a few styles and parts, each style
+/// based on one before it of its kind, or none.
+fn styled(c: &mut Choices<'_>) -> Document {
+    let (root, first, sheet) = (ObjectId(0), ObjectId(1), ObjectId(2));
+    let mut objects = vec![
+        (
+            root,
+            Object::Story(doc::Story {
+                blocks: vec![first],
+            }),
+        ),
+        (
+            first,
+            Object::Paragraph(Paragraph {
+                parent: root,
+                text: String::new(),
+                runs: Vec::new(),
+                props: Props::new(),
+            }),
+        ),
+    ];
+    let count = 1 + c.below(7) as u64;
+    let mut styles: Vec<(ObjectId, Style)> = Vec::new();
+    for n in 0..count {
+        let id = ObjectId(3 + n);
+        let kind = KINDS[c.below(KINDS.len() as u32) as usize];
+        let base = if kind.is_part() || c.below(3) == 0 {
+            None
+        } else {
+            c.pick(&of_kind(&styles, kind))
+        };
+        let props = style_props(c, n, &of_kind(&styles, StyleKind::Face));
+        styles.push((
+            id,
+            Style {
+                sheet,
+                kind,
+                base,
+                props,
+            },
+        ));
+    }
+    let mut defaults = Props::new();
+    defaults.insert("size".into(), Value::Int(11));
+    objects.push((
+        sheet,
+        Object::Sheet(Sheet {
+            styles: styles.iter().map(|(id, _)| *id).collect(),
+            props: defaults,
+        }),
+    ));
+    objects.extend(styles.into_iter().map(|(id, s)| (id, Object::Style(s))));
+    Document::from_snapshot(Snapshot {
+        root,
+        next_id: 3 + count,
+        objects,
+    })
+    .expect("a styled document holds together")
+}
+
+/// A random operation on styles, valid or not on `doc`, which has a
+/// stylesheet.
+fn style_op_candidate(doc: &Document, ids: &mut u64, c: &mut Choices<'_>) -> Op {
+    let sheet = doc.sheet().expect("a stylesheet");
+    let styles = doc.styles().to_vec();
+    let faces: Vec<ObjectId> = styles
+        .iter()
+        .copied()
+        .filter(|&s| doc.style(s).is_some_and(|s| s.kind == StyleKind::Face))
+        .collect();
+    match c.below(6) {
+        0 => {
+            let id = fresh(ids);
+            let kind = KINDS[c.below(KINDS.len() as u32) as usize];
+            let after = match c.below(styles.len() as u32 + 1) {
+                0 => None,
+                i => Some(styles[i as usize - 1]),
+            };
+            let base = if c.below(2) == 0 {
+                c.pick(&styles)
+            } else {
+                None
+            };
+            Op::InsertStyle {
+                sheet,
+                after,
+                id,
+                style: Style {
+                    sheet,
+                    kind,
+                    base,
+                    props: style_props(c, id.0, &faces),
+                },
+            }
+        }
+        1 => Op::DeleteStyle {
+            style: c.pick(&styles).unwrap_or(sheet),
+        },
+        2 | 3 => {
+            let style = c.pick(&styles).unwrap_or(sheet);
+            let base = if c.below(4) > 0 {
+                c.pick(&styles)
+            } else {
+                None
+            };
+            Op::SetBase { style, base }
+        }
+        4 => {
+            let target = if c.below(4) == 0 {
+                sheet
+            } else {
+                c.pick(&styles).unwrap_or(sheet)
+            };
+            let key = ["size", "name", "font"][c.below(3) as usize];
+            let value = match key {
+                "font" => c.pick(&faces).map(Value::Ref),
+                _ => c.value(key),
+            };
+            Op::SetStyleProp {
+                style: target,
+                key: key.into(),
+                value,
+            }
+        }
+        _ => Op::SetParaProp {
+            paragraph: pick(doc, c),
+            key: "style".into(),
+            value: c.pick(&styles).map(Value::Ref),
+        },
+    }
+}
+
+/// A random operation on styles that's valid on `doc`, or text typed if
+/// none comes up.
+fn style_op(doc: &Document, ids: &mut u64, c: &mut Choices<'_>) -> Op {
+    for _ in 0..8 {
+        let op = style_op_candidate(doc, ids, c);
+        if doc.clone().apply(&op).is_ok() {
+            return op;
+        }
+    }
+    insert(doc, c)
+}
+
+/// Whether every style's chain of bases ends.
+fn chains_end(doc: &Document) -> bool {
+    doc.styles()
+        .iter()
+        .all(|&s| doc.chain(s).len() <= doc.styles().len())
+}
+
 /// A random document: paragraphs of formatted text in many scripts, in
 /// lists, quotes and tables, made by applying random operations to a new
-/// one.
+/// one, which now and then has a stylesheet.
 fn document(c: &mut Choices<'_>, ids: &mut u64) -> Document {
-    let mut doc = Document::new();
+    let mut doc = if c.below(3) == 0 {
+        styled(c)
+    } else {
+        Document::new()
+    };
     let steps = 4 + c.below(16);
     for _ in 0..steps {
         let op = if doc.paragraphs().len() >= 8 && c.below(2) == 0 {
@@ -464,7 +659,49 @@ proptest! {
                 prop_assert!(doc.paragraphs().iter().all(|p| gone.contains(p)), "{}", why);
             }
             (Op::MoveBlock { .. }, Op::MoveBlock { .. }) => {}
+            // Bases that together would loop, and a base on, or a style
+            // based on, one deleted meanwhile.
+            (Op::SetBase { .. }, Op::SetBase { .. })
+            | (Op::SetBase { .. } | Op::InsertStyle { .. }, Op::DeleteStyle { .. })
+            | (Op::DeleteStyle { .. }, Op::SetBase { .. } | Op::InsertStyle { .. }) => {}
             _ => prop_assert!(false, "{}", why),
+        }
+    }
+
+    /// Whatever bases are set, valid or not, one after another, no style
+    /// is ever based on itself, a refused one changes nothing, and the
+    /// document always reads back from its snapshot.
+    #[test]
+    fn bases_never_loop(values in choices()) {
+        let c = &mut Choices { values: &values, at: 0 };
+        let mut ids = 1000;
+        let mut doc = styled(c);
+        for _ in 0..24 {
+            let op = style_op_candidate(&doc, &mut ids, c);
+            let before = doc.clone();
+            if doc.apply(&op).is_err() {
+                prop_assert_eq!(&doc, &before, "a refused {:?} changed nothing", op);
+            }
+            prop_assert!(chains_end(&doc), "after {:?}\n{:?}", op, doc);
+        }
+        prop_assert!(Document::from_snapshot(doc.to_snapshot()).is_ok());
+    }
+
+    /// Two concurrent operations on styles, each valid alone, never make
+    /// a style based on itself together, in either order.
+    #[test]
+    fn concurrent_bases_never_loop(values in choices()) {
+        let c = &mut Choices { values: &values, at: 0 };
+        let mut ids = 1000;
+        let doc = styled(c);
+        let a = style_op(&doc, &mut ids, c);
+        let b = style_op(&doc, &mut ids, c);
+        for (first, second) in [(&a, &b), (&b, &a)] {
+            let mut d = doc.clone();
+            d.apply(first).expect("the first applies");
+            d.apply_all(&rebase(&doc, second, first, false)).expect("the second over it applies");
+            prop_assert!(chains_end(&d), "a {:?}\nb {:?}\n{:?}", a, b, d);
+            prop_assert!(Document::from_snapshot(d.to_snapshot()).is_ok());
         }
     }
 

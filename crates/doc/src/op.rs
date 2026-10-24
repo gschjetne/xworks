@@ -1,7 +1,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::props::{Props, Run, Value};
-use crate::{Object, ObjectId};
+use crate::{Object, ObjectId, Style};
 
 /// A change to a document. Offsets and lengths count Unicode scalar values
 /// in a paragraph's text.
@@ -114,6 +114,42 @@ pub enum Op {
         /// Its value, or `None` to unset it.
         value: Option<Value>,
     },
+    /// Creates a style or a named part, at a place in the stylesheet.
+    InsertStyle {
+        /// The stylesheet.
+        sheet: ObjectId,
+        /// The style it comes after, or `None` to come first.
+        after: Option<ObjectId>,
+        /// Its ID, unused until now.
+        id: ObjectId,
+        /// The style: in `sheet`, based on a style of its kind if on any.
+        style: Style,
+    },
+    /// Deletes a style or a named part that no style is based on.
+    /// Paragraphs that name it, and styles that refer to it, take what they
+    /// would without it.
+    DeleteStyle {
+        /// The style.
+        style: ObjectId,
+    },
+    /// Sets a property of a style or a part, or of the stylesheet: one of
+    /// its defaults, or what the whole document shares.
+    SetStyleProp {
+        /// The style, part or stylesheet.
+        style: ObjectId,
+        /// The property.
+        key: String,
+        /// Its value, or `None` to unset it.
+        value: Option<Value>,
+    },
+    /// Bases a style on another of its kind, or on none. A base that would
+    /// make the style based on itself, through any chain, is refused.
+    SetBase {
+        /// The style.
+        style: ObjectId,
+        /// The style it's based on from now on, if any.
+        base: Option<ObjectId>,
+    },
 }
 
 /// Why an operation couldn't be applied. A failed operation changes nothing.
@@ -204,4 +240,33 @@ pub enum Error {
     /// type.
     #[error("{0} holds the story's last paragraph")]
     LastParagraph(ObjectId),
+    /// The operation names a style the document doesn't have, or a
+    /// stylesheet that isn't its own.
+    #[error("there is no such style as {0}")]
+    NoSuchStyle(ObjectId),
+    /// A style based on what isn't a style of its kind, or a part based on
+    /// anything.
+    #[error("{style} can't be based on {base}")]
+    WrongBase {
+        /// The style.
+        style: ObjectId,
+        /// What it would be based on.
+        base: ObjectId,
+    },
+    /// A base that would make a style based on itself.
+    #[error("basing {style} on {base} would base it on itself")]
+    Loop {
+        /// The style.
+        style: ObjectId,
+        /// What it would be based on.
+        base: ObjectId,
+    },
+    /// Deleting a style another is based on.
+    #[error("{by} is based on {style}")]
+    BasedOn {
+        /// The style.
+        style: ObjectId,
+        /// A style based on it.
+        by: ObjectId,
+    },
 }

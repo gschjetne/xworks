@@ -5,6 +5,8 @@ use std::sync::Arc;
 
 use serde::{Deserialize, Serialize};
 
+use crate::ObjectId;
+
 /// A property's value. Lengths are integers in layout units
 /// (docs/ARCHITECTURE.md, section 9). Files store values by their variants'
 /// positions (spec/format/README.md): new variants go at the end.
@@ -14,8 +16,11 @@ pub enum Value {
     Bool(bool),
     /// A number, such as a size in layout units.
     Int(i64),
-    /// Text, such as a font family or a style's name.
+    /// Text, such as a font family.
     Text(String),
+    /// Another object, by its ID: a paragraph's style, or a face a style
+    /// sets its text in. One that names no such object is as if unset.
+    Ref(ObjectId),
 }
 
 /// A set of properties by name: a paragraph's, or a run of text's. A

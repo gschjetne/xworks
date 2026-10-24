@@ -92,6 +92,80 @@ pub struct Block {
     pub props: Props,
 }
 
+/// What a style styles, or what a named part names (docs/ARCHITECTURE.md,
+/// section 6). Files store kinds by their variants' positions
+/// (spec/format/README.md): new kinds go at the end.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord, Serialize, Deserialize)]
+pub enum StyleKind {
+    /// A paragraph style, which paragraphs name.
+    Paragraph,
+    /// A character style, which runs of text name, as marks do.
+    Character,
+    /// A page style: a page's size and margins.
+    Page,
+    /// A named part: a face, its font family.
+    Face,
+    /// A named part: a colour.
+    Colour,
+    /// A named part: a layout of tab stops.
+    Tabs,
+    /// A named part: how a list is marked and indented.
+    List,
+}
+
+impl StyleKind {
+    /// Its name in dumps: "paragraph style", "face" and so on.
+    pub fn name(self) -> &'static str {
+        match self {
+            StyleKind::Paragraph => "paragraph style",
+            StyleKind::Character => "character style",
+            StyleKind::Page => "page style",
+            StyleKind::Face => "face",
+            StyleKind::Colour => "colour",
+            StyleKind::Tabs => "tab layout",
+            StyleKind::List => "list definition",
+        }
+    }
+
+    /// Whether it's a named part rather than a style: parts aren't based
+    /// on anything; styles refer to them.
+    pub fn is_part(self) -> bool {
+        matches!(
+            self,
+            StyleKind::Face | StyleKind::Colour | StyleKind::Tabs | StyleKind::List
+        )
+    }
+}
+
+/// A style, or a named part styles refer to, in a document's stylesheet.
+///
+/// A style sets only what differs from the style it's based on, which is
+/// of its own kind; parts are based on nothing. Its name and role are
+/// among its properties, so renaming it is one edit and paragraphs, which
+/// name it by ID, never notice.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Style {
+    /// The stylesheet it's in.
+    pub sheet: ObjectId,
+    /// What it is.
+    pub kind: StyleKind,
+    /// The style it's based on, if it's based on one.
+    pub base: Option<ObjectId>,
+    /// What it sets: its name, its role, and its values.
+    pub props: Props,
+}
+
+/// A document's stylesheet: its styles and parts, in order, and its
+/// properties: the defaults every chain of styles ends in, and what the
+/// whole document shares, such as where the sheet came from.
+#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Sheet {
+    /// Its styles and parts, in order.
+    pub styles: Vec<ObjectId>,
+    /// Its defaults, and the document's own settings.
+    pub props: Props,
+}
+
 /// An object in a document. Files store objects by their variants'
 /// positions (spec/format/README.md): new variants go at the end.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -102,35 +176,53 @@ pub enum Object {
     Paragraph(Paragraph),
     /// A container.
     Block(Block),
+    /// The stylesheet.
+    Sheet(Sheet),
+    /// A style or a named part.
+    Style(Style),
 }
 
 impl Object {
-    /// The container it's in; `None` for a story.
+    /// The container it's in: a block's, or a style's stylesheet; `None`
+    /// for a story or the stylesheet.
     pub fn parent(&self) -> Option<ObjectId> {
         match self {
-            Object::Story(_) => None,
+            Object::Story(_) | Object::Sheet(_) => None,
             Object::Paragraph(p) => Some(p.parent),
             Object::Block(b) => Some(b.parent),
+            Object::Style(s) => Some(s.sheet),
         }
     }
 
-    /// What it holds, in order; nothing for a paragraph.
+    /// What it holds, in order: a container's blocks, or the stylesheet's
+    /// styles; nothing for a paragraph or a style.
     pub fn children(&self) -> &[ObjectId] {
         match self {
             Object::Story(s) => &s.blocks,
-            Object::Paragraph(_) => &[],
+            Object::Paragraph(_) | Object::Style(_) => &[],
             Object::Block(b) => &b.children,
+            Object::Sheet(s) => &s.styles,
         }
     }
 
-    /// Whether it holds blocks: a story or a container.
+    /// Whether it holds blocks, or styles: a story, a container or the
+    /// stylesheet.
     pub fn is_container(&self) -> bool {
-        !matches!(self, Object::Paragraph(_))
+        !matches!(self, Object::Paragraph(_) | Object::Style(_))
+    }
+
+    /// Whether it's part of a story: the story, a paragraph or a
+    /// container, which the operations on blocks act on.
+    fn in_story(&self) -> bool {
+        matches!(
+            self,
+            Object::Story(_) | Object::Paragraph(_) | Object::Block(_)
+        )
     }
 
     /// Whether it can hold `child`: a story, an item or a quote holds
     /// paragraphs, lists, quotes and tables; a list holds items; a table
-    /// holds rows; and a row holds paragraphs.
+    /// holds rows; a row holds paragraphs; and the stylesheet holds styles.
     pub fn holds(&self, child: &Object) -> bool {
         let flow = matches!(
             child,
@@ -142,7 +234,8 @@ impl Object {
         );
         match self {
             Object::Story(_) => flow,
-            Object::Paragraph(_) => false,
+            Object::Paragraph(_) | Object::Style(_) => false,
+            Object::Sheet(_) => matches!(child, Object::Style(_)),
             Object::Block(b) => match b.kind {
                 Kind::Item | Kind::Quote => flow,
                 Kind::List => matches!(
@@ -166,7 +259,7 @@ impl Object {
 
     fn set_parent(&mut self, parent: ObjectId) {
         match self {
-            Object::Story(_) => {}
+            Object::Story(_) | Object::Sheet(_) | Object::Style(_) => {}
             Object::Paragraph(p) => p.parent = parent,
             Object::Block(b) => b.parent = parent,
         }
@@ -175,13 +268,15 @@ impl Object {
     fn children_mut(&mut self) -> Option<&mut Vec<ObjectId>> {
         match self {
             Object::Story(s) => Some(&mut s.blocks),
-            Object::Paragraph(_) => None,
+            Object::Paragraph(_) | Object::Style(_) => None,
             Object::Block(b) => Some(&mut b.children),
+            Object::Sheet(s) => Some(&mut s.styles),
         }
     }
 }
 
-/// A document: objects by ID, and the story at its root.
+/// A document: objects by ID, the story at its root, and its stylesheet,
+/// if it has one.
 ///
 /// Cloning is O(1) and gives a snapshot: edits to either copy never show in
 /// the other. Two documents are equal when their objects are, whatever
@@ -193,6 +288,8 @@ pub struct Document {
     next_id: u64,
     /// How many paragraphs it has.
     paragraphs: usize,
+    /// Its stylesheet, if it has one.
+    sheet: Option<ObjectId>,
 }
 
 impl PartialEq for Document {
@@ -265,6 +362,21 @@ pub enum SnapshotError {
         /// What it holds.
         child: ObjectId,
     },
+    /// More than one stylesheet.
+    #[error("{0} is a second stylesheet")]
+    TwoSheets(ObjectId),
+    /// A style based on what isn't a style of its kind, or a part based on
+    /// anything.
+    #[error("{style} can't be based on {base}")]
+    WrongBase {
+        /// The style.
+        style: ObjectId,
+        /// What it's based on.
+        base: ObjectId,
+    },
+    /// A style based on itself, through a chain of bases.
+    #[error("{0} is based on itself")]
+    Loop(ObjectId),
 }
 
 impl Document {
@@ -284,13 +396,16 @@ impl Document {
 
     /// The document `snapshot` describes, if it holds together: the root
     /// is a story; every container lists its own children, each once,
-    /// each of a kind it can hold; every other object is in the root's
-    /// tree; there's a paragraph; and runs cover their text. Runs are
-    /// normalized.
+    /// each of a kind it can hold; there's at most one stylesheet, which
+    /// lists its styles likewise; every other object is in the root's tree
+    /// or the stylesheet; there's a paragraph; runs cover their text; and
+    /// every style is based on a style of its kind, never on itself, and
+    /// parts on nothing. Runs are normalized.
     pub fn from_snapshot(snapshot: Snapshot) -> Result<Document, SnapshotError> {
         let mut objects = IdMap::new();
         let mut ids = BTreeSet::new();
         let mut paragraphs = 0;
+        let mut sheet = None;
         for (id, object) in snapshot.objects {
             if !ids.insert(id) {
                 return Err(SnapshotError::Duplicate(id));
@@ -307,6 +422,12 @@ impl Document {
                     paragraphs += 1;
                     Object::Paragraph(p)
                 }
+                Object::Sheet(s) => {
+                    if sheet.replace(id).is_some() {
+                        return Err(SnapshotError::TwoSheets(id));
+                    }
+                    Object::Sheet(s)
+                }
                 other => other,
             };
             objects.insert(id, Arc::new(object));
@@ -316,6 +437,7 @@ impl Document {
             root: snapshot.root,
             next_id: snapshot.next_id,
             paragraphs,
+            sheet,
         };
         let Some(story) = document.story(document.root) else {
             return Err(SnapshotError::RootNotAStory(document.root));
@@ -345,20 +467,102 @@ impl Document {
             }
         }
         for &id in &ids {
-            if id != document.root && !listed.contains(&id) {
+            if id != document.root && Some(id) != document.sheet && !listed.contains(&id) {
                 return Err(SnapshotError::Stray(id));
             }
         }
-        // And every object is in the root's tree: none is in a ring of
-        // containers holding each other.
-        let reached: BTreeSet<ObjectId> = document.subtree(document.root).into_iter().collect();
+        // And every object is in the root's tree or the stylesheet: none
+        // is in a ring of containers holding each other.
+        let mut reached: BTreeSet<ObjectId> = document.subtree(document.root).into_iter().collect();
+        if let Some(sheet) = document.sheet {
+            if reached.contains(&sheet) {
+                return Err(SnapshotError::Stray(sheet));
+            }
+            reached.extend(document.subtree(sheet));
+        }
         if let Some(&stray) = ids.iter().find(|id| !reached.contains(id)) {
             return Err(SnapshotError::Stray(stray));
         }
         if document.paragraphs == 0 {
             return Err(SnapshotError::EmptyStory(document.root));
         }
+        // Every style is based on one of its kind, parts on none, and no
+        // chain comes back to where it started: each chain is walked until
+        // it meets one already found to end, so it takes time in how many
+        // styles there are.
+        for &id in document.styles() {
+            let style = document.style(id).expect("a stylesheet lists styles");
+            if let Some(base) = style.base
+                && !document.can_base(style.kind, base)
+            {
+                return Err(SnapshotError::WrongBase { style: id, base });
+            }
+        }
+        let mut ends: BTreeSet<ObjectId> = BTreeSet::new();
+        for &id in document.styles() {
+            let mut path = BTreeSet::new();
+            let mut at = Some(id);
+            while let Some(x) = at {
+                if ends.contains(&x) {
+                    break;
+                }
+                if !path.insert(x) {
+                    return Err(SnapshotError::Loop(x));
+                }
+                at = document.style(x).and_then(|s| s.base);
+            }
+            ends.extend(path);
+        }
         Ok(document)
+    }
+
+    /// Whether a style of `kind` can be based on `base`: it's a style, not
+    /// a part, and `base` is a style of the same kind.
+    fn can_base(&self, kind: StyleKind, base: ObjectId) -> bool {
+        !kind.is_part() && self.style(base).is_some_and(|b| b.kind == kind)
+    }
+
+    /// The document's stylesheet, if it has one.
+    pub fn sheet(&self) -> Option<ObjectId> {
+        self.sheet
+    }
+
+    /// The stylesheet itself, if there is one.
+    pub fn stylesheet(&self) -> Option<&Sheet> {
+        match self.object(self.sheet?)? {
+            Object::Sheet(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// The stylesheet's styles and parts, in order: none without one.
+    pub fn styles(&self) -> &[ObjectId] {
+        self.stylesheet().map_or(&[], |s| &s.styles)
+    }
+
+    /// The style or part `id`, if there is one.
+    pub fn style(&self, id: ObjectId) -> Option<&Style> {
+        match self.object(id)? {
+            Object::Style(s) => Some(s),
+            _ => None,
+        }
+    }
+
+    /// Style `id` and the styles it's based on, in order, up its chain:
+    /// one more than the stylesheet has styles if the chain loops, which
+    /// no document's does. Empty if there's no such style.
+    pub fn chain(&self, id: ObjectId) -> Vec<ObjectId> {
+        let most = self.styles().len() + 1;
+        let mut out = Vec::new();
+        let mut at = self.style(id).map(|_| id);
+        while let Some(x) = at {
+            if out.len() >= most {
+                break;
+            }
+            out.push(x);
+            at = self.style(x).and_then(|s| s.base);
+        }
+        out
     }
 
     /// A document holding a story with one empty paragraph.
@@ -386,6 +590,7 @@ impl Document {
             root,
             next_id: 2,
             paragraphs: 1,
+            sheet: None,
         }
     }
 
@@ -535,6 +740,21 @@ impl Document {
                         b.parent,
                         b.children,
                         b.props
+                    );
+                }
+                Object::Sheet(s) => {
+                    let _ = writeln!(out, "{id} sheet {:?} {:?}", s.styles, s.props);
+                }
+                Object::Style(s) => {
+                    let base = s
+                        .base
+                        .map_or_else(String::new, |b| format!(" based on {b}"));
+                    let _ = writeln!(
+                        out,
+                        "{id} {} in {}{base} {:?}",
+                        s.kind.name(),
+                        s.sheet,
+                        s.props
                     );
                 }
             }
@@ -795,7 +1015,106 @@ impl Document {
                     value: previous,
                 }])
             }
+            Op::InsertStyle {
+                sheet,
+                after,
+                id,
+                style,
+            } => self.insert_style(*sheet, *after, *id, style),
+            Op::DeleteStyle { style } => self.delete_style(*style),
+            Op::SetStyleProp { style, key, value } => {
+                let props = match self.objects.get_mut(*style).map(Arc::make_mut) {
+                    Some(Object::Style(s)) => &mut s.props,
+                    Some(Object::Sheet(s)) => &mut s.props,
+                    _ => return Err(Error::NoSuchStyle(*style)),
+                };
+                let previous = match value {
+                    Some(v) => props.insert(key.clone(), v.clone()),
+                    None => props.remove(key),
+                };
+                Ok(vec![Op::SetStyleProp {
+                    style: *style,
+                    key: key.clone(),
+                    value: previous,
+                }])
+            }
+            Op::SetBase { style, base } => self.set_base(*style, *base),
         }
+    }
+
+    /// Whether basing `style` on `base` would base it on itself.
+    fn loops(&self, style: ObjectId, base: ObjectId) -> bool {
+        self.chain(base).contains(&style)
+    }
+
+    fn insert_style(
+        &mut self,
+        sheet: ObjectId,
+        after: Option<ObjectId>,
+        id: ObjectId,
+        style: &Style,
+    ) -> Result<Vec<Op>, Error> {
+        if self.sheet != Some(sheet) {
+            return Err(Error::NoSuchStyle(sheet));
+        }
+        if style.sheet != sheet {
+            return Err(Error::Malformed(id));
+        }
+        if self.objects.get(id).is_some() {
+            return Err(Error::IdInUse(id));
+        }
+        if let Some(base) = style.base
+            && !self.can_base(style.kind, base)
+        {
+            return Err(Error::WrongBase { style: id, base });
+        }
+        let at = self.place(sheet, after)?;
+        self.objects
+            .insert(id, Arc::new(Object::Style(style.clone())));
+        self.children_mut(sheet).insert(at, id);
+        self.next_id = self.next_id.max(id.0 + 1);
+        Ok(vec![Op::DeleteStyle { style: id }])
+    }
+
+    fn delete_style(&mut self, id: ObjectId) -> Result<Vec<Op>, Error> {
+        let style = self.style(id).ok_or(Error::NoSuchStyle(id))?.clone();
+        if let Some(&by) = self
+            .styles()
+            .iter()
+            .find(|&&s| self.style(s).is_some_and(|s| s.base == Some(id)))
+        {
+            return Err(Error::BasedOn { style: id, by });
+        }
+        let after = self.previous(id);
+        self.children_mut(style.sheet).retain(|&s| s != id);
+        self.objects.remove(id);
+        Ok(vec![Op::InsertStyle {
+            sheet: style.sheet,
+            after,
+            id,
+            style,
+        }])
+    }
+
+    fn set_base(&mut self, id: ObjectId, base: Option<ObjectId>) -> Result<Vec<Op>, Error> {
+        let style = self.style(id).ok_or(Error::NoSuchStyle(id))?;
+        let kind = style.kind;
+        if let Some(b) = base {
+            if !self.can_base(kind, b) {
+                return Err(Error::WrongBase { style: id, base: b });
+            }
+            if self.loops(id, b) {
+                return Err(Error::Loop { style: id, base: b });
+            }
+        }
+        let Some(Object::Style(style)) = self.objects.get_mut(id).map(Arc::make_mut) else {
+            return Err(Error::NoSuchStyle(id));
+        };
+        let previous = std::mem::replace(&mut style.base, base);
+        Ok(vec![Op::SetBase {
+            style: id,
+            base: previous,
+        }])
     }
 
     fn insert_block(
@@ -804,6 +1123,9 @@ impl Document {
         after: Option<ObjectId>,
         objects: &[(ObjectId, Object)],
     ) -> Result<Vec<Op>, Error> {
+        if !self.object(parent).is_some_and(Object::in_story) {
+            return Err(Error::NoSuchBlock(parent));
+        }
         let at = self.place(parent, after)?;
         let Some((root, top)) = objects.first() else {
             return Err(Error::Malformed(parent));
@@ -824,7 +1146,10 @@ impl Document {
             if self.objects.get(*id).is_some() {
                 return Err(Error::IdInUse(*id));
             }
-            if set.insert(*id, object).is_some() || matches!(object, Object::Story(_)) {
+            if set.insert(*id, object).is_some()
+                || !object.in_story()
+                || matches!(object, Object::Story(_))
+            {
                 return Err(Error::Malformed(*root));
             }
             if let Object::Paragraph(p) = object {
@@ -882,7 +1207,10 @@ impl Document {
     }
 
     fn delete_block(&mut self, block: ObjectId) -> Result<Vec<Op>, Error> {
-        let object = self.object(block).ok_or(Error::NoSuchBlock(block))?;
+        let object = self
+            .object(block)
+            .filter(|o| o.in_story())
+            .ok_or(Error::NoSuchBlock(block))?;
         let parent = object.parent().ok_or(Error::Root(block))?;
         let ids = self.subtree(block);
         let paragraphs = ids
@@ -916,11 +1244,14 @@ impl Document {
         parent: ObjectId,
         after: Option<ObjectId>,
     ) -> Result<Vec<Op>, Error> {
-        let object = self.object(block).ok_or(Error::NoSuchBlock(block))?;
+        let object = self
+            .object(block)
+            .filter(|o| o.in_story())
+            .ok_or(Error::NoSuchBlock(block))?;
         let old_parent = object.parent().ok_or(Error::Root(block))?;
         let target = self
             .object(parent)
-            .filter(|o| o.is_container())
+            .filter(|o| o.is_container() && o.in_story())
             .ok_or(Error::NoSuchBlock(parent))?;
         if !target.holds(object) {
             return Err(Error::WrongKind {

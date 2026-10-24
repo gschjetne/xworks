@@ -166,7 +166,7 @@ pub(crate) fn shape_of(document: &Document, sheet: &StyleSheet, id: ObjectId) ->
                     );
                 }
             }
-            Some(Object::Story(_)) | None => {}
+            Some(Object::Story(_) | Object::Sheet(_) | Object::Style(_)) | None => {}
         }
     }
     out
