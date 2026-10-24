@@ -275,7 +275,8 @@ impl Editor {
     /// The inspector's fields for the selection: the Text tab, its
     /// paragraph's, its characters' and its tab stops; and the Page tab.
     /// Lengths of the page and the paragraph are in the person's unit;
-    /// type sizes are in points.
+    /// the space above and below a paragraph, and type sizes, are in
+    /// points, as type is set (review 77nh3z47).
     pub(super) fn inspector_model(&self) -> Inspector {
         let writable = self.writable();
         let unit = self.res.settings.units();
@@ -347,7 +348,7 @@ impl Editor {
                     Vec::new(),
                     writable,
                     ControlKind::Length {
-                        value: length(before, unit),
+                        value: length(before, Unit::Point),
                         prefix: "↑".to_string(),
                         plain: false,
                     },
@@ -357,7 +358,7 @@ impl Editor {
                     Vec::new(),
                     writable,
                     ControlKind::Length {
-                        value: length(after, unit),
+                        value: length(after, Unit::Point),
                         prefix: "↓".to_string(),
                         plain: false,
                     },

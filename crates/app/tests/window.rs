@@ -231,9 +231,11 @@ fn the_window_is_covered_everywhere() {
 }
 
 /// The ruler and the inspector measure the page and the paragraph in the
-/// unit the person chose from View, Units, and type sizes stay in points
-/// (review ydqhfds0); the choice is every window's. A length left as it
-/// shows changes nothing, though it reads back a hair off.
+/// unit the person chose from View, Units (review ydqhfds0), but for the
+/// space above and below a paragraph, which is set in points as type is,
+/// and type sizes (review 77nh3z47); the choice is every window's. A
+/// length left as it shows changes nothing, though it reads back a hair
+/// off.
 #[test]
 fn lengths_show_in_the_unit_chosen() {
     use chrome::{ControlKind, Length, Unit};
@@ -273,8 +275,8 @@ fn lengths_show_in_the_unit_chosen() {
     };
     let expect = |unit| {
         [
-            ("space-before", unit),
-            ("space-after", unit),
+            ("space-before", Unit::Point),
+            ("space-after", Unit::Point),
             ("size", Unit::Point),
             ("tab-stop-move", unit),
             ("page-margin", unit),
