@@ -449,6 +449,18 @@ impl Editor {
         document: Document,
         history: History,
     ) -> Editor {
+        Editor::with_view(res, path, store, document, history, View::Pages)
+    }
+
+    /// An editor on `document`, shown as `view`, laid out once, so.
+    fn with_view(
+        res: Arc<Resources>,
+        path: PathBuf,
+        store: Option<Store>,
+        document: Document,
+        history: History,
+        view: View,
+    ) -> Editor {
         let first = document.paragraphs()[0];
         let start = Position {
             paragraph: first,
@@ -489,7 +501,7 @@ impl Editor {
             width: 800 * PIXEL,
             height: 600 * PIXEL,
             scroll: 0,
-            view: View::Pages,
+            view,
             named: false,
             panel: None,
             dragging: false,

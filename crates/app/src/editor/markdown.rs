@@ -270,12 +270,15 @@ impl Editor {
         };
         let after = std::time::Duration::from_millis(res.editing.markdown_saved_after);
         let saver = read_only.is_none().then(|| Saver::new(stamp, after));
-        let mut editor = Editor::with(
+        // A Markdown document opens as a draft (review frhewnk0), laid out
+        // once, as one.
+        let mut editor = Editor::with_view(
             res,
             path.to_path_buf(),
             None,
             read.document.clone(),
             History::new(),
+            View::Draft,
         );
         editor.markdown = Some(Box::new(Markdown {
             file: read.file,
@@ -294,9 +297,6 @@ impl Editor {
             editor.pictures.insert(link, decoded.image);
         }
         editor.load_pictures(story::pictures(&editor.document));
-        // A Markdown document opens as a draft (review frhewnk0).
-        editor.view = View::Draft;
-        editor.relayout(true);
         editor.unwritable();
         Ok(editor)
     }
@@ -912,12 +912,13 @@ impl Editor {
             ))
             .into());
         };
-        let mut editor = Editor::with(
+        let mut editor = Editor::with_view(
             res,
             path.to_path_buf(),
             None,
             document.clone(),
             History::new(),
+            View::Draft,
         );
         editor.markdown = Some(Box::new(Markdown {
             file,
@@ -933,8 +934,6 @@ impl Editor {
             deferred: false,
         }));
         editor.load_pictures(story::pictures(&editor.document));
-        editor.view = View::Draft;
-        editor.relayout(true);
         editor.message = format!("{}, read-only: Copy Out to change it", version.name);
         editor.version = Some(version);
         Ok(editor)
