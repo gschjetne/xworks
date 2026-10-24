@@ -556,6 +556,141 @@ QuarkXPress, with CSS as what not to do:
   Literary (Alegreya), Modern (Inter throughout), Technical (Source Serif
   4, numbered headings, JetBrains Mono) and Manuscript (double-spaced,
   for submissions), each approved as a golden.
+- **Named parts beside the chains** (project owner, 2026-10-24, review
+  30dmn1js): faces, colours, tab layouts and list definitions are named
+  parts in the document's stylesheet, as InDesign's swatches and Word's
+  theme fonts are, and styles refer to them by ID. Changing the Text face
+  changes every style that uses it, in one place, without hanging every
+  style from Body. A tab layout is a part several styles can use: that's
+  what "a layout of tab stops is a style of its own, to use again"
+  (review ydqhfds0) becomes, since a style has one base. Parts are edited
+  by operations as styles are, and undo, history, rebase, pasting
+  (matched by role and name) and stylesheet updates cover them. The
+  inspector's sources include them: a value comes from the text, its
+  style, a style up its chain, a part, or the defaults. The six
+  stylesheets define their faces and colours as parts.
+
+**What M2's stage 9 built** (a document's own styles). The choices below
+are the stage's own, open to the owner's review unless marked settled.
+
+- **Styles and parts are one kind of object** (`doc::Style`, of a
+  `doc::StyleKind`: paragraph, character or page style, or a face,
+  colour, tab layout or list definition), listed in order by the
+  document's stylesheet (`doc::Sheet`), a second root beside the story.
+  The sheet's own properties are the defaults, complete, so every chain
+  ends in a value and says so; what the whole document shares (default
+  tab stops, how quotes, code and tables look); and the sheet and version
+  it was copied from. A style's name and role are among its properties:
+  its role (`body`, `heading-1`, `emphasis`, `text` …) is what another
+  sheet's style matches it by. Paragraphs name their style, runs their
+  character style, and styles their parts, by reference
+  (`doc::Value::Ref`).
+- **Four operations,** after the others: InsertStyle, DeleteStyle,
+  SetStyleProp (on a style, a part or the sheet) and SetBase. A base of
+  another kind, a base for a part, or one that would make a style based
+  on itself is refused, and so is deleting a style another is based on.
+  A paragraph naming a deleted style, or a style a deleted part, takes
+  what it would without it, as concurrent edits can leave that. Of two
+  concurrent bases that would loop together, the one rebased later is
+  dropped, by the check that finds moves of blocks that can't both have
+  their way; property tests show no sequence of bases, alone or
+  concurrent, makes a loop.
+- **How a run looks:** its paragraph style's values along the chain to
+  the defaults, then to the program's Neutral for what a damaged sheet
+  lacks; over them its character style's, then each of its marks'
+  character styles in a fixed order (code, emphasis, strong,
+  strikethrough, link), then its own formatting. Character styles set
+  only what they say: their chains don't end in the defaults.
+- ★ **Marks stay marks.** A run's `bold`, `italic`, `code`,
+  `strikethrough` and `link` apply the sheet's character style of the
+  role `strong`, `emphasis`, `code`, `strikethrough` and `link`, so Bold
+  is strong and Markdown's files and their readers are as they were.
+  Direct formatting is then text's own font, size, colour and underline,
+  and a paragraph's own alignment, spacing, line height, indents and tab
+  stops; a language isn't formatting. So Clear Formatting doesn't take
+  bold away, as InDesign's Clear Overrides leaves character styles.
+- **Containers lend geometry:** a table's cells take only their own
+  indents and their column's alignment, and a paragraph that starts a
+  list item, or a numbered heading, only its own first-line indent, so a
+  book's indented, justified body text doesn't reach into cells or after
+  bullets. ★ A table's header row is still bold by its place, as Markdown
+  has it: per the ground rules it could be a header style instead.
+- **Neutral is M2's look:** its headings are based on a Heading style
+  that holds their face, weight and keeping with what follows, listed
+  after the styles paragraphs take. Every golden of M2's renders as it
+  did, but where this stage's chrome shows (below).
+- **Schema 3** has schema 2's tables. A schema 2 file, and a schema 1
+  file after its own upgrade, gains the sheet schema 2's documents were
+  laid out in, Neutral at version 1, frozen in `spec/format/upgrade-2.ron`
+  at IDs above any the file used, and its paragraphs' styles named by ID,
+  in every snapshot and log entry, in one SQLite transaction. M2's file
+  is kept as a fixture and opens with its own dump, as M1's does
+  (`spec/format/`).
+- **Resolving stays cheap:** an editor resolves its document's sheet once
+  (`story::StyleSheet`) and keeps it while no style changed, by the
+  identity of the sheet's objects, as layout keeps a paragraph's; a style
+  edited lays every paragraph out again, and a paragraph whose style
+  changed walks the flow again, as headings may be numbered after it.
+- **The six stylesheets** are data in `spec/styles/`, in the order
+  `spec/styles.ron` lists them. Book sets EB Garamond on an A5 page,
+  justified and hyphenated, paragraphs told apart by an indent; Literary
+  sets Alegreya ragged, with headings in Alegreya SC; Modern sets Inter;
+  Technical numbers its headings by level, their numbers hanging in a
+  wider margin, as a list definition with the role `headings` writes
+  them; Manuscript double-spaces 12 point text with half-inch indents and
+  an inch of margin. Book, Literary and Manuscript have a First Paragraph
+  style without the indent. Their faces, EB Garamond, Alegreya and
+  Alegreya SC (OFL 1.1), are fetched by hash and load only once a
+  document's stylesheet sets text in them, as the CJK faces load once
+  text needs them; `shot` draws one sample document in each.
+- **New documents** copy Neutral; File, New with Stylesheet lists the six
+  and the person's own. File, Replace Stylesheet With takes another,
+  matched by role and then by name as pasting matches, the incoming
+  sheet's definitions winning and the document's own styles staying, one
+  undoable step.
+- **People's own stylesheets** are files in `stylesheets/` in the system's
+  configuration folder, beside the settings, each read as outside input,
+  checked against every limit and never trusted (a fuzz target reads
+  them). Format, Styles, Keep Stylesheet as My Own keeps the document's
+  there under its sheet's name, or "My Neutral" for one that came with
+  xWorks; keeping it again replaces it, one version on.
+- ★ **An update is offered, never applied:** a document whose sheet came
+  from one of a newer version, xWorks' or the person's own, says so in
+  the status bar when it opens; Format, Styles, Update Stylesheet shows
+  what would change, style by style, to take in one step or leave. It
+  compares the document's styles with the newer sheet's, so a style the
+  person changed would show and be taken back too: a three-way update
+  needs each sheet's older versions kept beside it.
+- **The inspector** marks the style's name with "+" where the selection
+  has formatting of its own, as InDesign does. A Style tab, between Text
+  and Page, shows the caret's paragraph style: its name, which can be
+  typed over (renaming is one edit), its base, each value with where it
+  comes from (this style, the style up its chain that sets it, or the
+  defaults; a face, colour or tab layout shown as the part it names), a
+  button to let a value the style sets itself go, and what the selection
+  sets itself, to clear. ★ Sources are in the Style tab, not beside the
+  Text tab's values, which show the selection's.
+- **Direct formatting seen and cleared:** View, Show Direct Formatting
+  tints text's own formatting amber and marks a paragraph's with a bar,
+  off until turned on; Clear Formatting (Ctrl+\, as Google Docs has it)
+  takes it away. A style applied replaces the paragraph's own paragraph
+  formatting and keeps its text's; ★ held Shift as it's chosen from the
+  inspector's list takes the text's away too, as InDesign's
+  Alt+Shift-click does.
+- **The page style is the document's:** the Page tab sets its size and
+  margins, refusing margins that leave no room.
+- ★ **Pasting with styles** keeps, in the program, a fragment of what Copy
+  copied, its paragraphs with their runs and own properties and the
+  document it came from, beside the text it puts on the system's
+  clipboard, and uses it while the clipboard still holds that text, in
+  any window: the destination's styles win, matched by role and then
+  name, and those it lacks come with their chains, as `story::merge`
+  brings them; pictures stay behind. Other programs get plain text, as
+  before; putting HTML on the clipboard too would let them, and xWorks
+  read theirs, which needs the shells' clipboards to carry it.
+- **Markdown files** take the program's Neutral when they're read, as
+  their paragraphs need styles to name, and a change to the stylesheet in
+  one is asked about, as Markdown can't hold it.
 
 **Container: SQLite** (project owner, 2026-10-18). A document is an SQLite
 database with a fixed, versioned schema: objects, the transaction log, embedded
@@ -908,11 +1043,11 @@ the stage's own, open to the owner's review unless marked settled.
   paragraphs and headings, each line a text run with its graphemes, where
   each sits, where its words start, and the selection in them.
 
-Not yet: **a document's own page size and margins, and tab stops set for
-a style**, need documents to hold their style sheet and page style, which
-the file format doesn't (they come from `spec/styles/`); the inspector's
-Page tab shows them, unchangeable, until the owner decides where they
-live.
+**A document's own page size and margins, and tab stops set for a
+style,** waited for documents to hold their stylesheet and page style,
+which M2's stage 9 built (section 6): the Page tab sets the page now, and
+Redefine Style from Selection gives a style a paragraph's tab stops, or
+the Style tab a tab layout the sheet names.
 
 **The session recorder** (built in M2's stage 7; open to the owner's
 review but where settled above). Each window notes every event it
