@@ -322,3 +322,40 @@ fn front_matter_is_kept_and_gives_the_language() {
         );
     }
 }
+
+/// Lists begun on one line, their bullets alone on it once the text after
+/// them is gone, aren't written as a thematic break, which three of one
+/// bullet would read as.
+#[test]
+fn lists_begun_on_one_line_and_emptied_stay_lists() {
+    let sheet = sheet();
+    for bytes in [&b"- - - Beans\n"[..], b"* * * Beans\n", b"1. - - - Beans\n"] {
+        let read = read(bytes, &sheet);
+        let (id, at) = find(&read.document, "Beans");
+        let mut document = read.document.clone();
+        document
+            .apply(&Op::DeleteText {
+                paragraph: id,
+                offset: at,
+                len: 5,
+            })
+            .expect("it applies");
+        let edited = read
+            .file
+            .clone()
+            .write(&document, &sheet)
+            .expect("it writes");
+        let fresh = markdown::File::empty(read.file.language())
+            .write(&document, &sheet)
+            .expect("it writes");
+        for written in [edited, fresh] {
+            let again = self::read(&written, &sheet);
+            assert_eq!(
+                shape(&again.document, &sheet),
+                shape(&document, &sheet),
+                "{}",
+                String::from_utf8_lossy(&written)
+            );
+        }
+    }
+}

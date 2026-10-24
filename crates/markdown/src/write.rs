@@ -715,6 +715,20 @@ impl<'a> Writer<'a> {
                 _ => '.',
             };
         }
+        // Lists begun on one line, with three of one bullet and nothing
+        // after them, would read as a thematic break: one that's changed
+        // takes `+`, which never makes one, after two of its own.
+        if !ordered && marker != '+' && !self.unchanged(id) {
+            let line: String = self
+                .open
+                .iter()
+                .map(|o| if o.pending { &o.first } else { &o.rest }.as_str())
+                .collect();
+            if line.matches(marker).count() >= 2 {
+                marker = '+';
+            }
+        }
+        let parent = self.open.last().expect("open");
         let original = parent.original && had.is_some_and(|h| h.0 == marker);
         let children = b.children.clone();
         let mut open = Open::new(id, Frame::List, children, original);
