@@ -543,12 +543,16 @@ below are its own, open to the owner's review.
   or after the last; the editor's reading order stays paragraphs, so the
   caret steps over it, Backspace after it and Delete before it take it,
   and a selection across it takes it. It's drawn a hairline wide in the
-  rules' colour with 9 points above and below (`rule_space`), across its
-  column, in a quote under its bar. Written afresh it's `---`, or `***`
-  or `___` beside an item's `-` on its line, which would make the line
-  itself a rule. Insert, Rule splits the caret's paragraph there. A
-  schema 2 reader from before rules refuses a file with one as damaged;
-  stage 9's schema 3 is the change of format that covers it.
+  rules' colour, across its column, in a quote under its bar, with space
+  above and below that the document's stylesheet sets, `rule-space` in
+  its document section: Neutral's is 9 points, and so its version is 2;
+  the other sheets have none and take Neutral's. Written afresh it's
+  `---`, or `***` or `___` beside an item's `-` on its line, which would
+  make the line itself a rule. Insert, Rule splits the caret's paragraph
+  there. A rule is in schema 3, stage 9's, without a schema of its own:
+  a build of schema 2 sees such a file is newer, as for stage 9's
+  styles, and a build of stage 9 without rules, of the same schema,
+  finds a rule damaged.
 - **Alerts:** the `[!NOTE]` alone on a quote's first line is a run of
   kept Markdown, "alert"; written afresh, it stays alone on its line.
 - **Autolinks** follow GitHub's spec for the extension, for www.,
