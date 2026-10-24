@@ -416,6 +416,65 @@ the document is open.
   paragraph each, and column alignment. Fuller tables come with Write
   (project owner, 2026-10-22, review pysc65hp).
 
+**What M2's stage 6 built** (Markdown as itself). The choices below are
+the stage's own, open to the owner's review.
+
+- **A crate of its own, `markdown`**, pure, rather than part of `story`:
+  the story stays the substrate, Markdown a format beside it, and the
+  fuzz target links only what reads Markdown. It reads with
+  pulldown-cmark, CommonMark with GitHub's tables, strikethrough, task
+  lists, footnotes and alerts, and writes with its own writer.
+- **What the story holds of Markdown:** stage 2's blocks and marks, and
+  `strikethrough`; a list item's `task`, its box, drawn in its bullet's
+  place and ticked by a click or Check Off; a quote's `alert`; pictures
+  in the text, each linked by its path. What it doesn't hold, HTML,
+  thematic breaks, link reference definitions, footnotes and mid-document
+  metadata, is a code block, or a run, marked `source`: shown as code,
+  editable as Markdown, and written back as it is. Front matter isn't in
+  the story; it's kept as it was, and its `lang` is the paragraphs'
+  language. Headings run to six levels, so the sheet has Heading 4 to 6.
+- **A picture's link rides as its ID.** In a Markdown document a
+  picture's `picture` is its link as written, and `picture-src` says so;
+  `picture-title` holds its title. The app draws it from where the link
+  points, relative to the file's folder; one that isn't there is the
+  tint. Placed, it's linked relative to the file where a relative path
+  reaches it, absolute otherwise, with forward slashes, and the status
+  bar says which. Made an `.xw` file, the document keeps each picture by
+  its hash, and `picture` becomes that.
+- **Byte for byte.** The reader keeps each block's whole lines in the
+  file. Writing, a block that's as it was read, where it was, inside
+  containers written as they were, is copied as it was, and so is what
+  was between two such blocks. An edited paragraph keeps the lines its
+  edit left as they were and writes the rest afresh. A list item's
+  number or task box that changes is spliced into its line. What's
+  written afresh follows the paragraph's own habits (its emphasis, line
+  breaks and links by reference), then the file's (bullets, numbering,
+  fences, wrapping width, padded tables), then the standard style; and
+  each block written afresh is read back to check it says what the story
+  does, written more plainly if not.
+- **What Markdown can't hold is asked about, and the edit isn't made
+  until the person answers:** made an `.xw` file, the document is
+  written beside the Markdown file with its history so far, its named
+  versions and its pictures, so Undo reaches back past the change; or it
+  stays Markdown without the edit. Spaces at the ends of what a mark
+  covers are left outside it, and empty paragraphs between blocks are
+  left out, as Markdown can't hold them either; the document shows them
+  until it's opened again. Emphasis that starts with punctuation inside
+  a word has no Markdown and is asked about too.
+- **A Markdown file is written whole on each edit,** beside itself and
+  renamed into place, through a symbolic link to the file it names, with
+  its permissions; it's locked while it's open as an `.xw` file is.
+  Named versions live in memory, shared by the app's windows, and go
+  when the document closes. A file that isn't UTF-8 opens read-only.
+  New Markdown Document makes "Untitled.md", named after its first line
+  as a new document is.
+- **Measured** (budgets, not yet budgeted): a Markdown file of 1.1 MB,
+  21,945 paragraphs, opens in 353 ms, and a keystroke in it, the file
+  written back whole, takes 13.8 ms, under WSL with render-cpu. That
+  needed a draft to draw only what's in view, and the writer to find
+  what was edited from the document's difference from the file's
+  (`Document::changed_since`).
+
 **A document carries its own stylesheet and page style** (project owner,
 2026-10-24, review ydqhfds0), edited by operations like the rest of it, so
 it looks the same wherever it opens.
@@ -1198,6 +1257,7 @@ crates/
   toolkit/      the generic shell's toolkit, drawing the chrome model
   app/          documents, windows, scheduler, autosave; no platform code
   story/  canvas/  grid/  records/  cube/    substrates: model and views
+  markdown/     Markdown files read into stories and written back as they were
   write/  slides/  sheet/  model/  base/  chart/   product features over them
   testkit/      golden images, scripted sessions, document dumps
 shells/
