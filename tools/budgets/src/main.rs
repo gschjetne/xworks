@@ -11,6 +11,8 @@
 //!   (`--shell`, by default `xworks` beside this program) with
 //!   `XWORKS_MEASURE_STARTUP`, from starting it to its first frame
 //!   presented, and reads its resident memory then. Run a release build.
+//!   Memory is judged on a real GPU; under WSL it's shown for
+//!   information.
 //! - **Opening a 500-page report**, **keystroke to glyph**, **scrolling**
 //!   and **saving after a small edit**: in this process, with the app's
 //!   window, its chrome and all, on a report it makes from the sample
@@ -177,7 +179,12 @@ fn main() -> anyhow::Result<()> {
         // Judged by the 95th percentile: a budget holds nearly every time.
         let p95 = percentile(&m.samples, 95);
         let worst = m.samples.iter().copied().fold(0.0, f64::max);
-        let verdict = if p95 <= amount.value() {
+        // Memory is judged on a real GPU (project owner, 2026-10-24,
+        // review 77nh3z47): under WSL, Mesa's software GPU takes most of
+        // it, which no one using xWorks runs.
+        let verdict = if budget.id == "memory" && std::env::var_os("WSL_DISTRO_NAME").is_some() {
+            "for information: WSL's software GPU"
+        } else if p95 <= amount.value() {
             "within"
         } else {
             "OVER"
