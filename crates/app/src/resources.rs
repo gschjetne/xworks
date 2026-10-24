@@ -80,6 +80,10 @@ pub struct Resources {
     /// What the person chose that's kept between runs, such as the unit
     /// the ruler measures in, shared by every window.
     pub settings: Arc<Settings>,
+    /// Where the locks of documents of other formats, Markdown files', are
+    /// kept: xWorks' own folder, which the shell names; the system's place
+    /// for temporary files where it names none (review jy4a2tx5).
+    pub locks: Option<PathBuf>,
     /// Whether shortcuts read as on a Mac.
     pub mac: bool,
     /// How large a picture may be.
@@ -110,6 +114,9 @@ pub struct Editing {
     /// Whether typing a web or e-mail address makes it a link, in each
     /// kind of document.
     pub links_as_typed: ByKind,
+    /// How long after the first edit not yet written a Markdown file is
+    /// written, with the edits made meanwhile, in milliseconds.
+    pub markdown_saved_after: u64,
 }
 
 /// A choice for each kind of document.
@@ -285,6 +292,7 @@ impl Resources {
             root: root.to_path_buf(),
             recent: Arc::new(Recent::default()),
             settings: Arc::new(Settings::default()),
+            locks: None,
             mac,
             pictures,
             recorder,

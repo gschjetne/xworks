@@ -1,0 +1,19 @@
+// Another program changes a Markdown file while xWorks has some of its
+// own unwritten (review jy4a2tx5): when the window comes forward, xWorks
+// asks, and keeping its own writes it over the other program's.
+(
+    size: (900, 700),
+    open: Some(("Plan.md", "# Plan\n\nWater the beans.\n")),
+    events: [
+        Key("Down"),
+        Type("Weed. "),
+        Change("Plan.md", "# Plan\n\nWater the beans and the peas.\n"),
+        Focused,
+        Message("Another program changed Plan.md: keep its version, or yours?"),
+        Key("Down"),
+        Key("Enter"),
+        Message("Wrote yours over Plan.md"),
+    ],
+    expect: [("Heading 1", "Plan"), ("Body", "Weed. Water the beans.")],
+    files: [("Plan.md", Some("# Plan\n\nWeed. Water the beans.\n"))],
+)

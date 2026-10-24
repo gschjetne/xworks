@@ -21,7 +21,15 @@ fn resources(name: &str) -> Arc<Resources> {
     });
     let mut res = res.clone();
     res.documents = testkit::scratch_dir(&format!("app-markdown-{name}")).expect("a folder");
+    // xWorks' own folder of locks, as the shell names it.
+    res.locks =
+        Some(testkit::scratch_dir(&format!("app-markdown-{name}-locks")).expect("a folder"));
     Arc::new(res)
+}
+
+/// The lock of the Markdown file at `path`, in xWorks' own folder.
+fn lock(res: &Resources, path: &Path) -> PathBuf {
+    store::lock_in(res.locks.as_ref().expect("a folder of locks"), path)
 }
 
 fn fixture(name: &str) -> PathBuf {
@@ -84,6 +92,7 @@ fn new_markdown_documents_are_made_open_as_drafts_and_take_their_names() {
     let named = res.documents.join("Garden plan.md");
     assert_eq!(window.editor().path(), named);
     assert!(!path.exists());
+    window.flush();
     assert_eq!(read(&named), "Garden plan\n\nBeans first.\n");
 }
 
@@ -91,7 +100,7 @@ fn new_markdown_documents_are_made_open_as_drafts_and_take_their_names() {
 fn a_markdown_file_another_program_has_or_that_isnt_utf8_opens_read_only() {
     let res = resources("read-only");
     let path = file(&res, "Held.md", b"# Held\n");
-    let held = store::acquire(&path);
+    let held = store::acquire_at(&lock(&res, &path));
     assert!(matches!(held, store::Acquired::Held(_)));
     let mut editor = Editor::open(res.clone(), &path).expect("it opens");
     assert!(
@@ -100,6 +109,7 @@ fn a_markdown_file_another_program_has_or_that_isnt_utf8_opens_read_only() {
         editor.message()
     );
     editor.update(Event::Text("more".to_string()));
+    editor.flush();
     assert_eq!(read(&path), "# Held\n");
     drop(held);
 
@@ -110,12 +120,28 @@ fn a_markdown_file_another_program_has_or_that_isnt_utf8_opens_read_only() {
     assert_eq!(std::fs::read(&path).expect("it reads"), b"Caf\xe9\n");
 }
 
+/// A Markdown file is locked while it's open, its lock in xWorks' own
+/// folder, out of git's sight, where another xWorks finds it (review
+/// jy4a2tx5); and it's written whole, nothing left beside it.
 #[test]
 fn a_markdown_file_is_locked_while_its_open_and_written_whole() {
     let res = resources("locked");
     let path = file(&res, "Open.md", b"\xef\xbb\xbfOne\r\n\r\nTwo\r\n");
     let mut editor = Editor::open(res.clone(), &path).expect("it opens");
-    assert!(matches!(store::acquire(&path), store::Acquired::InUse(_)));
+    assert!(matches!(
+        store::acquire_at(&lock(&res, &path)),
+        store::Acquired::InUse(_)
+    ));
+    // However it's reached.
+    let other = res.documents.join(".").join("Open.md");
+    assert_eq!(lock(&res, &other), lock(&res, &path));
+    let mut second = Editor::open(res.clone(), &other).expect("it opens");
+    assert!(
+        second.message().starts_with("Read-only: open in"),
+        "{}",
+        second.message()
+    );
+    second.update(Event::Text("not written".to_string()));
     editor.update(Event::Key {
         key: Key::End,
         modifiers: Modifiers {
@@ -124,6 +150,7 @@ fn a_markdown_file_is_locked_while_its_open_and_written_whole() {
         },
     });
     editor.update(Event::Text(" and three".to_string()));
+    editor.flush();
     // Its byte order mark and line endings as they were.
     assert_eq!(
         std::fs::read(&path).expect("it reads"),
@@ -140,9 +167,103 @@ fn a_markdown_file_is_locked_while_its_open_and_written_whole() {
         })
         .collect();
     names.sort();
-    assert_eq!(names, [".Open.md-lock", "Open.md"]);
+    assert_eq!(names, ["Open.md"], "nothing beside it, not even its lock");
     drop(editor);
-    assert!(matches!(store::acquire(&path), store::Acquired::Held(_)));
+    assert!(matches!(
+        store::acquire_at(&lock(&res, &path)),
+        store::Acquired::Held(_)
+    ));
+}
+
+/// A Markdown file is saved on a worker, gathered (review jy4a2tx5): the
+/// edits arrive, together, without anything asking, within a second, as
+/// spec/editing.ron has it, give or take a loaded machine.
+#[test]
+fn edits_to_a_markdown_file_arrive_on_their_own() {
+    let res = resources("worker");
+    assert!(res.editing.markdown_saved_after < 1000);
+    let path = file(&res, "Soon.md", b"Soon\n");
+    let mut editor = Editor::open(res, &path).expect("it opens");
+    let began = std::time::Instant::now();
+    editor.update(Event::Text("Very ".to_string()));
+    editor.update(Event::Text("soon: ".to_string()));
+    while read(&path) != "Very soon: Soon\n" {
+        assert!(
+            began.elapsed() < std::time::Duration::from_secs(5),
+            "not written: {:?}",
+            read(&path)
+        );
+        std::thread::sleep(std::time::Duration::from_millis(10));
+    }
+    assert!(editor.message().is_empty(), "{}", editor.message());
+}
+
+/// Closing the window writes what's waiting at once, as quitting does,
+/// which closes every window; so does a window ending any other way.
+#[test]
+fn closing_writes_a_markdown_file_at_once() {
+    let mut res = (*resources("closing")).clone();
+    // An hour from an edit to its writing: only closing writes it.
+    res.editing.markdown_saved_after = 3_600_000;
+    let res = Arc::new(res);
+    let path = file(&res, "Now.md", b"Now\n");
+    let mut window = Window::open(res.clone(), &path).expect("it opens");
+    window.update(Event::Text("Right ".to_string()));
+    assert_eq!(read(&path), "Now\n", "not before closing");
+    window.close();
+    assert_eq!(read(&path), "Right Now\n");
+    drop(window);
+    let mut window = Window::open(res, &path).expect("it opens");
+    window.update(Event::Text("Then ".to_string()));
+    drop(window);
+    assert_eq!(read(&path), "Then Right Now\n");
+}
+
+/// A change another program makes is noticed before xWorks writes
+/// (review jy4a2tx5): nothing's written over it, and the person is asked.
+#[test]
+fn a_change_another_program_made_is_noticed_before_writing() {
+    let mut res = (*resources("before-writing")).clone();
+    res.editing.markdown_saved_after = 3_600_000;
+    let res = Arc::new(res);
+    let path = file(&res, "Plan.md", b"# Plan\n");
+    let mut window = Window::open(res, &path).expect("it opens");
+    window.update(Event::Text("Seed ".to_string()));
+    std::fs::write(&path, b"# The plan, theirs\n").expect("another program writes");
+    window.flush();
+    assert_eq!(read(&path), "# The plan, theirs\n");
+    assert!(window.poll(), "something to say");
+    assert_eq!(
+        window.editor().message(),
+        "Another program changed Plan.md: keep its version, or yours?"
+    );
+    // Closed unanswered, xWorks' version is kept as a copy beside it.
+    window.close();
+    assert_eq!(read(&path), "# The plan, theirs\n");
+    assert_eq!(
+        read(&path.with_file_name("Plan (xWorks).md")),
+        "# Seed Plan\n"
+    );
+}
+
+/// A Markdown file renamed while it's open takes its lock along, to the
+/// lock its new name has in xWorks' folder.
+#[test]
+fn a_markdown_files_lock_follows_it() {
+    let res = resources("lock-moves");
+    let path = file(&res, "Before.md", b"Text\n");
+    let mut editor = Editor::open(res.clone(), &path).expect("it opens");
+    editor.rename("After").expect("it renames");
+    let after = res.documents.join("After.md");
+    assert_eq!(editor.path(), after);
+    assert!(matches!(
+        store::acquire_at(&lock(&res, &after)),
+        store::Acquired::InUse(_)
+    ));
+    assert!(matches!(
+        store::acquire_at(&lock(&res, &path)),
+        store::Acquired::Held(_)
+    ));
 }
 
 /// A Markdown file's thematic break is a rule (review jy4a2tx5): drawn in
@@ -230,6 +351,7 @@ fn versions_of_a_markdown_file_last_while_its_open() {
         "Saved Version 1, kept while it's open"
     );
     window.update(Event::Text("Second ".to_string()));
+    window.flush();
     assert_eq!(read(&path), "Second First thoughts.\n");
     // The version opens in a window of its own, as it was, read-only.
     let version = Window::open_version(res.clone(), &path, 0).expect("the version opens");
@@ -406,6 +528,7 @@ fn a_tasks_box_clicked_ticks_it() {
             count: 1,
         });
         editor.update(Event::Release);
+        editor.flush();
     };
     click(&mut editor, &boxes[0]);
     assert_eq!(read(&path), "- [x] Sow the beans\n- [x] Dig the bed\n");
@@ -413,5 +536,6 @@ fn a_tasks_box_clicked_ticks_it() {
     assert_eq!(read(&path), "- [x] Sow the beans\n- [ ] Dig the bed\n");
     // Undone, as any edit.
     command(&mut editor, "undo");
+    editor.flush();
     assert_eq!(read(&path), "- [x] Sow the beans\n- [x] Dig the bed\n");
 }

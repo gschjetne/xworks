@@ -1,8 +1,19 @@
 //! Markdown files as themselves (docs/ARCHITECTURE.md, section 6; reviews
-//! frhewnk0, pysc65hp and ys9vyag1): a `.md` file opens as a structure-only
-//! story, in the draft view, and every edit writes it back whole, through
-//! a rename, as the `markdown` crate writes it: what wasn't edited byte
-//! for byte as it was. Undo and named versions last as long as it's open.
+//! frhewnk0, pysc65hp, ys9vyag1 and jy4a2tx5): a `.md` file opens as a
+//! structure-only story, in the draft view, and every edit writes it back
+//! whole, as the `markdown` crate writes it: what wasn't edited byte for
+//! byte as it was. The edit makes the file's bytes, which checks Markdown
+//! holds it; a worker writes them a moment later, gathered with the edits
+//! after (`saver`). Undo and named versions last as long as it's open.
+//!
+//! Its lock lives in xWorks' own folder, not beside it, so git never sees
+//! it (`store::lock_in`).
+//!
+//! A change another program makes to the file is noticed before xWorks
+//! writes and when its window comes forward: with nothing of its own
+//! unwritten, xWorks reads the file again, as an edit Undo takes back;
+//! otherwise it asks whether to keep the file's version, its own, or its
+//! own as a copy beside it.
 //!
 //! An edit Markdown can't hold, such as a font, isn't made until the
 //! person says: the document becomes an `.xw` file beside it, with its
@@ -21,7 +32,8 @@ use doc::{Document, History, Object, Op, Props, Run, Snapshot, Transaction, Valu
 use store::{Entry, Store};
 use story::keys;
 
-use super::{Editor, EditorError, Effect, Panel, Pick, View};
+use super::saver::{self, Saver};
+use super::{Editor, EditorError, Effect, Panel, Pick, Position, View};
 use crate::Resources;
 use crate::picture;
 
@@ -58,6 +70,16 @@ pub(super) struct Markdown {
     pending: Option<Pending>,
     /// Whether it's a named version shown, read-only.
     version: bool,
+    /// What writes it, while it's open to write.
+    saver: Option<Saver>,
+    /// Each time it was read again, the file as it was before and after,
+    /// by the first block the reading put in: undone, the file before is
+    /// what's written from, so it's written as it was.
+    reread: Vec<(doc::ObjectId, markdown::File, markdown::File)>,
+    /// Whether the person is being asked about a change another program
+    /// made, or said to ask later.
+    asking: bool,
+    deferred: bool,
 }
 
 /// Whether `path` is a Markdown file's, by its extension.
@@ -134,22 +156,21 @@ pub(crate) fn link_to(folder: &Path, path: &Path) -> (String, bool) {
     (parts.join("/"), false)
 }
 
-/// Writes `bytes` as the file at `path`, whole and at once: beside it,
-/// then renamed into its place, so it's never half written; with the
-/// file's permissions, and through a symbolic link to the file it names.
-fn write_whole(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
-    let target = std::fs::canonicalize(path).unwrap_or_else(|_| path.to_path_buf());
-    let mut name = std::ffi::OsString::from(".");
-    name.push(target.file_name().unwrap_or_default());
-    name.push(".xworks-new");
-    let new = target.with_file_name(name);
-    std::fs::write(&new, bytes)?;
-    if let Ok(meta) = std::fs::metadata(&target) {
-        let _ = std::fs::set_permissions(&new, meta.permissions());
-    }
-    std::fs::rename(&new, &target).inspect_err(|_| {
-        let _ = std::fs::remove_file(&new);
-    })
+/// Where the lock of the Markdown file at `path` is: in xWorks' own
+/// folder of locks, or, where the shell gave none, the system's place
+/// for temporary files.
+pub(crate) fn lock_of(res: &Resources, path: &Path) -> PathBuf {
+    let folder = res
+        .locks
+        .clone()
+        .unwrap_or_else(|| std::env::temp_dir().join("xworks-locks"));
+    store::lock_in(&folder, path)
+}
+
+/// The name of the file at `path`, as a sentence says it.
+fn file_name(path: &Path) -> String {
+    path.file_name()
+        .map_or_else(String::new, |n| n.to_string_lossy().into_owned())
 }
 
 /// The size a picture `width` by `height` pixels is placed at, on `page`:
@@ -225,6 +246,7 @@ impl Editor {
             language: language.as_deref(),
             sizes: &|link| sizes.get(link).copied(),
         };
+        let stamp = store::stamp(path);
         let mut read_only = None;
         let read = match markdown::read(&bytes, &settings) {
             Ok(read) => read,
@@ -236,7 +258,7 @@ impl Editor {
             }
             Err(e) => return Err(store::Error::Damaged(e.to_string()).into()),
         };
-        let lock = match store::acquire(path) {
+        let lock = match store::acquire_at(&lock_of(&res, path)) {
             store::Acquired::Held(lock) => Some(lock),
             store::Acquired::Unavailable => None,
             store::Acquired::InUse(holder) => {
@@ -246,6 +268,8 @@ impl Editor {
                 None
             }
         };
+        let after = std::time::Duration::from_millis(res.editing.markdown_saved_after);
+        let saver = read_only.is_none().then(|| Saver::new(stamp, after));
         let mut editor = Editor::with(
             res,
             path.to_path_buf(),
@@ -261,6 +285,10 @@ impl Editor {
             log: Vec::new(),
             pending: None,
             version: false,
+            saver,
+            reread: Vec::new(),
+            asking: false,
+            deferred: false,
         }));
         for (link, decoded) in decoded {
             editor.pictures.insert(link, decoded.image);
@@ -298,14 +326,11 @@ impl Editor {
         self.markdown.as_ref().map(|m| m.read_only.as_deref())
     }
 
-    /// The Markdown file's lock, if it's one and holds it, to take along
-    /// when it moves.
-    pub(super) fn markdown_lock(&mut self) -> Option<&mut store::Lock> {
-        self.markdown.as_mut().and_then(|m| m.lock.as_mut())
-    }
-
     /// Writes the Markdown file as the document stands, after `logged`
-    /// `t`: false, with the edit not written, if Markdown can't hold it.
+    /// `t`, or hands it to its saver to write in a moment: an error, with
+    /// the edit not written, if Markdown can't hold it. Undoing or redoing
+    /// a reading of the file again writes from the file as it was before
+    /// or after it.
     pub(super) fn save_markdown(
         &mut self,
         logged: Logged,
@@ -331,12 +356,310 @@ impl Editor {
                 what: markdown::What::Stylesheet,
             });
         }
+        if let Some(doc::Op::InsertBlock { objects, .. }) = t.ops.first()
+            && let Some((first, _)) = objects.first()
+            && let Some((_, before, after)) = md.reread.iter().find(|(id, ..)| id == first)
+        {
+            match logged {
+                Logged::Undo => md.file = before.clone(),
+                Logged::Redo => md.file = after.clone(),
+                Logged::Commit | Logged::Continue => {}
+            }
+        }
         let bytes = md.file.write(&self.document, &self.sheet)?;
         md.log.push((logged, t.clone()));
-        if let Err(e) = write_whole(&self.path, &bytes) {
-            self.message = format!("Couldn't save: {e}");
+        md.deferred = false;
+        if let Some(saver) = &md.saver {
+            saver.put(&self.path, bytes);
         }
         Ok(())
+    }
+
+    /// Writes what's waiting to be written of the Markdown file at once,
+    /// as closing does, saying so if it fails.
+    pub(crate) fn flush_markdown(&mut self) {
+        let Some(saver) = self.markdown.as_ref().and_then(|m| m.saver.as_ref()) else {
+            return;
+        };
+        if let Err(e) = saver.flush() {
+            self.message = format!("Couldn't save: {e}");
+        }
+    }
+
+    /// What the Markdown file's saver has to say, said: a failure to
+    /// write, the file written again after another program took it, or a
+    /// change another program made, which it asks about. Whether there
+    /// was anything.
+    pub(crate) fn poll_markdown(&mut self) -> bool {
+        let Some(md) = &self.markdown else {
+            return false;
+        };
+        let Some(saver) = &md.saver else {
+            return false;
+        };
+        let news = saver.news();
+        let (asking, deferred) = (md.asking, md.deferred);
+        let mut said = false;
+        if let Some(e) = news.error {
+            self.message = format!("Couldn't save: {e}");
+            said = true;
+        }
+        if news.recreated {
+            self.message = format!("{} was gone, and is written again", file_name(&self.path));
+            said = true;
+        }
+        if news.conflict && !asking && !deferred && self.panel.is_none() {
+            self.ask_about_disk();
+            said = true;
+        }
+        said
+    }
+
+    /// The window came forward: a change another program made to the
+    /// Markdown file is read, if xWorks has nothing of its own unwritten,
+    /// or asked about.
+    pub(crate) fn markdown_came_forward(&mut self) {
+        let Some(md) = &mut self.markdown else {
+            return;
+        };
+        md.deferred = false;
+        let Some(saver) = &md.saver else {
+            return;
+        };
+        let now = store::stamp(&self.path);
+        if now == saver.stamp() {
+            self.poll_markdown();
+            return;
+        }
+        if now.is_none() {
+            // Gone: what's unwritten is written again, and an edit writes
+            // it again too.
+            self.message = format!(
+                "{} is gone; it's written again as you change it",
+                file_name(&self.path)
+            );
+            return;
+        }
+        if saver.idle() {
+            self.read_again();
+        } else {
+            saver.hold();
+            self.ask_about_disk();
+        }
+    }
+
+    /// Asks what to do about a change another program made to the
+    /// Markdown file, with what xWorks has of its own unwritten: keep the
+    /// file's version, and read it again; keep xWorks', and write it over
+    /// the file; or keep xWorks' as a copy beside the file.
+    fn ask_about_disk(&mut self) {
+        let Some(md) = &mut self.markdown else {
+            return;
+        };
+        md.asking = true;
+        let name = file_name(&self.path);
+        let copy = file_name(&saver::copy_path(&self.path));
+        self.panel = Some(Panel {
+            title: format!("Another program changed {name}"),
+            rows: vec![
+                (
+                    format!("Keep its version, and read {name} again"),
+                    Pick::Reread,
+                ),
+                (
+                    format!("Keep yours, and write it over {name}"),
+                    Pick::Overwrite,
+                ),
+                (format!("Keep yours as {copy}, beside it"), Pick::Copy),
+            ],
+            selected: 0,
+        });
+        self.message = format!("Another program changed {name}: keep its version, or yours?");
+    }
+
+    /// The question about a change another program made, closed without
+    /// an answer: nothing's written, and it's asked again at the next edit
+    /// or when the window comes forward.
+    pub(super) fn defer_disk(&mut self) {
+        if let Some(md) = &mut self.markdown
+            && md.asking
+        {
+            md.asking = false;
+            md.deferred = true;
+            self.message = format!(
+                "Not written: another program changed {}",
+                file_name(&self.path)
+            );
+        }
+    }
+
+    /// Keeps xWorks' version of the Markdown file, written over the one
+    /// another program changed.
+    pub(super) fn overwrite_disk(&mut self) {
+        let Some(md) = &mut self.markdown else {
+            return;
+        };
+        md.asking = false;
+        let Some(saver) = &md.saver else {
+            return;
+        };
+        saver.take();
+        saver.set_stamp(store::stamp(&self.path));
+        if let Ok(bytes) = md.file.write(&self.document, &self.sheet) {
+            saver.put(&self.path, bytes);
+        }
+        self.flush_markdown();
+        if self.message.is_empty() || self.message.starts_with("Another program") {
+            self.message = format!("Wrote yours over {}", file_name(&self.path));
+        }
+    }
+
+    /// Keeps xWorks' version of the Markdown file as a copy beside the one
+    /// another program changed, "NAME (xWorks).md", which the window then
+    /// shows; the file stays as the other program left it.
+    pub(super) fn copy_disk(&mut self) {
+        let copy = saver::copy_path(&self.path);
+        let locks = lock_of(&self.res, &copy);
+        let Some(md) = &mut self.markdown else {
+            return;
+        };
+        md.asking = false;
+        let bytes = match md.file.write(&self.document, &self.sheet) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.message = format!("Couldn't keep a copy: {e}");
+                return;
+            }
+        };
+        let stamp = match store::write_whole(&copy, &bytes) {
+            Ok(stamp) => stamp,
+            Err(e) => {
+                self.message = format!("Couldn't keep a copy: {e}");
+                return;
+            }
+        };
+        if let Some(saver) = &md.saver {
+            saver.take();
+            saver.set_stamp(Some(stamp));
+        }
+        if let Some(lock) = &mut md.lock {
+            let _ = lock.moved_to(&locks);
+        }
+        let from = std::mem::replace(&mut self.path, copy);
+        self.markdown_moved(&from);
+        self.res.recent.add(&self.path);
+        self.named = true;
+        self.message = format!(
+            "Kept yours as {}; {} is as the other program left it",
+            file_name(&self.path),
+            file_name(&from)
+        );
+    }
+
+    /// Reads the Markdown file again, as another program left it, as one
+    /// edit Undo takes back: the story's blocks replaced by the file's.
+    /// What xWorks had unwritten is dropped; undone, it's back, and
+    /// written.
+    pub(super) fn read_again(&mut self) {
+        let name = file_name(&self.path);
+        let bytes = match std::fs::read(&self.path) {
+            Ok(bytes) => bytes,
+            Err(e) => {
+                self.message = format!("Couldn't read {name} again: {e}");
+                return;
+            }
+        };
+        let stamp = store::stamp(&self.path);
+        let folder = self
+            .path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_default();
+        let decoded = decode_links(&self.res, &folder, &markdown::links(&bytes));
+        let sizes: HashMap<String, (i64, i64)> = decoded
+            .iter()
+            .map(|(link, p)| {
+                (
+                    link.clone(),
+                    placed_size(&self.res.program.page, p.width, p.height),
+                )
+            })
+            .collect();
+        let language = language(&self.res);
+        // The program's stylesheet, as the file was read in: the story read
+        // again goes into the document beside it.
+        let sheet = self.res.stylesheets[0].objects(story::SHEET_AT);
+        let settings = markdown::Settings {
+            sheet: &sheet,
+            language: language.as_deref(),
+            sizes: &|link| sizes.get(link).copied(),
+        };
+        // Its objects get IDs the document hasn't used.
+        let first = self.document.clone().new_id().0;
+        let read = match markdown::read_from(&bytes, &settings, first) {
+            Ok(read) => read,
+            Err(e) => {
+                self.message = format!("Couldn't read {name} again: {e}");
+                return;
+            }
+        };
+        let root = self.document.root();
+        let old: Vec<doc::ObjectId> = self.document.children(root).to_vec();
+        let mut after = old.last().copied();
+        let mut ops = Vec::new();
+        let new_root = read.document.root();
+        for &block in read.document.children(new_root) {
+            let objects: Vec<(doc::ObjectId, Object)> = read
+                .document
+                .subtree(block)
+                .into_iter()
+                .filter_map(|id| read.document.object(id).map(|o| (id, o.clone())))
+                .collect();
+            ops.push(Op::InsertBlock {
+                parent: root,
+                after,
+                objects,
+            });
+            after = Some(block);
+        }
+        ops.extend(old.into_iter().map(|block| Op::DeleteBlock { block }));
+        let Some(&first_block) = read.document.children(new_root).first() else {
+            return;
+        };
+        let t = match self.document.transact("Read Again", ops) {
+            Ok(t) => t,
+            Err(e) => {
+                self.message = format!("Couldn't read {name} again: {e}");
+                return;
+            }
+        };
+        let Some(md) = &mut self.markdown else {
+            return;
+        };
+        let before = std::mem::replace(&mut md.file, read.file.clone());
+        md.reread.push((first_block, before, read.file));
+        md.log.push((Logged::Commit, t.clone()));
+        md.asking = false;
+        if let Some(saver) = &md.saver {
+            saver.take();
+            saver.set_stamp(stamp);
+        }
+        self.history.push(t);
+        self.typing = None;
+        for (link, decoded) in decoded {
+            self.pictures.insert(link, decoded.image);
+        }
+        self.load_pictures(story::pictures(&self.document));
+        self.relayout(true);
+        let caret = match self.document.paragraph(self.focus.paragraph) {
+            Some(p) => Position {
+                offset: self.focus.offset.min(p.len()),
+                ..self.focus
+            },
+            None => self.document_edge(false),
+        };
+        self.go(caret, false);
+        self.message = format!("Read {name} again, as another program left it");
     }
 
     /// Asks before an edit Markdown can't hold, `ops` named `name`, which
@@ -604,6 +927,10 @@ impl Editor {
             log: Vec::new(),
             pending: None,
             version: true,
+            saver: None,
+            reread: Vec::new(),
+            asking: false,
+            deferred: false,
         }));
         editor.load_pictures(story::pictures(&editor.document));
         editor.view = View::Draft;
@@ -626,11 +953,24 @@ impl Editor {
         if path.exists() {
             return Err(format!("{} already exists", path.display()));
         }
-        write_whole(path, &bytes).map_err(|e| e.to_string())
+        store::write_whole(path, &bytes)
+            .map(drop)
+            .map_err(|e| e.to_string())
     }
 
-    /// The window closes: a Markdown document's versions go.
+    /// The window closes: what's unwritten of a Markdown document is
+    /// written at once, or as a copy beside it if another program changed
+    /// it and the person hasn't said; and its versions go.
     pub(crate) fn close_markdown(&mut self) {
+        if self
+            .markdown
+            .as_ref()
+            .and_then(|m| m.saver.as_ref())
+            .is_some_and(Saver::conflict)
+        {
+            self.copy_disk();
+        }
+        self.flush_markdown();
         if self.markdown.as_ref().is_some_and(|m| !m.version) {
             self.res
                 .markdown_versions
@@ -638,6 +978,38 @@ impl Editor {
                 .unwrap_or_else(|e| e.into_inner())
                 .remove(&self.path);
         }
+    }
+
+    /// The Markdown file moves from `from` to where the document now is:
+    /// what's waiting is written first, where it was, and its lock and
+    /// versions go along. Whether it may move: not while what's waiting
+    /// can't be written.
+    pub(super) fn markdown_moving(&mut self, from: &Path) -> Result<(), String> {
+        let Some(saver) = self.markdown.as_ref().and_then(|m| m.saver.as_ref()) else {
+            return Ok(());
+        };
+        let _ = from;
+        if saver.conflict() {
+            return Err(
+                "another program changed it, and xWorks hasn't written what's yours".into(),
+            );
+        }
+        saver.flush()
+    }
+
+    /// The Markdown file moved, from `from` to where the document now is:
+    /// its lock, what it is on disk, and its versions follow it.
+    pub(super) fn markdown_relocated(&mut self, from: &Path) {
+        let lock = lock_of(&self.res, &self.path);
+        if let Some(md) = &mut self.markdown {
+            if let Some(held) = &mut md.lock {
+                let _ = held.moved_to(&lock);
+            }
+            if let Some(saver) = &md.saver {
+                saver.set_stamp(store::stamp(&self.path));
+            }
+        }
+        self.markdown_moved(from);
     }
 
     /// The Markdown document's versions follow it from `from`, where it

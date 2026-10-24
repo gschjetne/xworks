@@ -232,16 +232,19 @@ impl Editor {
             })?;
         }
         if self.is_markdown() {
-            // A Markdown file moves as it is, its lock and versions along.
+            // A Markdown file moves as it is, what's waiting written first,
+            // its lock and versions along.
+            let from = self.path.clone();
+            self.markdown_moving(&from).map_err(|why| EditorError::Io {
+                path: from.clone(),
+                source: std::io::Error::other(why),
+            })?;
             move_file(&self.path, to).map_err(|source| EditorError::Io {
                 path: to.to_path_buf(),
                 source,
             })?;
-            if let Some(lock) = self.markdown_lock() {
-                let _ = lock.moved(to);
-            }
-            let from = std::mem::replace(&mut self.path, to.to_path_buf());
-            self.markdown_moved(&from);
+            self.path = to.to_path_buf();
+            self.markdown_relocated(&from);
             return Ok(());
         }
         // Closed: SQLite checkpoints and removes the log and shared memory

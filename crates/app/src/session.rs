@@ -205,6 +205,12 @@ pub enum Step {
     /// Checks what the status bar says of the last thing done, at this
     /// point.
     Message(String),
+    /// The window comes forward, as when the person switches back to it.
+    Focused,
+    /// Another program changes a file in the documents folder: its name,
+    /// and what it holds after. Give it another size than before, as the
+    /// system's clock may tell a file's times apart only by the second.
+    Change(String, String),
 }
 
 /// A command's argument, as a session writes it.
@@ -242,6 +248,7 @@ impl Step {
             ),
             Event::Theme { dark } => Step::Dark(*dark),
             Event::Maximized(maximized) => Step::Maximized(*maximized),
+            Event::Focused => Step::Focused,
             Event::Pasted(_) => return None,
             Event::Chosen(choice, path) => Step::Chosen(
                 choice_name(*choice).to_string(),
@@ -322,6 +329,10 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
     }
     res.mac = session.mac;
     res.settings = Arc::new(crate::Settings::default());
+    // A Markdown file is written only when a step asks, Saved or Reopen,
+    // and at the end, not a moment after an edit, so a session plays the
+    // same however fast it's played.
+    res.editing.markdown_saved_after = 3_600_000;
     let res = Arc::new(res);
     let folder_error = |path: &std::path::Path, source| EditorError::Io {
         path: path.to_path_buf(),
@@ -452,6 +463,9 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
                 Vec::new()
             }
             Step::Saved(name, want) => {
+                // What's waiting to be written, written, as a moment
+                // passing would.
+                window.flush();
                 let got = std::fs::read(res.documents.join(name))
                     .map(|b| String::from_utf8_lossy(&b).into_owned());
                 match got {
@@ -472,9 +486,20 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
                 }
                 Vec::new()
             }
+            Step::Focused => vec![Event::Focused],
+            Step::Change(name, text) => {
+                let path = res.documents.join(name);
+                if let Err(e) = std::fs::write(&path, text) {
+                    problems.push(format!("at step {n}, {name}: {e}"));
+                }
+                Vec::new()
+            }
         };
         for event in events {
             let mut queue = window.update(event);
+            // What the work away from the window has to say, as the shell
+            // asks before it waits.
+            window.poll();
             while let Some(effect) = queue.pop() {
                 match effect {
                     Effect::Copy(text) => clipboard = text,
@@ -491,6 +516,9 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
             }
         }
     }
+    // What's waiting to be written, written, as a moment passing would.
+    window.flush();
+    window.poll();
     Ok(Played {
         window,
         clipboard,

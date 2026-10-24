@@ -27,6 +27,7 @@ mod markdown;
 mod part;
 mod pictures;
 mod recording;
+mod saver;
 mod styling;
 mod units;
 mod versions;
@@ -112,6 +113,9 @@ pub enum Event {
     },
     /// The window was maximised, or restored.
     Maximized(bool),
+    /// The window came forward: it has the keyboard again, as when the
+    /// person switches back to it from another program.
+    Focused,
 }
 
 /// What a file is chosen for, through the system's own dialog
@@ -263,6 +267,15 @@ enum Pick {
     Stylesheet(String),
     /// Nothing but closing the panel.
     Nothing,
+    /// Keeps the Markdown file as another program changed it, and reads
+    /// it again.
+    Reread,
+    /// Keeps the document as xWorks has it, written over the file another
+    /// program changed.
+    Overwrite,
+    /// Keeps the document as xWorks has it, as a copy beside the file
+    /// another program changed.
+    Copy,
 }
 
 /// One document in one window.
@@ -2398,10 +2411,12 @@ impl Editor {
     }
 
     /// Closes the panel, choosing nothing: an edit Markdown can't hold,
-    /// asked about, isn't made.
+    /// asked about, isn't made; a change another program made, asked
+    /// about, is asked about again later, nothing written meanwhile.
     pub(crate) fn close_panel(&mut self) {
         self.panel = None;
         self.keep_markdown();
+        self.defer_disk();
     }
 
     /// What choosing row `row` of the panel does, which closes it.
@@ -2418,6 +2433,18 @@ impl Editor {
                 Vec::new()
             }
             Some(Pick::Nothing) => Vec::new(),
+            Some(Pick::Reread) => {
+                self.read_again();
+                Vec::new()
+            }
+            Some(Pick::Overwrite) => {
+                self.overwrite_disk();
+                Vec::new()
+            }
+            Some(Pick::Copy) => {
+                self.copy_disk();
+                Vec::new()
+            }
             Some(Pick::Keep) | None => {
                 self.keep_markdown();
                 Vec::new()
@@ -2475,6 +2502,7 @@ impl Editor {
                 self.reveal();
             }
             Event::Theme { .. } | Event::Maximized(_) => {}
+            Event::Focused => self.came_forward(),
             Event::Resize { width, height } => {
                 let column = self.column();
                 self.width = px(width).max(PIXEL);
@@ -2533,6 +2561,28 @@ impl Editor {
     }
 
     // ---- drawing
+
+    /// The window came forward: a change another program made to the
+    /// document's file, if it's a Markdown file's, is read or asked about.
+    pub fn came_forward(&mut self) {
+        self.markdown_came_forward();
+    }
+
+    /// Writes what's waiting to be written of the document's file at
+    /// once, as closing it does: a Markdown file's, which is otherwise
+    /// written a moment after an edit. An `.xw` file has each edit written
+    /// as it's made.
+    pub fn flush(&mut self) {
+        self.flush_markdown();
+    }
+
+    /// What the work done for the document away from the window has to
+    /// say, said, as a Markdown file's writing failing, or another
+    /// program's change to it, asked about: whether there was anything,
+    /// so the window is drawn again. The shell asks before it waits.
+    pub fn poll(&mut self) -> bool {
+        self.poll_markdown()
+    }
 
     /// Its area of the window as a display list, in layout units from the
     /// area's top left, with its size: 9 525 to a logical pixel. The

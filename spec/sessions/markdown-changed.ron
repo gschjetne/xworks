@@ -1,0 +1,28 @@
+// A change another program makes to a Markdown file, mid-session (review
+// jy4a2tx5), is noticed when its window comes forward: with nothing of
+// xWorks' own unwritten, the file is read again as one edit, which Undo
+// takes back, and the file then has xWorks' version again.
+(
+    size: (900, 700),
+    open: Some(("Plan.md", "# Plan\n\nWater the beans.\n")),
+    events: [
+        Key("Down"),
+        Type("Weed. "),
+        Saved("Plan.md", "# Plan\n\nWeed. Water the beans.\n"),
+        Change("Plan.md", "# Plan\n\nWater the beans and the peas.\n\n- Mulch\n"),
+        Focused,
+        Message("Read Plan.md again, as another program left it"),
+        Outline([
+            "Heading 1: Plan",
+            "Body: Water the beans and the peas.",
+            "list",
+            "  item",
+            "    Body: Mulch",
+        ]),
+        Saved("Plan.md", "# Plan\n\nWater the beans and the peas.\n\n- Mulch\n"),
+        Key("Primary+Z"),
+        Message("Undid Read Again"),
+    ],
+    expect: [("Heading 1", "Plan"), ("Body", "Weed. Water the beans.")],
+    files: [("Plan.md", Some("# Plan\n\nWeed. Water the beans.\n"))],
+)

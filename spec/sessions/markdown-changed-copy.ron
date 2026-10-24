@@ -1,0 +1,31 @@
+// Another program changes a Markdown file while xWorks has some of its
+// own unwritten (review jy4a2tx5). Escape leaves the question for later,
+// nothing written meanwhile, and it's asked again as the window comes
+// forward; keeping xWorks' version as a copy writes it beside the file,
+// "Plan (xWorks).md", which the window then shows, the file as the other
+// program left it.
+(
+    size: (900, 700),
+    open: Some(("Plan.md", "# Plan\n\nWater the beans.\n")),
+    events: [
+        Key("Down"),
+        Type("Weed. "),
+        Change("Plan.md", "# Plan\n\nWater the beans and the peas.\n"),
+        Focused,
+        Key("Escape"),
+        Message("Not written: another program changed Plan.md"),
+        Saved("Plan.md", "# Plan\n\nWater the beans and the peas.\n"),
+        Focused,
+        Message("Another program changed Plan.md: keep its version, or yours?"),
+        Key("Down"),
+        Key("Down"),
+        Key("Enter"),
+        Message("Kept yours as Plan (xWorks).md; Plan.md is as the other program left it"),
+    ],
+    expect: [("Heading 1", "Plan"), ("Body", "Weed. Water the beans.")],
+    file: Some("Plan (xWorks)"),
+    files: [
+        ("Plan.md", Some("# Plan\n\nWater the beans and the peas.\n")),
+        ("Plan (xWorks).md", Some("# Plan\n\nWeed. Water the beans.\n")),
+    ],
+)

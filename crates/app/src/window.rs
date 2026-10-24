@@ -944,7 +944,25 @@ impl Window {
                 self.maximized = maximized;
                 Vec::new()
             }
+            Event::Focused => {
+                self.editor.came_forward();
+                Vec::new()
+            }
         }
+    }
+
+    /// Writes what's waiting to be written of the document's file at
+    /// once, as closing does: a Markdown file's, written a moment after
+    /// each edit.
+    pub fn flush(&mut self) {
+        self.editor.flush();
+    }
+
+    /// What the work done for the document away from the window has to
+    /// say, said: whether there was anything, and the window is to be
+    /// drawn again. The shell asks before it waits for events.
+    pub fn poll(&mut self) -> bool {
+        self.editor.poll()
     }
 
     fn key(&mut self, key: Key, modifiers: Modifiers) -> Vec<Effect> {

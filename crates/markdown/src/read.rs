@@ -60,6 +60,14 @@ pub fn links(bytes: &[u8]) -> Vec<String> {
 /// Reads the Markdown file `bytes`: UTF-8, with or without a byte order
 /// mark.
 pub fn read(bytes: &[u8], settings: &Settings<'_>) -> Result<Read, ReadError> {
+    read_from(bytes, settings, 1)
+}
+
+/// Reads the Markdown file `bytes`, as [`read`] does, its story's objects'
+/// IDs from `first` on, or past its stylesheet's if they're higher, the
+/// story's 0: so a file read again can go into the document read before,
+/// its objects beside that one's.
+pub fn read_from(bytes: &[u8], settings: &Settings<'_>, first: u64) -> Result<Read, ReadError> {
     let (bom, body) = match bytes.strip_prefix(b"\xef\xbb\xbf") {
         Some(rest) => (true, rest),
         None => (false, bytes),
@@ -73,6 +81,7 @@ pub fn read(bytes: &[u8], settings: &Settings<'_>) -> Result<Read, ReadError> {
         .or_else(|| settings.language.map(str::to_string));
     let start = front.as_ref().map_or(0, |r| r.end);
     let mut builder = Builder::new(text, settings, language.clone(), start);
+    builder.next = builder.next.max(first);
     for (event, range) in Parser::new_ext(&text[start..], OPTIONS).into_offset_iter() {
         builder.event(event, range.start + start..range.end + start);
     }

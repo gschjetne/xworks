@@ -322,6 +322,9 @@ fn main() -> anyhow::Result<()> {
         Resources::load(&root, documents, mac).context("loading fonts, styles and commands")?;
     res.language = system_language();
     if let Some(config) = config_folder() {
+        // Markdown files' locks, out of their folders, so git never sees
+        // them (review jy4a2tx5).
+        res.locks = Some(config.join("locks"));
         res.recent = Arc::new(app::Recent::load(config.join("recent.ron")));
         res.settings = Arc::new(app::Settings::load(
             config.join("settings.ron"),
@@ -889,6 +892,7 @@ impl Shell {
                 | Event::Resize { .. }
                 | Event::Theme { .. }
                 | Event::Maximized(_)
+                | Event::Focused
         ) {
             win.blink.moved(self.started.elapsed());
             win.doc.show_caret(true);
@@ -1228,6 +1232,12 @@ impl ApplicationHandler<UserEvent> for Shell {
             WindowEvent::Focused(focused) => {
                 win.focused = focused;
                 win.blink.moved(self.started.elapsed());
+                // Come forward, the window looks at its document's file,
+                // which another program may have changed (review
+                // jy4a2tx5).
+                if focused {
+                    self.feed(event_loop, id, Event::Focused);
+                }
             }
             _ => {}
         }
@@ -1240,6 +1250,11 @@ impl ApplicationHandler<UserEvent> for Shell {
         let now = self.started.elapsed();
         let mut next: Option<Duration> = None;
         for win in self.windows.values_mut() {
+            // What's been done for the document away from the window, such
+            // as writing its Markdown file, has its say.
+            if win.doc.poll() {
+                win.window.request_redraw();
+            }
             let shown = !win.focused || win.blink.shown(now);
             if shown != win.doc.caret_shown() {
                 win.doc.show_caret(shown);
