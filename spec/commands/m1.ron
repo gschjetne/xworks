@@ -71,6 +71,12 @@
         (id: "units-centimetres", title: "&Centimetres"),
         (id: "units-inches", title: "&Inches"),
         (id: "units-picas", title: "&Picas"),
+        // Where the ruler is numbered from, beside the units: the text
+        // column's start, as word processors have it, or the paper's
+        // edge, as page layout programs do (project owner, 2026-10-24,
+        // review 77nh3z47).
+        (id: "ruler-from-margin", title: "From the &Margin"),
+        (id: "ruler-from-edge", title: "From the Paper's &Edge"),
 
         (id: "bold", title: "&Bold", shortcut: Some("Primary+B")),
         (id: "italic", title: "&Italic", shortcut: Some("Primary+I")),
@@ -192,6 +198,9 @@
         (title: "&Help", items: ["save-session", "-", "about"]),
     ],
     submenus: [
-        (id: "units", title: "&Units", items: ["units-centimetres", "units-inches", "units-picas"]),
+        (id: "units", title: "&Units", items: [
+            "units-centimetres", "units-inches", "units-picas", "-",
+            "ruler-from-margin", "ruler-from-edge",
+        ]),
     ],
 )

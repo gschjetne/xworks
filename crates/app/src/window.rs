@@ -582,6 +582,9 @@ impl Window {
                 checked: false,
             },
             _ if let Some(unit) = settings::unit_of(id) => on(self.res.settings.units() == unit),
+            _ if let Some(from) = settings::ruler_from_of(id) => {
+                on(self.res.settings.ruler_from() == from)
+            }
             _ => Part::state(&self.editor, id),
         }
     }
@@ -607,6 +610,9 @@ impl Window {
                 }
             }
             _ if let Some(unit) = settings::unit_of(id) => self.res.settings.set_units(unit),
+            _ if let Some(from) = settings::ruler_from_of(id) => {
+                self.res.settings.set_ruler_from(from)
+            }
             _ => {
                 let takes = self.res.commands.get(id).is_some_and(|c| c.arg.is_some());
                 let input = if args.is_empty() && !takes {

@@ -172,6 +172,13 @@ pub fn scenes() -> &'static [Scene] {
             pages: None,
         },
         Scene {
+            name: "ruler-paper-edge",
+            description: "the same, in centimetres, numbered from the paper's edge, as page layout programs number it",
+            ppi: 96.0,
+            page: chrome::ruler_paper_edge,
+            pages: None,
+        },
+        Scene {
             name: "markdown-draft",
             description: "a Markdown file as it opens, in the draft view: every block and mark Markdown holds, a picture it links to, and what it keeps as written",
             ppi: 96.0,

@@ -3,13 +3,14 @@
 
 use crate::Unit;
 
-/// A ruler over a page's text column, measured from the column's start,
-/// as word processors measure (docs/ARCHITECTURE.md, section 8): marked
-/// from the page's one edge to the other, numbered out from the column's
-/// start both ways. Its paragraph's indents and tab stops are measured
-/// from the start of the paragraph's own place in the column, which a
-/// list or a quote moves in. Positions are in layout units across the
-/// ruler.
+/// A ruler over a page's text column (docs/ARCHITECTURE.md, section 8):
+/// marked from the page's one edge to the other, and numbered from its
+/// zero, the column's start, as word processors number it, out both
+/// ways, or the page's edge, as page layout programs do, the person's
+/// choice (review 77nh3z47). Its paragraph's indents and tab stops are
+/// measured from the start of the paragraph's own place in the column,
+/// which a list or a quote moves in. Positions are in layout units across
+/// the ruler.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Ruler {
     /// Where the page starts, from the ruler's left; in a view without
@@ -21,6 +22,9 @@ pub struct Ruler {
     pub start: i64,
     /// How wide the column is.
     pub width: i64,
+    /// Where it's numbered from, from the ruler's left: the column's
+    /// start, or the page's.
+    pub zero: i64,
     /// Where the paragraph's place starts, from the ruler's left.
     pub origin: i64,
     /// How wide the paragraph's place is.
@@ -97,7 +101,7 @@ impl Marks {
 
     /// The marks from `from` to `to`, both measured from where the ruler
     /// is numbered from and inclusive, in order: where each is, and its
-    /// number, or how long its tick is. Nothing marks the start itself.
+    /// number, or how long its tick is. Nothing marks the zero itself.
     pub fn between(&self, from: i64, to: i64) -> Vec<(i64, Mark)> {
         let step = self.snap();
         let first = from.div_euclid(step) + i64::from(from.rem_euclid(step) != 0);

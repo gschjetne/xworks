@@ -242,6 +242,7 @@ fn ruler_model(unit: Unit) -> Ruler {
         page_width: 20 * cm,
         start: px(100),
         width: 15 * cm,
+        zero: px(100),
         origin: px(100),
         extent: 15 * cm,
         unit,
@@ -333,6 +334,67 @@ fn the_ruler_marks_the_page_in_its_unit() {
             2, 1, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16, 17
         ]
     );
+}
+
+/// Numbered from the page's edge, as page layout programs number it
+/// (review 77nh3z47), the ruler counts from the page's left edge to its
+/// right, and still marks only the page.
+#[test]
+fn the_ruler_can_be_numbered_from_the_page_edge() {
+    let theme = theme("light");
+    let labels = Labels::new();
+    let kit = Kit {
+        fonts: fonts(),
+        theme: &theme,
+        icons: icons(),
+        labels: &labels,
+        caret: true,
+    };
+    let cm = Unit::Centimetre.units();
+    let margin = ruler_model(Unit::Centimetre);
+    let model = Ruler {
+        zero: margin.page_start,
+        ..margin.clone()
+    };
+    let (left, right) = (model.page_start, model.page_start + model.page_width);
+    let drawn = RulerView::new(&kit, &model, px(40), px(1000)).draw(&kit);
+    let ticks: Vec<i64> = drawn
+        .iter()
+        .filter(|item| {
+            matches!(item, scene::Item::Fill { color, .. } if *color == theme.colors.secondary)
+        })
+        .filter_map(scene::Item::bounds)
+        .filter(|r| r.width == PIXEL)
+        .map(|r| r.x)
+        .collect();
+    assert!(ticks.iter().all(|&x| x > left && x <= right), "{ticks:?}");
+    // Half a centimetre in from the edge, and at the column's start,
+    // 2.5 cm in, which numbered from the margin has none.
+    assert!(ticks.iter().any(|&x| (x - (left + cm / 2)).abs() < PIXEL));
+    assert!(ticks.iter().any(|&x| (x - model.start).abs() < PIXEL));
+    // Twenty centimetres, numbered 1 to 20 from the page's left edge: its
+    // 1 is where the 1 after the column's start is, numbered from the
+    // margin, moved to a centimetre from the page's edge.
+    let centres = |drawn: &[scene::Item]| {
+        let mut centres: Vec<i64> = drawn
+            .iter()
+            .filter(|item| matches!(item, scene::Item::Glyphs(_)))
+            .filter_map(scene::Item::bounds)
+            .map(|r| r.x + r.width / 2)
+            .collect();
+        centres.sort_unstable();
+        centres
+    };
+    let edge = centres(&drawn);
+    let from_margin = centres(&RulerView::new(&kit, &margin, px(40), px(1000)).draw(&kit));
+    assert_eq!(edge.len(), 20);
+    assert_eq!(from_margin.len(), 19);
+    let one = from_margin[2] - (margin.start + cm);
+    assert!(
+        (edge[0] - (left + cm) - one).abs() <= PIXEL,
+        "{edge:?} {from_margin:?}"
+    );
+    assert!(edge.iter().all(|&x| x > left && x < right + px(10)));
 }
 
 fn inspector() -> Inspector {

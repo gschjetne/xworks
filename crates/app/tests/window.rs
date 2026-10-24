@@ -230,6 +230,48 @@ fn the_window_is_covered_everywhere() {
     }
 }
 
+/// The ruler is numbered from the text column's start, the left margin,
+/// until the person chooses the paper's edge, beside the units in View,
+/// Units (review 77nh3z47); the choice is every window's. In the draft,
+/// which has no paper, the column is the page, so the two are one.
+#[test]
+fn the_ruler_counts_from_the_margin_or_the_paper_edge() {
+    use part::Part;
+    let mut res = resources().clone();
+    res.documents = testkit::scratch_dir("app-ruler-from").expect("a folder");
+    res.settings = Arc::new(app::Settings::default());
+    let res = Arc::new(res);
+    let mut window = Window::create(res.clone()).expect("a document");
+    window.update(Event::Resize {
+        width: 1280.0,
+        height: 800.0,
+    });
+    window.update(Event::Command("view-pages".to_string()));
+    let ruler = window.editor().ruler().expect("a ruler");
+    assert!(ruler.page_start < ruler.start, "{ruler:?}");
+    assert_eq!(ruler.zero, ruler.start);
+    assert!(window.state("ruler-from-margin").checked);
+    assert!(!window.state("ruler-from-edge").checked);
+
+    window.update(Event::Command("ruler-from-edge".to_string()));
+    let ruler = window.editor().ruler().expect("a ruler");
+    assert_eq!(ruler.zero, ruler.page_start);
+    assert!(window.state("ruler-from-edge").checked);
+    assert!(!window.state("ruler-from-margin").checked);
+    let other = Window::create(res.clone()).expect("another");
+    assert!(other.state("ruler-from-edge").checked);
+
+    window.update(Event::Command("view-draft".to_string()));
+    let ruler = window.editor().ruler().expect("a ruler");
+    assert_eq!((ruler.zero, ruler.page_start), (ruler.start, ruler.start));
+
+    window.update(Event::Command("view-pages".to_string()));
+    window.update(Event::Command("ruler-from-margin".to_string()));
+    let ruler = window.editor().ruler().expect("a ruler");
+    assert_eq!(ruler.zero, ruler.start);
+    assert_eq!(res.settings.changes(), 2);
+}
+
 /// The ruler and the inspector measure the page and the paragraph in the
 /// unit the person chose from View, Units (review ydqhfds0), but for the
 /// space above and below a paragraph, which is set in points as type is,

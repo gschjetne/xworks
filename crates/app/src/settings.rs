@@ -1,7 +1,8 @@
 //! What a person chooses that's kept between runs: the unit the ruler and
-//! the inspector measure in (project owner, 2026-10-24, review ydqhfds0).
-//! Kept in a file the shell names, beside the documents opened lately,
-//! and shared by every window.
+//! the inspector measure in (project owner, 2026-10-24, review ydqhfds0),
+//! and where the ruler counts from (review 77nh3z47). Kept in a file the
+//! shell names, beside the documents opened lately, and shared by every
+//! window.
 //!
 //! The file is read the first time a setting is asked for, as the first
 //! frame draws the ruler, and written as a setting changes. Where it can't
@@ -22,6 +23,25 @@ pub const UNITS: [(Unit, &str); 3] = [
     (Unit::Pica, "units-picas"),
 ];
 
+/// Where the ruler is numbered from, the person's choice beside the units
+/// in View, Units (project owner, 2026-10-24, review 77nh3z47).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Deserialize, Serialize)]
+pub enum RulerFrom {
+    /// The text column's start, the left margin, as word processors
+    /// number it.
+    #[default]
+    Margin,
+    /// The paper's left edge, as page layout programs number it.
+    Edge,
+}
+
+/// Where the ruler can be numbered from, in the order View, Units lists
+/// them, each with its command.
+pub const RULER_FROM: [(RulerFrom, &str); 2] = [
+    (RulerFrom::Margin, "ruler-from-margin"),
+    (RulerFrom::Edge, "ruler-from-edge"),
+];
+
 /// The settings, shared by every window.
 #[derive(Debug)]
 pub struct Settings {
@@ -39,6 +59,9 @@ struct Kept {
     /// The unit chosen, if one was.
     #[serde(default)]
     units: Option<Unit>,
+    /// Where the ruler is numbered from.
+    #[serde(default)]
+    ruler_from: RulerFrom,
     /// How many times a setting has changed in this run.
     #[serde(skip)]
     changes: u64,
@@ -79,6 +102,7 @@ impl Settings {
                 .and_then(|text| ron::from_str(&text).ok())
                 .unwrap_or_default();
             kept.units = read.units.filter(|u| UNITS.iter().any(|(v, _)| v == u));
+            kept.ruler_from = read.ruler_from;
             kept.read = true;
         }
         kept
@@ -100,6 +124,26 @@ impl Settings {
             return;
         }
         kept.units = Some(unit);
+        self.keep(&mut kept);
+    }
+
+    /// Where the ruler is numbered from.
+    pub fn ruler_from(&self) -> RulerFrom {
+        self.lock().ruler_from
+    }
+
+    /// Numbers the ruler from `from`, and keeps it in the file.
+    pub fn set_ruler_from(&self, from: RulerFrom) {
+        let mut kept = self.lock();
+        if kept.ruler_from == from {
+            return;
+        }
+        kept.ruler_from = from;
+        self.keep(&mut kept);
+    }
+
+    /// Counts a change to `kept`, and writes it to the file.
+    fn keep(&self, kept: &mut Kept) {
         kept.changes += 1;
         if let Some(file) = &self.file
             && let Ok(text) = ron::ser::to_string_pretty(&*kept, ron::ser::PrettyConfig::default())
@@ -121,6 +165,11 @@ impl Settings {
 /// The unit command `id` chooses, if it's one of View, Units.
 pub(crate) fn unit_of(id: &str) -> Option<Unit> {
     UNITS.iter().find(|(_, c)| *c == id).map(|(u, _)| *u)
+}
+
+/// Where command `id` numbers the ruler from, if it's one of View, Units.
+pub(crate) fn ruler_from_of(id: &str) -> Option<RulerFrom> {
+    RULER_FROM.iter().find(|(_, c)| *c == id).map(|(f, _)| *f)
 }
 
 /// The unit a person measures in until they choose one, by the region of
@@ -170,6 +219,27 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         assert_eq!(unit_of("units-inches"), Some(Unit::Inch));
         assert_eq!(unit_of("toggle-ruler"), None);
+    }
+
+    #[test]
+    fn where_the_ruler_counts_from_is_kept_between_runs() {
+        let dir = std::env::temp_dir().join(format!("xworks-ruler-from-{}", std::process::id()));
+        let file = dir.join("settings.ron");
+        let _ = std::fs::remove_dir_all(&dir);
+        // Until it's chosen, the margin, as word processors have it.
+        let settings = Settings::load(file.clone(), Unit::Inch);
+        assert_eq!(settings.ruler_from(), RulerFrom::Margin);
+        settings.set_ruler_from(RulerFrom::Edge);
+        assert_eq!(settings.ruler_from(), RulerFrom::Edge);
+        settings.set_units(Unit::Pica);
+        assert_eq!(settings.changes(), 2);
+        // The next run reads both.
+        let again = Settings::load(file.clone(), Unit::Inch);
+        assert_eq!(again.ruler_from(), RulerFrom::Edge);
+        assert_eq!(again.units(), Unit::Pica);
+        let _ = std::fs::remove_dir_all(&dir);
+        assert_eq!(ruler_from_of("ruler-from-edge"), Some(RulerFrom::Edge));
+        assert_eq!(ruler_from_of("units-inches"), None);
     }
 
     #[test]

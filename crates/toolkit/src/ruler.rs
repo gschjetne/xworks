@@ -1,6 +1,7 @@
 //! The ruler over a page's text column: across the window, marked from
-//! the page's one edge to the other in its unit and numbered out from the
-//! column's start (`chrome::Marks`), with the paragraph's indents above
+//! the page's one edge to the other in its unit and numbered from its
+//! zero, the column's start or the page's (`chrome::Marks`), with the
+//! paragraph's indents above
 //! and below and its tab stops along its foot, which a person sets and
 //! drags.
 
@@ -117,12 +118,12 @@ impl RulerView {
             c.field,
         );
         // The unit's marks from the page's one edge to the other: numbers
-        // out from the column's start both ways, and ticks up from the
-        // foot between them.
+        // out from its zero, both ways from the column's start, and ticks
+        // up from the foot between them.
         let number = kit.ty(s.tiny, 400);
-        let from = m.page_start - m.start;
+        let from = m.page_start - m.zero;
         for (at, mark) in m.unit.marks().between(from, from + m.page_width) {
-            let x = sharp(m.start + at);
+            let x = sharp(m.zero + at);
             match mark {
                 Mark::Number(n) => {
                     let label = n.to_string();

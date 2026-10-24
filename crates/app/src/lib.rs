@@ -53,5 +53,5 @@ pub use editor::{
 };
 pub use recent::Recent;
 pub use resources::{ResourceError, Resources};
-pub use settings::{Settings, UNITS, units_of_locale};
+pub use settings::{RULER_FROM, RulerFrom, Settings, UNITS, units_of_locale};
 pub use window::Window;

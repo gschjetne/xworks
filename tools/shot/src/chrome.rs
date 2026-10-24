@@ -96,11 +96,13 @@ pub(crate) fn draft_dark() -> Page {
 }
 
 /// The top of the window on the sample on pages, the inspector shut: the
-/// title bar, the ruler in the unit command `units` chooses, and the top
-/// of the page, 1280 by 120.
-fn ruler(units: &str) -> Page {
+/// title bar, the ruler as `commands` from View, Units have it, and the
+/// top of the page, 1280 by 120.
+fn ruler(commands: &[&str]) -> Page {
     let mut window = sample("A walking skeleton", false);
-    window.update(Event::Command(units.to_string()));
+    for command in commands {
+        window.update(Event::Command(command.to_string()));
+    }
     let view = window.view();
     let mut top = Page::new(view.width, 120 * text::units::PIXEL);
     top.items = view.items;
@@ -109,17 +111,22 @@ fn ruler(units: &str) -> Page {
 
 /// The ruler in centimetres.
 pub(crate) fn ruler_centimetres() -> Page {
-    ruler("units-centimetres")
+    ruler(&["units-centimetres"])
 }
 
 /// The ruler in inches.
 pub(crate) fn ruler_inches() -> Page {
-    ruler("units-inches")
+    ruler(&["units-inches"])
 }
 
 /// The ruler in picas.
 pub(crate) fn ruler_picas() -> Page {
-    ruler("units-picas")
+    ruler(&["units-picas"])
+}
+
+/// The ruler in centimetres, numbered from the paper's edge.
+pub(crate) fn ruler_paper_edge() -> Page {
+    ruler(&["units-centimetres", "ruler-from-edge"])
 }
 
 /// The command palette, open over the sample on pages, "head" typed, as

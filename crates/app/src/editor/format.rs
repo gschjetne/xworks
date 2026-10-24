@@ -13,6 +13,7 @@ use text::units::{MILLIMETRE, POINT};
 use text::{TabAlign, TabStop};
 
 use super::{Editor, Effect, View};
+use crate::settings::RulerFrom;
 
 /// Line heights the inspector offers, in thousandths of the font; 0 is
 /// as tall as the fonts make them.
@@ -238,7 +239,8 @@ impl Editor {
 
     /// The ruler over the caret's paragraph: the page, or the draft's
     /// column, which is its page; the text's column, the paragraph's
-    /// place in it, and its indents and tab stops.
+    /// place in it, and its indents and tab stops; numbered from the
+    /// column's start or the page's, as the person chose.
     pub(super) fn ruler_model(&self) -> Ruler {
         let style = self.page_style();
         let (x, _) = self.page_origin(0);
@@ -252,6 +254,10 @@ impl Editor {
             page_width: style.width,
             start,
             width: style.body_width(),
+            zero: match self.res.settings.ruler_from() {
+                RulerFrom::Margin => start,
+                RulerFrom::Edge => x,
+            },
             origin: start + laid.place.indent + laid.inset,
             extent: laid.place.width - 2 * laid.inset,
             unit: self.res.settings.units(),
