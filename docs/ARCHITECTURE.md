@@ -485,10 +485,50 @@ it looks the same wherever it opens.
 - People change a document's stylesheet and define their own styles. A
   layout of tab stops is a style of its own, to use again in a document.
 
-How styles build on each other (cascading, inheritance) is still open,
-to be researched across Word, Pages, InDesign, the Claris applications,
-Nisus Writer, WordPerfect and FrameMaker; CSS is the example of what not
-to do. So is the experience of setting text in columns.
+**How styles build on each other** (project owner, 2026-10-24, review
+30dmn1js), after research across Word, Pages, InDesign, FrameMaker, the
+Claris applications, Nisus Writer, WordPerfect, LibreOffice Writer and
+QuarkXPress, with CSS as what not to do:
+- **Based-on chains of any depth, made visible,** as InDesign, Nisus
+  Writer and Writer have them. A style sets only what differs from the
+  style it's based on, and the stylesheet's defaults are complete, so
+  every chain ends in a value.
+- **Ground rules,** from what goes wrong elsewhere:
+  - one source: a document's look is its stylesheet and its own direct
+    formatting, with no link to a template and no automatic updating;
+  - styles are named by ID, so renaming one is a single edit;
+  - values are absolute, with no percentages of a parent and no toggles;
+  - containers lend geometry only: a list or a quote gives indents and
+    markers, never fonts, and nothing matches by context;
+  - a style changes only when it's edited, and redefining one from a
+    selection is an explicit command;
+  - marks are character styles: emphasis, strong, code and links come
+    from the stylesheet.
+- **Direct formatting is seen and cleared.** The inspector shows where
+  each value comes from: the text itself, its style, a style it's based
+  on, or the defaults. A mark after the style's name says the selection
+  has direct formatting, and View, Show Direct Formatting tints it, off
+  by default. Clear Formatting removes it. Applying a paragraph style
+  replaces the paragraph's own paragraph properties but never its
+  character formatting; a modifier clears that too.
+- **A stylesheet that comes with xWorks may change.** The document keeps
+  its copy, which records the sheet and the version it came from, and
+  xWorks offers to show what changed and apply it, never by itself.
+- **Pasting from another document:** the destination's styles win,
+  matched by role and name, and styles it lacks come along. Nothing is
+  renamed "Body 2".
+- **Columns are the page style's:** how many, the gutter, a rule between,
+  and whether the last page balances. The page style lists the styles
+  that span its columns, by heading level or any other, so whether a
+  heading spans depends on the layout, as typographers have it; a column
+  break goes in the text. Only the columns above a spanning paragraph and
+  at the end balance. The model is settled now, and built with Write
+  (T1).
+- **The stylesheets that come with xWorks:** Neutral (Source Serif 4 and
+  Inter, today's default), Book (EB Garamond, justified and hyphenated),
+  Literary (Alegreya), Modern (Inter throughout), Technical (Source Serif
+  4, numbered headings, JetBrains Mono) and Manuscript (double-spaced,
+  for submissions), each approved as a golden.
 
 **Container: SQLite** (project owner, 2026-10-18). A document is an SQLite
 database with a fixed, versioned schema: objects, the transaction log, embedded

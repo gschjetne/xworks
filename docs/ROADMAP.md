@@ -452,8 +452,13 @@ flowchart LR
    with xWorks and people's own. It starts with research into how word
    processors and page layout programs build styles on each other, and
    how they set columns, brought to the owner as a design to decide. Then
-   it's built: schema 2 changes, the inspector edits styles and the page,
-   and tab layouts become styles.
+   it's built, on the design the owner settled (review 30dmn1js): styles,
+   based on each other in chains of any depth, and the page become objects
+   in the document, edited by operations; new documents copy one of six
+   stylesheets; the inspector shows where each value comes from, edits
+   styles and the page, and clears direct formatting; pasting takes the
+   destination's styles. Columns' model is settled, and Write (T1) builds
+   them.
 
 8. **Exit.** Each foundation crate's contract is written down in its
    `lib.rs` and the architecture, and the budgets are measured again.
@@ -508,9 +513,12 @@ owner approved in review a23vvez8.
   dialogs, documents named by their first line, the `part` contract, and
   text ranges for screen readers.
 - **Live use** asked for the ruler across the window with units in View,
-  and the system's caret rate, which a follow-up builds now.
-- **The owner added stage 9,** a document's own styles, which starts with
-  research.
+  and the system's caret rate. A follow-up built them, with the ruler
+  counting from the margin or the paper's edge, spacing in points and the
+  inspector's tab stops read as the ruler reads (review 77nh3z47).
+- **The owner added stage 9,** a document's own styles. Its research came
+  back as a design the owner settled (review 30dmn1js), and its agent
+  builds it now.
 
 ### Exit criteria
 
