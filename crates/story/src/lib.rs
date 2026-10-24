@@ -601,6 +601,15 @@ pub fn styled(
             .take(run.len as usize)
             .map(char::len_utf8)
             .sum();
+        // Most runs set nothing: they're the paragraph's.
+        if run.props.is_empty() {
+            spans.push(Span {
+                len,
+                style: base.clone(),
+            });
+            looks.push(look);
+            continue;
+        }
         let mut style = base.clone();
         let mut seen = look;
         if let Some(Value::Ref(id)) = run.props.get(keys::CHAR_STYLE)

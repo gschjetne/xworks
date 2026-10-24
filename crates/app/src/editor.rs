@@ -631,15 +631,14 @@ impl Editor {
         // the selection is ordered by it from here on.
         // A paragraph whose style changed may number the headings after
         // it otherwise.
-        let restyled = |e: &story::Entry| {
-            !unchanged(e.id)
-                && was.paragraph(e.id).map(|p| p.props.get(keys::STYLE))
-                    != now.paragraph(e.id).map(|p| p.props.get(keys::STYLE))
+        let restyled = |id: &ObjectId| match (was.paragraph(*id), now.paragraph(*id)) {
+            (Some(a), Some(b)) => a.props.get(keys::STYLE) != b.props.get(keys::STYLE),
+            _ => false,
         };
         let same_flow = !all
             && !self.laid.containers.is_empty()
             && self.laid.containers.iter().all(|&c| unchanged(c))
-            && !self.laid.entries.iter().any(restyled);
+            && !now.changed_since(&was).iter().any(restyled);
         if !same_flow {
             let flow = story::flow(now, &self.sheet, width);
             self.laid.ids = flow.entries.iter().map(|e| e.id).collect();

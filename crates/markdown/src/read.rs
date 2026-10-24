@@ -325,9 +325,29 @@ struct Counts {
     longest_single: usize,
 }
 
+/// `sheet`'s paragraph style with `role`, or else the first whose property
+/// `key` is `value`.
+fn style_by(sheet: &[(ObjectId, Object)], role: &str, key: &str, value: Value) -> Option<ObjectId> {
+    let styles = || {
+        sheet.iter().filter_map(|(id, o)| match o {
+            Object::Style(s) if s.kind == doc::StyleKind::Paragraph => Some((*id, s)),
+            _ => None,
+        })
+    };
+    styles()
+        .find(|(_, s)| s.props.get(keys::ROLE) == Some(&Value::Text(role.to_string())))
+        .or_else(|| styles().find(|(_, s)| s.props.get(key) == Some(&value)))
+        .map(|(id, _)| id)
+}
+
 struct Builder<'a> {
     text: &'a str,
     sheet: &'a [(ObjectId, Object)],
+    /// The sheet's styles paragraphs take: body text's, code's, and each
+    /// heading level's, found once.
+    body: Option<ObjectId>,
+    code: Option<ObjectId>,
+    headings: [Option<ObjectId>; 6],
     sizes: &'a dyn Fn(&str) -> Option<(i64, i64)>,
     language: Option<String>,
     next: u64,
@@ -352,6 +372,17 @@ impl<'a> Builder<'a> {
         Builder {
             text,
             sheet: settings.sheet,
+            body: story::default_style_id(settings.sheet),
+            code: style_by(settings.sheet, "code", keys::CODE, Value::Bool(true)),
+            headings: std::array::from_fn(|k| {
+                let level = k as i64 + 1;
+                style_by(
+                    settings.sheet,
+                    &format!("heading-{level}"),
+                    keys::HEADING,
+                    Value::Int(level),
+                )
+            }),
             sizes: settings.sizes,
             language,
             next: settings
@@ -455,36 +486,20 @@ impl<'a> Builder<'a> {
         out
     }
 
-    /// The sheet's paragraph style with `role`, or else the first whose
-    /// property `key` is `value`.
-    fn style_by(&self, role: &str, key: &str, value: Value) -> Option<ObjectId> {
-        let styles = || {
-            self.sheet.iter().filter_map(|(id, o)| match o {
-                Object::Style(s) if s.kind == doc::StyleKind::Paragraph => Some((*id, s)),
-                _ => None,
-            })
-        };
-        styles()
-            .find(|(_, s)| s.props.get(keys::ROLE) == Some(&Value::Text(role.to_string())))
-            .or_else(|| styles().find(|(_, s)| s.props.get(key) == Some(&value)))
-            .map(|(id, _)| id)
-    }
-
     /// The style a heading of `level` takes.
     fn heading_style(&self, level: u8) -> Option<ObjectId> {
-        self.style_by(
-            &format!("heading-{level}"),
-            keys::HEADING,
-            Value::Int(i64::from(level)),
-        )
+        self.headings
+            .get(usize::from(level).saturating_sub(1))
+            .copied()
+            .flatten()
     }
 
     fn body_style(&self) -> Option<ObjectId> {
-        story::default_style_id(self.sheet)
+        self.body
     }
 
     fn code_style(&self) -> Option<ObjectId> {
-        self.style_by("code", keys::CODE, Value::Bool(true))
+        self.code
     }
 
     /// A paragraph's own properties: its style, if it names one, and the
