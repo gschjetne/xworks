@@ -1,0 +1,46 @@
+// Return in a task list (review jy4a2tx5, a bug the owner found): in a
+// task item it makes a new task item, its box unticked, bulleted or
+// numbered as its list is; in an empty task item it ends the list, as in
+// other items.
+(
+    size: (900, 700),
+    open: Some(("Tasks.md", "Today:\n\n- [x] Sow the beans\n\n1. [ ] Order seeds\n")),
+    events: [
+        Key("Down"),
+        Key("End"),
+        Key("Enter"),
+        Type("Dig the bed"),
+        Key("Enter"),
+        Key("Enter"),
+        Type("And mulch."),
+        Key("Down"),
+        Key("End"),
+        Key("Enter"),
+        Type("Pay"),
+    ],
+    expect: [
+        ("Body", "Today:"),
+        ("Body", "Sow the beans"),
+        ("Body", "Dig the bed"),
+        ("Body", "And mulch."),
+        ("Body", "Order seeds"),
+        ("Body", "Pay"),
+    ],
+    outline: Some([
+        "Body: Today:",
+        "list",
+        "  item task",
+        "    Body: Sow the beans",
+        "  item",
+        "    Body: Dig the bed",
+        "Body: And mulch.",
+        "list ordered",
+        "  item",
+        "    Body: Order seeds",
+        "  item",
+        "    Body: Pay",
+    ]),
+    files: [
+        ("Tasks.md", Some("Today:\n\n- [x] Sow the beans\n- [ ] Dig the bed\n\nAnd mulch.\n\n1. [ ] Order seeds\n2. [ ] Pay\n")),
+    ],
+)

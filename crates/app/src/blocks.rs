@@ -7,7 +7,8 @@
 //! The keys, as M2 has them:
 //!
 //! - **Enter** in a list item starts a new item with the text after the
-//!   caret; in an empty item, it leaves the list, as Shift+Tab does. In a
+//!   caret, a task with its box unticked after a task; in an empty item,
+//!   it leaves the list, as Shift+Tab does. In a
 //!   quote's last paragraph, empty, it leaves the quote. In code it breaks
 //!   the line, and on an empty last line it leaves the code. In a table's
 //!   cell it goes to the cell below, making a row at the end.
@@ -397,7 +398,8 @@ pub(crate) fn enter(doc: &Document, sheet: &StyleSheet, at: Position) -> Option<
                 return Some(b.edit("Outdent", start(p)));
             }
             // A new item after this one, with the text after the caret and
-            // the blocks after this paragraph.
+            // the blocks after this paragraph; after a task, a task, its
+            // box unticked.
             let list = doc.parent(parent)?;
             let new = b.fresh();
             b.push(Op::SplitParagraph {
@@ -407,10 +409,14 @@ pub(crate) fn enter(doc: &Document, sheet: &StyleSheet, at: Position) -> Option<
                 new_props: paragraph.props.clone(),
             })?;
             let item = b.fresh();
+            let mut props = Props::new();
+            if doc.block(parent)?.props.contains_key(keys::TASK) {
+                props.insert(keys::TASK.to_string(), Value::Bool(false));
+            }
             b.push(Op::InsertBlock {
                 parent: list,
                 after: Some(parent),
-                objects: vec![(item, container(Kind::Item, list, Props::new()))],
+                objects: vec![(item, container(Kind::Item, list, props))],
             })?;
             let children = b.doc.children(parent).to_vec();
             let from = children.iter().position(|&c| c == new)?;
