@@ -22,6 +22,9 @@ pub(crate) struct Style<'a> {
     pub careful: bool,
     /// Whether it's a table's cell: its pipes escaped, even in code.
     pub cell: bool,
+    /// Whether its line breaks are written as the character they are,
+    /// as in a heading or a table's cell, which have no lines to break.
+    pub literal_breaks: bool,
     /// Whether line breaks are two spaces at a line's end, rather than a
     /// backslash.
     pub spaced_breaks: bool,
@@ -94,9 +97,8 @@ fn text_of(props: &Props, key: &str) -> String {
     }
 }
 
-/// `chars[from..to]` as atoms. `None` if one can't be written: a line
-/// break in code.
-fn atoms(chars: &[(char, Props)], from: usize, to: usize) -> Option<Vec<Atom>> {
+/// `chars[from..to]` as atoms.
+fn atoms(chars: &[(char, Props)], from: usize, to: usize) -> Vec<Atom> {
     let mut out: Vec<Atom> = Vec::new();
     let mut i = from;
     while i < to {
@@ -133,12 +135,10 @@ fn atoms(chars: &[(char, Props)], from: usize, to: usize) -> Option<Vec<Atom>> {
                 text.push(*c);
                 j += 1;
             }
+            // A line break in code is the character it is.
             let what = if source.is_some() {
                 AtomKind::Source(text)
             } else {
-                if text.contains('\u{2028}') {
-                    return None;
-                }
                 AtomKind::Code(text)
             };
             out.push(Atom {
@@ -161,7 +161,7 @@ fn atoms(chars: &[(char, Props)], from: usize, to: usize) -> Option<Vec<Atom>> {
         });
         i += 1;
     }
-    Some(out)
+    out
 }
 
 /// A line written, and where in it the spaces are that it could break at:
@@ -178,19 +178,15 @@ pub(crate) struct Written {
 
 /// Writes `chars[from..to]`, each a character and the properties Markdown
 /// holds of it, as lines: broken at the spaces at `breaks` and after its
-/// line breaks. `None` if it can't be written: a line break in code or in
-/// a table's cell.
+/// line breaks, unless they're written as the characters they are.
 pub(crate) fn write(
     chars: &[(char, Props)],
     from: usize,
     to: usize,
     breaks: &BTreeSet<usize>,
     style: Style<'_>,
-) -> Option<Vec<Written>> {
-    let atoms = atoms(chars, from, to)?;
-    if style.cell && atoms.iter().any(|a| matches!(a.what, AtomKind::Break)) {
-        return None;
-    }
+) -> Vec<Written> {
+    let atoms = atoms(chars, from, to);
     let mut w = Writer {
         chars,
         atoms: &atoms,
@@ -220,6 +216,7 @@ pub(crate) fn write(
                     w.text(atom.start, *c);
                 }
             }
+            AtomKind::Break if style.literal_breaks => w.raw("\u{2028}"),
             AtomKind::Break => {
                 w.raw(if style.spaced_breaks { "  " } else { "\\" });
                 w.new_line();
@@ -258,7 +255,7 @@ pub(crate) fn write(
     }
     w.close_to(0);
     w.lines.push(std::mem::take(&mut w.line));
-    Some(w.lines)
+    w.lines
 }
 
 struct Writer<'a> {
@@ -756,13 +753,14 @@ mod tests {
             strong: '*',
             careful: false,
             cell: false,
+            literal_breaks: false,
             spaced_breaks: false,
             references: &[],
         }
     }
 
     fn one_line(chars: &[(char, Props)]) -> String {
-        let lines = write(chars, 0, chars.len(), &BTreeSet::new(), style()).expect("writes");
+        let lines = write(chars, 0, chars.len(), &BTreeSet::new(), style());
         lines.iter().map(guard_start).collect::<Vec<_>>().join("\n")
     }
 

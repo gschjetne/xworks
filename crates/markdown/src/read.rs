@@ -87,6 +87,15 @@ pub fn read(bytes: &[u8], settings: &Settings<'_>) -> Result<Read, ReadError> {
         Some(i) if text[i..].starts_with('\r') => "\r",
         _ => "\n",
     };
+    let definitions = document
+        .paragraphs()
+        .into_iter()
+        .filter(|&id| {
+            document
+                .paragraph(id)
+                .is_some_and(crate::write::is_definition)
+        })
+        .collect();
     let file = File {
         text: text.to_string(),
         bom,
@@ -98,6 +107,7 @@ pub fn read(bytes: &[u8], settings: &Settings<'_>) -> Result<Read, ReadError> {
         baseline: document.clone(),
         sources,
         inline,
+        definitions,
         cache: None,
     };
     Ok(Read { document, file })

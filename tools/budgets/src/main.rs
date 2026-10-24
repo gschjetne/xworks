@@ -21,6 +21,10 @@
 //!   window's canvas where the view changed, and the canvas copied to the
 //!   frame. A frame counts until the GPU has finished it.
 //!
+//! - **A large Markdown file** (M2's stage 6), which has no budgets of its
+//!   own yet: opening one as large as the report, first frame shown, and a
+//!   keystroke in its middle, which writes the whole file back.
+//!
 //! Measure on a quiet machine. Each line gives the median and the worst,
 //! and the parts of a frame where the time goes.
 
@@ -153,6 +157,7 @@ fn main() -> anyhow::Result<()> {
     println!("budgets: frames drawn by {}", frames.by());
     measured.extend(in_editor(&res, &path, &mut frames, runs)?);
     measured.push(saving(&path)?);
+    let markdown = markdown(&root, &res, &scratch, &mut frames, runs)?;
 
     println!();
     println!(
@@ -197,8 +202,140 @@ fn main() -> anyhow::Result<()> {
             println!("    {}", m.note);
         }
     }
+    println!();
+    println!(
+        "{:<44} {:>9} {:>9} {:>9}",
+        "No budget yet", "median", "95th", "worst"
+    );
+    for (what, m) in &markdown {
+        let ms = |v: f64| format!("{v:.1} ms");
+        let worst = m.samples.iter().copied().fold(0.0, f64::max);
+        println!(
+            "{what:<44} {:>9} {:>9} {:>9}",
+            ms(percentile(&m.samples, 50)),
+            ms(percentile(&m.samples, 95)),
+            ms(worst)
+        );
+        if !m.parts.is_empty() {
+            let parts: Vec<String> = m
+                .parts
+                .iter()
+                .map(|(what, v)| format!("{what} {}", ms(percentile(v, 50))))
+                .collect();
+            println!("    parts, medians: {}", parts.join(", "));
+        }
+        if !m.note.is_empty() {
+            println!("    {}", m.note);
+        }
+    }
     let _ = std::fs::remove_dir_all(&scratch);
     Ok(())
+}
+
+/// A Markdown file of about a megabyte: the Markdown files of
+/// `spec/markdown/files/` over and over, their front matter left out.
+fn large_markdown(root: &Path) -> anyhow::Result<String> {
+    let mut parts = Vec::new();
+    for name in ["readme", "notes", "changelog", "guide"] {
+        let text = std::fs::read_to_string(root.join(format!("spec/markdown/files/{name}.md")))?;
+        let text = match text.strip_prefix("---\n") {
+            Some(rest) => rest
+                .split_once("\n---\n")
+                .map_or(text.clone(), |(_, body)| body.to_string()),
+            None => text,
+        };
+        parts.push(text);
+    }
+    let mut out = String::new();
+    while out.len() < 1 << 20 {
+        for part in &parts {
+            out.push_str(part);
+            out.push('\n');
+        }
+    }
+    Ok(out)
+}
+
+/// Opening a large Markdown file, as the report is opened, and typing in
+/// its middle, each keystroke writing the whole file back.
+fn markdown(
+    root: &Path,
+    res: &Arc<Resources>,
+    scratch: &Path,
+    frames: &mut Frames,
+    runs: usize,
+) -> anyhow::Result<Vec<(String, Measured)>> {
+    let text = large_markdown(root)?;
+    let path = scratch.join("large.md");
+    std::fs::write(&path, &text)?;
+    let window = || Event::Resize {
+        width: WINDOW.0,
+        height: WINDOW.1,
+    };
+    let mut opening = Vec::new();
+    let mut parts: [Vec<f64>; 2] = Default::default();
+    let mut blocks = 0;
+    for _ in 0..runs {
+        let began = Instant::now();
+        let mut editor = Window::open(res.clone(), &path)?;
+        editor.update(window());
+        let opened = millis(began.elapsed());
+        frames.forget();
+        frames.draw(&editor)?;
+        opening.push(millis(began.elapsed()));
+        parts[0].push(opened);
+        parts[1].push(millis(began.elapsed()) - opened);
+        blocks = editor.editor().document().paragraphs().len();
+    }
+    let [read, draw] = parts;
+    let open = Measured {
+        id: "open-markdown",
+        samples: opening,
+        parts: vec![
+            ("read and lay out".to_string(), read),
+            ("first frame".to_string(), draw),
+        ],
+        note: "",
+    };
+    let mut editor = Window::open(res.clone(), &path)?;
+    editor.update(window());
+    let paragraphs = editor.editor().document().paragraphs().to_vec();
+    let middle = paragraphs.len() / 2;
+    let at = |editor: &Window| {
+        let caret = editor.editor().selection().1.paragraph;
+        paragraphs.iter().position(|&p| p == caret).unwrap_or(0)
+    };
+    while at(&editor) < middle {
+        editor.update(Event::Key {
+            key: Key::PageDown,
+            modifiers: Modifiers::default(),
+        });
+    }
+    frames.draw(&editor)?;
+    let mut typing = Vec::new();
+    let mut parts: [Vec<f64>; 3] = Default::default();
+    for c in "The quick brown fox jumps over the lazy dog. ".chars() {
+        typing.push(frame(
+            &mut editor,
+            frames,
+            Event::Text(c.to_string()),
+            &mut parts,
+        )?);
+    }
+    let keystroke = Measured {
+        id: "keystroke-markdown",
+        samples: typing,
+        parts: named(parts, "update and write the file"),
+        note: "",
+    };
+    let size = format!("{:.1} MB, {blocks} paragraphs", text.len() as f64 / 1e6);
+    Ok(vec![
+        (format!("Open a Markdown file of {size}"), open),
+        (
+            "Keystroke in it, the file written back".to_string(),
+            keystroke,
+        ),
+    ])
 }
 
 fn millis(d: Duration) -> f64 {

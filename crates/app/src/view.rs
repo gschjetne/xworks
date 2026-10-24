@@ -48,6 +48,20 @@ pub(crate) fn draw(editor: &Editor, look: &Look) -> Page {
                 color: look.page,
             });
         }
+        // A draft is one long column: only its pieces in view are drawn.
+        let mut pieces = &parts.pieces[n][..];
+        if parts.draft {
+            let body = y + style.top;
+            let bottom = |p: &canvas::Piece| {
+                body + p.y
+                    + parts.blocks[p.block].lines[p.lines.clone()]
+                        .iter()
+                        .sum::<i64>()
+            };
+            let first = pieces.partition_point(|p| bottom(p) < view_top);
+            let last = pieces.partition_point(|p| body + p.y <= view_bottom);
+            pieces = &pieces[first..last.max(first)];
+        }
         let painted = canvas::paint_page(
             &res.sheet.blocks,
             canvas::Poured {
@@ -56,7 +70,7 @@ pub(crate) fn draw(editor: &Editor, look: &Look) -> Page {
                 blocks: parts.blocks,
                 pictures: parts.pictures,
             },
-            &parts.pieces[n],
+            pieces,
             Point::new(x + style.left, y + style.top),
             fonts,
             None,

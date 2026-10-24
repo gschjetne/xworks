@@ -56,12 +56,6 @@ pub enum What {
     Style(String),
     /// A picture kept in the document rather than linked.
     KeptPicture,
-    /// A line break in code.
-    BreakInCode,
-    /// A line break in a table's cell.
-    BreakInCell,
-    /// A line break in a heading below the second level.
-    BreakInHeading,
     /// A heading or code in a table's cell.
     BlockInCell,
     /// A table's row with more cells than its header, or a header of none.
@@ -89,9 +83,6 @@ impl fmt::Display for What {
             What::Language => f.write_str("text in another language"),
             What::Style(name) => write!(f, "the style {name}"),
             What::KeptPicture => f.write_str("a picture kept in the document"),
-            What::BreakInCode => f.write_str("a line break in code"),
-            What::BreakInCell => f.write_str("a line break in a table's cell"),
-            What::BreakInHeading => f.write_str("a line break in a small heading"),
             What::BlockInCell => f.write_str("a heading or code in a table's cell"),
             What::Columns => f.write_str("a row longer than its table's header"),
             What::TaskStart => f.write_str("a task that doesn't start with text"),
@@ -210,7 +201,8 @@ impl File {
             file: self,
             document,
             sheet,
-            unchanged: unchanged(document, &self.baseline),
+            changed: changed(document, &self.baseline),
+            baseline: &self.baseline,
             out: String::new(),
             open: Vec::new(),
             definitions: std::cell::OnceCell::new(),
@@ -250,17 +242,24 @@ impl File {
     }
 }
 
-/// The blocks of `document` that are as `baseline` has them, with
-/// everything in them.
-fn unchanged(document: &Document, baseline: &Document) -> HashSet<ObjectId> {
+/// The blocks of `document` that aren't as `baseline` has them, with
+/// everything in them, and the containers they're in: found past every
+/// object the two share, so it takes time in what was edited.
+fn changed(document: &Document, baseline: &Document) -> HashSet<ObjectId> {
     let mut out = HashSet::new();
-    for id in document.subtree(document.root()).into_iter().rev() {
-        let (Some(a), Some(b)) = (document.object(id), baseline.object(id)) else {
+    for id in document.changed_since(baseline) {
+        // Undone, an edit leaves an object as it was, if not the very one.
+        if let (Some(a), Some(b)) = (document.object(id), baseline.object(id))
+            && a == b
+        {
             continue;
-        };
-        let same = std::ptr::eq(a, b) || a == b;
-        if same && a.children().iter().all(|c| out.contains(c)) {
-            out.insert(id);
+        }
+        let mut at = Some(id);
+        while let Some(x) = at {
+            if !out.insert(x) {
+                break;
+            }
+            at = document.parent(x).or_else(|| baseline.parent(x));
         }
     }
     out
@@ -270,19 +269,27 @@ struct Writer<'a> {
     file: &'a File,
     document: &'a Document,
     sheet: &'a StyleSheet,
-    unchanged: HashSet<ObjectId>,
+    /// What's been edited since the file was read, and the containers
+    /// it's in.
+    changed: HashSet<ObjectId>,
+    baseline: &'a Document,
     out: String,
     open: Vec<Open>,
     /// The story's link reference definitions, which text read back to
     /// check it is read with, as the file reads it.
-    definitions: std::cell::OnceCell<String>,
+    definitions: std::cell::OnceCell<Vec<(Option<String>, String)>>,
     last: Option<&'a Cache>,
     made: HashMap<ObjectId, Made>,
 }
 
-impl Writer<'_> {
-    fn text(&self) -> &str {
+impl<'a> Writer<'a> {
+    fn text(&self) -> &'a str {
         &self.file.text
+    }
+
+    /// Whether `id` is as the file had it, with everything in it.
+    fn unchanged(&self, id: ObjectId) -> bool {
+        !self.changed.contains(&id) && self.baseline.object(id).is_some()
     }
 
     fn habits(&self) -> &Habits {
@@ -388,23 +395,22 @@ impl Writer<'_> {
     /// The file's lines `range`, as they were but for `splices` to them,
     /// ending in a line ending.
     fn whole(&mut self, range: Range<usize>, splices: &[(Range<usize>, String)]) {
+        let text = self.text();
         let mut splices: Vec<&(Range<usize>, String)> = splices
             .iter()
             .filter(|(r, _)| r.start >= range.start && r.end <= range.end)
             .collect();
         splices.sort_by_key(|(r, _)| r.start);
         let mut at = range.start;
-        let mut out = String::new();
         for (r, s) in splices {
             if r.start < at {
                 continue;
             }
-            out.push_str(&self.file.text[at..r.start]);
-            out.push_str(s);
+            self.out.push_str(&text[at..r.start]);
+            self.out.push_str(s);
             at = r.end;
         }
-        out.push_str(&self.file.text[at..range.end]);
-        self.out.push_str(&out);
+        self.out.push_str(&text[at..range.end]);
         if !self.out.ends_with(['\n', '\r']) && !self.out.is_empty() {
             self.out.push_str(self.file.ending);
         }
@@ -497,7 +503,7 @@ impl Writer<'_> {
     /// as they were.
     fn whole_plan(&self, id: ObjectId) -> Option<Vec<(Range<usize>, String)>> {
         let src = self.file.sources.get(&id)?;
-        if !self.unchanged.contains(&id) || !self.in_place(src) {
+        if !self.unchanged(id) || !self.in_place(src) {
             return None;
         }
         let top = self.open.last()?;
@@ -544,8 +550,8 @@ impl Writer<'_> {
                     && src.prev.is_none()
                     && src.lines.start >= end
                 {
-                    let gap = self.text()[end..src.lines.start].to_string();
-                    self.out.push_str(&gap);
+                    let gap = &self.text()[end..src.lines.start];
+                    self.out.push_str(gap);
                     return;
                 }
                 let text = self
@@ -561,8 +567,8 @@ impl Writer<'_> {
                 let start = self.file.front.as_ref().map_or(0, |f| f.end);
                 match src {
                     Some(src) if top.original && src.prev.is_none() && !src.lines.is_empty() => {
-                        let gap = self.text()[start..src.lines.start].to_string();
-                        self.out.push_str(&gap);
+                        let gap = &self.text()[start..src.lines.start];
+                        self.out.push_str(gap);
                     }
                     _ if self.file.front.is_some() => self.fresh(""),
                     _ => {}
@@ -577,10 +583,9 @@ impl Writer<'_> {
             && !had.lines.is_empty()
             && had.lines.end <= src.lines.start
         {
-            let gap = &self.file.text[had.lines.end..src.lines.start];
+            let gap = &self.text()[had.lines.end..src.lines.start];
             if gap.contains(['\n', '\r']) || (prev_whole && whole) {
-                let gap = gap.to_string();
-                self.out.push_str(&gap);
+                self.out.push_str(gap);
                 return;
             }
         }
@@ -639,7 +644,7 @@ impl Writer<'_> {
                         let tail = tail.to_string();
                         self.out.push_str(&tail);
                     }
-                } else if open.prev.is_none() && self.unchanged.contains(&open.id) {
+                } else if open.prev.is_none() && self.unchanged(open.id) {
                     // A file of blank lines, as it was.
                     let start = self.file.front.as_ref().map_or(0, |f| f.end);
                     let rest = &self.file.text[start..];
@@ -991,10 +996,6 @@ impl Writer<'_> {
                 return unheld(what);
             }
         }
-        let (text, _) = canonical(p);
-        if cell && text.contains('\u{2028}') {
-            return unheld(What::BreakInCell);
-        }
         Ok(())
     }
 
@@ -1016,6 +1017,7 @@ impl Writer<'_> {
             strong: own.and_then(|o| o.strong).unwrap_or(self.habits().strong),
             careful,
             cell,
+            literal_breaks: cell,
             spaced_breaks: own.is_some_and(|o| o.spaced_breaks) && !careful,
             references: own.map_or(&[], |o| o.references.as_slice()),
         }
@@ -1084,19 +1086,14 @@ impl Writer<'_> {
             (true, kept, width),
             (true, BTreeSet::new(), None),
         ] {
-            let Some(written) = wrap(
+            let written = wrap(
                 &chars,
                 0,
                 chars.len(),
                 breaks,
                 self.style(id, careful, false),
                 width,
-            ) else {
-                return Err(Unheld {
-                    block: id,
-                    what: What::BreakInCode,
-                });
-            };
+            );
             let out: Vec<Line> = written
                 .iter()
                 .map(|w| Line::Fresh(inline::guard_start(w)))
@@ -1173,7 +1170,7 @@ impl Writer<'_> {
             BTreeSet::new(),
             self.style(id, false, false),
             self.width(),
-        )?;
+        );
         if written.len() > 1 && written.last().is_some_and(|w| w.text.is_empty()) {
             written.pop();
         }
@@ -1212,10 +1209,23 @@ impl Writer<'_> {
         } else {
             markdown.to_string()
         };
+        // The definitions it might name: all of them, or of many, those
+        // whose labels it has, case folded.
         let definitions = self.definitions();
-        if !definitions.is_empty() {
+        let folded = fold(&text);
+        let named: Vec<&str> = definitions
+            .iter()
+            .filter(|(label, _)| {
+                definitions.len() <= MANY_DEFINITIONS
+                    || label
+                        .as_ref()
+                        .is_none_or(|l| folded.contains(&format!("[{l}")))
+            })
+            .map(|(_, d)| d.as_str())
+            .collect();
+        if !named.is_empty() {
             text.push_str("\n\n");
-            text.push_str(definitions);
+            text.push_str(&named.join("\n"));
         }
         let settings = Settings {
             sheet: self.sheet,
@@ -1255,18 +1265,41 @@ impl Writer<'_> {
         got == expected
     }
 
-    /// The story's link reference definitions, as kept.
-    fn definitions(&self) -> &str {
+    /// The story's link reference definitions and footnotes, as kept,
+    /// each with its label, folded, where that can be told.
+    fn definitions(&self) -> &[(Option<String>, String)] {
         self.definitions.get_or_init(|| {
-            let mut out = Vec::new();
-            for id in self.document.paragraphs() {
+            // Those the file had and still has as it had them, and those
+            // edited since; found in what's changed, not in the whole
+            // story.
+            let mut texts: Vec<&str> = self
+                .file
+                .definitions
+                .iter()
+                .filter(|id| !self.changed.contains(id))
+                .filter_map(|&id| self.document.paragraph(id).map(|p| p.text.as_str()))
+                .collect();
+            let mut edited: Vec<ObjectId> = self.changed.iter().copied().collect();
+            edited.sort_unstable();
+            for id in edited {
                 if let Some(p) = self.document.paragraph(id)
-                    && matches!(p.props.get(keys::SOURCE), Some(Value::Text(kind)) if kind == "definition" || kind == "footnote")
+                    && is_definition(p)
                 {
-                    out.push(p.text.replace('\u{2028}', "\n"));
+                    texts.push(&p.text);
                 }
             }
-            out.join("\n\n")
+            let mut out = Vec::new();
+            for text in texts {
+                for definition in text.split('\u{2028}') {
+                    let label = definition
+                        .trim_start()
+                        .strip_prefix('[')
+                        .and_then(|rest| rest.split_once("]:"))
+                        .map(|(label, _)| fold(label));
+                    out.push((label, definition.to_string()));
+                }
+            }
+            out
         })
     }
 
@@ -1280,29 +1313,20 @@ impl Writer<'_> {
     ) -> Result<Vec<Line>, Unheld> {
         let (text, props) = canonical(p);
         let chars: Vec<(char, Props)> = text.chars().zip(props).collect();
-        let breaks = text.contains('\u{2028}');
-        if breaks && level > 2 {
-            return Err(Unheld {
-                block: id,
-                what: What::BreakInHeading,
-            });
-        }
         let had = match self.file.sources.get(&id).map(|s| &s.syntax) {
             Some(Syntax::Heading(Some(c))) => Some(*c),
             _ => None,
         };
         let underline = if level == 1 { '=' } else { '-' };
-        let setext = level <= 2 && !chars.is_empty() && (breaks || had == Some(underline));
+        // Underlined as it was; its line breaks the characters they are.
+        let setext = level <= 2 && !chars.is_empty() && had == Some(underline);
         let expected = shape_of(self.document, self.sheet, id);
         for careful in [false, true] {
-            let style = self.style(id, careful, false);
-            let Some(written) = inline::write(&chars, 0, chars.len(), &BTreeSet::new(), style)
-            else {
-                return Err(Unheld {
-                    block: id,
-                    what: What::BreakInCode,
-                });
+            let style = Style {
+                literal_breaks: true,
+                ..self.style(id, careful, false)
             };
+            let written = inline::write(&chars, 0, chars.len(), &BTreeSet::new(), style);
             let lines: Vec<Line> = if setext {
                 let mut lines: Vec<Line> = written
                     .iter()
@@ -1506,7 +1530,7 @@ impl Writer<'_> {
         };
         let table = self.document.parent(row);
         !src.lines.is_empty()
-            && self.unchanged.contains(&row)
+            && self.unchanged(row)
             && Some(src.parent) == table
             && (!header || self.pending_items() == src.first_of)
             && (header || self.file.baseline.children(src.parent).first() != Some(&row))
@@ -1525,18 +1549,13 @@ impl Writer<'_> {
             },
         }];
         for careful in [false, true] {
-            let Some(written) = inline::write(
+            let written = inline::write(
                 &chars,
                 0,
                 chars.len(),
                 &BTreeSet::new(),
                 self.style(id, careful, true),
-            ) else {
-                return Err(Unheld {
-                    block: id,
-                    what: What::BreakInCell,
-                });
-            };
+            );
             let line = written.first().map(|w| w.text.clone()).unwrap_or_default();
             if self.reads_back(&line, &expected, true) {
                 return Ok(line);
@@ -1684,11 +1703,11 @@ fn wrap(
     mut breaks: BTreeSet<usize>,
     style: Style<'_>,
     width: Option<usize>,
-) -> Option<Vec<Written>> {
+) -> Vec<Written> {
     loop {
-        let lines = inline::write(chars, from, to, &breaks, style)?;
+        let lines = inline::write(chars, from, to, &breaks, style);
         let Some(width) = width else {
-            return Some(lines);
+            return lines;
         };
         let mut added = false;
         for line in &lines {
@@ -1712,7 +1731,7 @@ fn wrap(
             }
         }
         if !added {
-            return Some(lines);
+            return lines;
         }
     }
 }
@@ -1720,4 +1739,20 @@ fn wrap(
 /// A paragraph's line as the file had it.
 fn whole_line(line: &TextLine) -> Line {
     Line::Whole(line.whole.clone(), line.content)
+}
+
+/// Whether `p` is Markdown kept as written that defines what text may
+/// name: link reference definitions, and footnotes.
+pub(crate) fn is_definition(p: &Paragraph) -> bool {
+    matches!(p.props.get(keys::SOURCE), Some(Value::Text(kind)) if kind == "definition" || kind == "footnote")
+}
+
+/// How many link reference definitions a story may have before text read
+/// back to check it is read with only those its labels name.
+const MANY_DEFINITIONS: usize = 64;
+
+/// `s` case folded, nearly as CommonMark matches labels: lowercase, and
+/// `ß` and `ẞ` as `ss`.
+fn fold(s: &str) -> String {
+    s.to_lowercase().to_uppercase().to_lowercase()
 }

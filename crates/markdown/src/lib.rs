@@ -96,6 +96,9 @@ pub struct File {
     /// How each paragraph wrote its marks, line breaks and links, where
     /// it wrote them its own way, by its ID.
     inline: HashMap<ObjectId, InlineHabits>,
+    /// The paragraphs that keep its link reference definitions and
+    /// footnotes.
+    definitions: Vec<ObjectId>,
     /// What [`File::write`] last made of blocks written afresh, and the
     /// document it wrote, whose objects it was made from.
     cache: Option<write::Cache>,
@@ -116,6 +119,7 @@ impl File {
             baseline: Document::new(),
             sources: HashMap::new(),
             inline: HashMap::new(),
+            definitions: Vec::new(),
             cache: None,
         }
     }
