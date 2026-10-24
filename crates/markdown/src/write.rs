@@ -384,6 +384,12 @@ impl<'a> Writer<'a> {
                 self.close()?;
                 continue;
             }
+            if self.copy_run() {
+                continue;
+            }
+            let Some(top) = self.open.last_mut() else {
+                break;
+            };
             let child = top.children[top.next];
             top.next += 1;
             self.child(child)?;
@@ -401,6 +407,64 @@ impl<'a> Writer<'a> {
             self.out.insert_str(0, self.file.ending);
         }
         Ok(())
+    }
+
+    /// Copies the story's next blocks, after one written as the file had
+    /// it, as far as each is as the file had it, right after the one
+    /// before it there: the file's text from the end of the one written to
+    /// the end of the last, blocks and what's between them, as writing
+    /// each as it was would, but at once, so writing takes time in what
+    /// was edited rather than in the whole story. Whether it copied any.
+    fn copy_run(&mut self) -> bool {
+        let Some(top) = self.open.last() else {
+            return false;
+        };
+        let Some((last, true)) = top.prev else {
+            return false;
+        };
+        if top.frame != Frame::Root || !top.original || top.next == 0 {
+            return false;
+        }
+        let sources = &self.file.sources;
+        let list_marker = |id: ObjectId| match sources.get(&id).map(|s| &s.syntax) {
+            Some(Syntax::List { marker, .. }) => Some(*marker),
+            _ => None,
+        };
+        let (from, mut end) = (top.next, top.next);
+        let mut before = last;
+        while let Some(&c) = top.children.get(end) {
+            let fits = self.unchanged(c)
+                && sources.get(&c).is_some_and(|s| {
+                    !s.lines.is_empty()
+                        && s.prev == Some(before)
+                        && s.first_of.is_empty()
+                        && s.parent == top.id
+                })
+                // A list right after one of its bullet would join it.
+                && !(list_marker(c).is_some() && list_marker(c) == list_marker(before));
+            if !fits {
+                break;
+            }
+            before = c;
+            end += 1;
+        }
+        if end == from {
+            return false;
+        }
+        let start = sources[&last].lines.end;
+        let stop = sources[&before].lines.end;
+        let text = &self.file.text[start..stop];
+        self.out.push_str(text);
+        if !self.out.is_empty() && !self.out.ends_with(['\n', '\r']) {
+            self.out.push_str(self.file.ending);
+        }
+        let after_list = list_marker(before);
+        let top = self.top();
+        top.next = end;
+        top.prev = Some((before, true));
+        top.after_list = after_list;
+        top.pending = false;
+        true
     }
 
     /// The front matter to write, and whether it's added, the file having
