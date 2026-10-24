@@ -139,6 +139,34 @@ impl<T: Clone> IdMap<T> {
         }
     }
 
+    /// The keys whose values in this map and `other` aren't the same by
+    /// `same`, or that only one of them has: found by walking both tries
+    /// together, past every node they share, so it takes time in what
+    /// differs, not in what they hold.
+    pub(crate) fn differing(
+        &self,
+        other: &IdMap<T>,
+        same: impl Fn(&T, &T) -> bool,
+    ) -> Vec<ObjectId> {
+        let mut out = Vec::new();
+        if self.levels != other.levels {
+            for (id, value) in self.entries() {
+                if !other.get(id).is_some_and(|v| same(value, v)) {
+                    out.push(id);
+                }
+            }
+            for (id, _) in other.entries() {
+                if self.get(id).is_none() {
+                    out.push(id);
+                }
+            }
+            out.sort_unstable();
+            return out;
+        }
+        differ(self.root.as_ref(), other.root.as_ref(), 0, &same, &mut out);
+        out
+    }
+
     /// Every entry, in ID order.
     pub(crate) fn entries(&self) -> Vec<(ObjectId, &T)> {
         fn walk<'a, T>(node: &'a Node<T>, prefix: u64, out: &mut Vec<(ObjectId, &'a T)>) {
@@ -167,6 +195,57 @@ impl<T: Clone> IdMap<T> {
     }
 }
 
+/// Pushes onto `out` the keys under `a` and `b`, trie nodes at the same
+/// place, whose values differ by `same` or that only one has.
+fn differ<T>(
+    a: Option<&Arc<Node<T>>>,
+    b: Option<&Arc<Node<T>>>,
+    prefix: u64,
+    same: &impl Fn(&T, &T) -> bool,
+    out: &mut Vec<ObjectId>,
+) {
+    if let (Some(x), Some(y)) = (a, b)
+        && Arc::ptr_eq(x, y)
+    {
+        return;
+    }
+    let key = |i: usize| ObjectId(prefix << BITS | i as u64);
+    match (a.map(|n| &**n), b.map(|n| &**n)) {
+        (Some(Node::Branch(x)), Some(Node::Branch(y))) => {
+            for i in 0..WIDTH {
+                differ(
+                    x[i].as_ref(),
+                    y[i].as_ref(),
+                    prefix << BITS | i as u64,
+                    same,
+                    out,
+                );
+            }
+        }
+        (Some(Node::Leaf(x)), Some(Node::Leaf(y))) => {
+            for i in 0..WIDTH {
+                match (&x[i], &y[i]) {
+                    (None, None) => {}
+                    (Some(v), Some(w)) if same(v, w) => {}
+                    _ => out.push(key(i)),
+                }
+            }
+        }
+        (Some(node), None) | (None, Some(node)) => match node {
+            Node::Branch(children) => {
+                for (i, child) in children.iter().enumerate() {
+                    differ(child.as_ref(), None, prefix << BITS | i as u64, same, out);
+                }
+            }
+            Node::Leaf(values) => {
+                out.extend((0..WIDTH).filter(|&i| values[i].is_some()).map(key));
+            }
+        },
+        // Tries of one height have branches and leaves at the same levels.
+        _ => {}
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -188,6 +267,24 @@ mod tests {
         assert_eq!(map.entries().len(), 7);
         let keys: Vec<u64> = map.entries().iter().map(|(k, _)| k.0).collect();
         assert_eq!(keys, [0, 1, 31, 1023, 1024, 40_000, u64::MAX]);
+    }
+
+    #[test]
+    fn what_differs_is_found_past_what_is_shared() {
+        let mut map: IdMap<Arc<u64>> = IdMap::new();
+        for k in 0..2000u64 {
+            map.insert(ObjectId(k), Arc::new(k));
+        }
+        let before = map.clone();
+        *map.get_mut(ObjectId(5)).unwrap() = Arc::new(5);
+        map.remove(ObjectId(1500));
+        map.insert(ObjectId(4000), Arc::new(1));
+        let same = |a: &Arc<u64>, b: &Arc<u64>| Arc::ptr_eq(a, b);
+        let ids = |v: Vec<ObjectId>| v.into_iter().map(|i| i.0).collect::<Vec<_>>();
+        assert_eq!(ids(map.differing(&before, same)), [5, 1500, 4000]);
+        assert_eq!(ids(before.differing(&before, same)), Vec::<u64>::new());
+        map.insert(ObjectId(1 << 20), Arc::new(9));
+        assert_eq!(ids(map.differing(&before, same)), [5, 1500, 4000, 1 << 20]);
     }
 
     #[test]

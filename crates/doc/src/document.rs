@@ -389,6 +389,15 @@ impl Document {
         }
     }
 
+    /// The objects that aren't the very ones `other` has, as where this
+    /// document was edited since it was `other`: those either has and the
+    /// other doesn't, or holds otherwise, or holds again as they were, in
+    /// ID order. It takes time in how much differs, not in how much there
+    /// is, as the two share all the rest.
+    pub fn changed_since(&self, other: &Document) -> Vec<ObjectId> {
+        self.objects.differing(&other.objects, Arc::ptr_eq)
+    }
+
     /// The root story's ID.
     pub fn root(&self) -> ObjectId {
         self.root
