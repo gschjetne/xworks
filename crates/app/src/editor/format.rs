@@ -204,18 +204,13 @@ impl Editor {
             }
             "tab-stop-move" => {
                 if let (Some(from), Some(to)) = (int(0), int(1)) {
-                    self.change_tabs("Tab Stop", |stops| {
-                        let moved = stops.iter().position(|s| s.position == from);
-                        if let Some(i) = moved {
-                            let align = stops[i].align;
-                            stops.remove(i);
-                            stops.retain(|s| s.position != to);
-                            stops.push(TabStop {
-                                position: to,
-                                align,
-                            });
-                        }
-                    });
+                    self.move_stop(from, to);
+                }
+            }
+            "tab-stop-place" => {
+                if let (Some(from), Some(at)) = (int(0), int(1)) {
+                    let to = at - self.stops_shift();
+                    self.move_stop(from, to.max(0));
                 }
             }
             "tab-stop-kind" => {
@@ -235,6 +230,32 @@ impl Editor {
             _ => {}
         }
         Vec::new()
+    }
+
+    /// Moves the caret's paragraph's tab stop at `from` to `to`, both from
+    /// its place's start.
+    fn move_stop(&mut self, from: i64, to: i64) {
+        self.change_tabs("Tab Stop", |stops| {
+            let moved = stops.iter().position(|s| s.position == from);
+            if let Some(i) = moved {
+                let align = stops[i].align;
+                stops.remove(i);
+                stops.retain(|s| s.position != to);
+                stops.push(TabStop {
+                    position: to,
+                    align,
+                });
+            }
+        });
+    }
+
+    /// How much further along the ruler the caret's paragraph's tab stops
+    /// read in the inspector than they're kept: from the ruler's zero, the
+    /// margin or the paper's edge, rather than the paragraph's place,
+    /// which a list or a quote moves in (review 77nh3z47).
+    fn stops_shift(&self) -> i64 {
+        let ruler = self.ruler_model();
+        ruler.origin - ruler.zero
     }
 
     /// The ruler over the caret's paragraph: the page, or the draft's
@@ -510,6 +531,7 @@ impl Editor {
             StopKind::Decimal(','),
         ];
         let stops = story::paragraph_tabs(paragraph, sheet).stops;
+        let shift = self.stops_shift();
         let mut tab_rows: Vec<Row> = stops
             .iter()
             .map(|stop| {
@@ -522,11 +544,11 @@ impl Editor {
                     label: String::new(),
                     controls: vec![
                         control(
-                            "tab-stop-move",
+                            "tab-stop-place",
                             vec![Arg::Int(stop.position)],
                             writable,
                             ControlKind::Length {
-                                value: length(stop.position, unit),
+                                value: length(stop.position + shift, unit),
                                 prefix: String::new(),
                                 plain: true,
                             },

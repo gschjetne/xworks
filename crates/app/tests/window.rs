@@ -272,6 +272,93 @@ fn the_ruler_counts_from_the_margin_or_the_paper_edge() {
     assert_eq!(res.settings.changes(), 2);
 }
 
+/// The inspector's tab stops read as the ruler does, from its zero, the
+/// margin or the paper's edge, in a list too, and a place typed there is
+/// where the stop goes on the ruler (review 77nh3z47). A stop still
+/// belongs to its paragraph's place, which a list moves in.
+#[test]
+fn the_inspectors_tab_stops_read_as_the_ruler_does() {
+    use chrome::ControlKind;
+    use part::Part;
+    let mut res = resources().clone();
+    res.documents = testkit::scratch_dir("app-stops-from").expect("a folder");
+    res.settings = Arc::new(app::Settings::default());
+    let res = Arc::new(res);
+    let mut window = Window::create(res.clone()).expect("a document");
+    window.update(Event::Resize {
+        width: 1280.0,
+        height: 800.0,
+    });
+    window.update(Event::Command("view-pages".to_string()));
+    let cm = chrome::Unit::Centimetre.units();
+    window.update(Event::CommandWith(
+        "tab-stop-add".to_string(),
+        vec![Arg::Int(7 * cm / 2)],
+    ));
+    // The stops the inspector shows: what each runs with, and its place.
+    let shown = |window: &Window| -> Vec<(Vec<Arg>, i64)> {
+        let mut out = Vec::new();
+        for tab in window.editor().inspector().tabs {
+            for row in tab.sections.into_iter().flat_map(|s| s.rows) {
+                for control in row.controls {
+                    if control.command == "tab-stop-place"
+                        && let ControlKind::Length { value: Some(v), .. } = control.kind
+                    {
+                        out.push((control.args.clone(), v.value));
+                    }
+                }
+            }
+        }
+        out
+    };
+    let stored = |window: &Window| {
+        let p = window.editor().document().paragraphs()[0];
+        window
+            .editor()
+            .document()
+            .paragraph(p)
+            .unwrap()
+            .props
+            .get("tabs")
+            .cloned()
+    };
+    // From the margin, as stored.
+    assert_eq!(shown(&window), [(vec![Arg::Int(7 * cm / 2)], 7 * cm / 2)]);
+
+    // From the paper's edge, the margin further: where the ruler has it.
+    window.update(Event::Command("ruler-from-edge".to_string()));
+    let ruler = window.editor().ruler().expect("a ruler");
+    let margin = ruler.start - ruler.page_start;
+    assert!(margin > 0);
+    assert_eq!(
+        shown(&window),
+        [(vec![Arg::Int(7 * cm / 2)], 7 * cm / 2 + margin)]
+    );
+    // Placed at 8 cm on the ruler, it's stored 8 cm less the margin in.
+    window.update(Event::CommandWith(
+        "tab-stop-place".to_string(),
+        vec![Arg::Int(7 * cm / 2), Arg::Int(8 * cm)],
+    ));
+    assert_eq!(
+        stored(&window),
+        Some(doc::Value::Text(format!("start {}", 8 * cm - margin)))
+    );
+    assert_eq!(shown(&window)[0].1, 8 * cm);
+
+    // In a list, from the margin, the stop reads from the margin, not
+    // from the item's place, and stays where it is as the list moves it.
+    window.update(Event::Command("ruler-from-margin".to_string()));
+    window.update(Event::Command("list-bullets".to_string()));
+    let ruler = window.editor().ruler().expect("a ruler");
+    let inset = ruler.origin - ruler.zero;
+    assert!(inset > 0, "{ruler:?}");
+    assert_eq!(shown(&window)[0].1, 8 * cm - margin + inset);
+    assert_eq!(
+        stored(&window),
+        Some(doc::Value::Text(format!("start {}", 8 * cm - margin)))
+    );
+}
+
 /// The ruler and the inspector measure the page and the paragraph in the
 /// unit the person chose from View, Units (review ydqhfds0), but for the
 /// space above and below a paragraph, which is set in points as type is,
@@ -320,7 +407,7 @@ fn lengths_show_in_the_unit_chosen() {
             ("space-before", Unit::Point),
             ("space-after", Unit::Point),
             ("size", Unit::Point),
-            ("tab-stop-move", unit),
+            ("tab-stop-place", unit),
             ("page-margin", unit),
             ("page-margin", unit),
             ("page-margin", unit),
@@ -338,7 +425,7 @@ fn lengths_show_in_the_unit_chosen() {
     assert_eq!(window.editor().ruler().unwrap().unit, Unit::Pica);
     let stop = lengths(&window)
         .into_iter()
-        .find(|(c, _)| c == "tab-stop-move")
+        .find(|(c, _)| c == "tab-stop-place")
         .unwrap()
         .1;
     assert_eq!(stop.to_string(), "8p3.21");

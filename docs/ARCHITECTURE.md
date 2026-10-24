@@ -755,6 +755,10 @@ From those, built (project owner, 2026-10-24, review 77nh3z47):
 - **The space above and below a paragraph is in points,** as type is set.
   Tab stops, indents and the page are places on the ruler, so they read
   in its unit.
+- **The inspector's tab stops read as the ruler does,** from its zero, in
+  a list or a quote too, and a place typed there is where the stop goes
+  on the ruler. A stop still belongs to its paragraph's place, so it
+  moves with its margin or its list.
 
 The owner approved mockups of all this as goldens (`mockup-pages`,
 `mockup-pages-dark`, `mockup-draft-dark` and `mockup-palette`, drawn by

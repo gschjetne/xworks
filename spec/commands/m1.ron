@@ -167,6 +167,9 @@
         (id: "indent-first", title: "First Line's Indent", arg: Some(Int)),
         (id: "tab-stop-add", title: "Add a Tab Stop", arg: Some(List)),
         (id: "tab-stop-move", title: "Move a Tab Stop", arg: Some(List)),
+        // The inspector's: a stop placed where it reads on the ruler, from
+        // its zero (project owner, 2026-10-24, review 77nh3z47).
+        (id: "tab-stop-place", title: "Place a Tab Stop", arg: Some(List)),
         (id: "tab-stop-kind", title: "Set a Tab Stop's Kind", arg: Some(List)),
         (id: "tab-stop-remove", title: "Remove a Tab Stop", arg: Some(Int)),
         // The page's size and margins, which documents can't hold yet.
