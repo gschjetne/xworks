@@ -284,7 +284,7 @@ impl Editor {
         let k = self.index_of(self.focus.paragraph);
         let laid = &self.laid.paragraphs[k];
         let paragraph = self.paragraph(self.focus.paragraph);
-        let own = story::indents(paragraph, &self.sheet);
+        let own = story::indents_at(paragraph, &self.sheet, &laid.place);
         Ruler {
             page_start: x,
             page_width: style.width,

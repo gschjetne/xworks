@@ -1,0 +1,60 @@
+// The sample document each stylesheet that comes with xWorks is shown in
+// (M2's stage 9), one `shot` scene a sheet, for the owner to approve as
+// goldens: the same headings, paragraphs, marks, list, quote, code and
+// table in every one. Paragraphs name styles by name; a sheet without a
+// style of that name gives the paragraph its default style, as "First
+// Paragraph" in a sheet that doesn't indent its paragraphs. The text is
+// xWorks' own.
+[
+    Paragraph("Heading 1", [("The Shape of a Page", {})]),
+    Paragraph("First Paragraph", [
+        ("A page is read before it is understood. Long before the first word registers, the eye has taken in the ", {}),
+        ("colour", {"italic": Bool(true)}),
+        (" of the text, the width of the column and the air around it, and has decided whether reading will be a pleasure or a chore. A stylesheet is a set of such decisions, made once and kept, so that every page of a document answers them the same way.", {}),
+    ]),
+    Paragraph("Body", [
+        ("Each style here sets only what differs from the style it is based on, and the sheet's defaults supply the rest. Change the ", {}),
+        ("text face", {"bold": Bool(true)}),
+        (" and every style that uses it follows, at once and in one place. Write ", {}),
+        ("Heading 2", {"code": Bool(true)}),
+        (" and the heading takes its size, its spacing and its face from the sheet, not from the paragraph. ", {}),
+        ("Read more about styles", {"link": Text("https://example.org/styles")}),
+        (".", {}),
+    ]),
+    Paragraph("Heading 2", [("Measure and leading", {})]),
+    Paragraph("First Paragraph", [
+        ("A comfortable line holds between forty-five and seventy-five characters. Shorter lines break the reader's rhythm; longer ones make the return to the next line a search.", {}),
+    ]),
+    List(false, [
+        [Paragraph("Body", [("Set body text for reading at length, not for display.", {})])],
+        [Paragraph("Body", [("Let headings stand apart through space before them, more than after.", {})])],
+    ]),
+    Quote([
+        Paragraph("First Paragraph", [
+            ("Typography exists to honour content. The best of it goes unnoticed, and leaves the reader with the words alone.", {}),
+        ]),
+    ]),
+    Paragraph("Heading 2", [("Styles as data", {})]),
+    Paragraph("First Paragraph", [
+        ("A stylesheet is plain data, and a document carries its own copy, so it looks the same wherever it opens:", {}),
+    ]),
+    Code("ron", [
+        "(name: \"Body\", role: \"body\", space_after: Pt(6)),",
+        "(name: \"Heading 1\", based_on: \"Heading\", size: Pt(20)),",
+    ]),
+    Paragraph("Heading 3", [("Six moods", {})]),
+    Table(["", ""], [
+        [[("Stylesheet", {})], [("For", {})]],
+        [[("Neutral", {})], [("Everyday documents", {})]],
+        [[("Book", {})], [("Books, justified and hyphenated", {})]],
+        [[("Literary", {})], [("Essays, stories and letters", {})]],
+        [[("Modern", {})], [("Reports and notes", {})]],
+        [[("Technical", {})], [("Specifications and manuals", {})]],
+        [[("Manuscript", {})], [("Submissions, double-spaced", {})]],
+    ]),
+    Paragraph("Body", [
+        ("A document keeps its copy: a newer version of its sheet is ", {}),
+        ("offered", {"italic": Bool(true)}),
+        (", never applied by itself.", {}),
+    ]),
+]

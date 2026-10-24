@@ -15,6 +15,7 @@ mod chrome;
 mod drawing;
 mod mockups;
 mod pages;
+mod stylesheets;
 mod typeset;
 
 use testkit::Image;
@@ -240,6 +241,48 @@ pub fn scenes() -> &'static [Scene] {
             ppi: 96.0,
             page: pictures_sheet,
             pages: Some(pictures_pages),
+        },
+        Scene {
+            name: "stylesheet-neutral",
+            description: "the stylesheets' sample in Neutral, M2's look: Source Serif 4 and Inter, its first two pages, at 96 pixels per inch",
+            ppi: 96.0,
+            page: stylesheets::neutral,
+            pages: None,
+        },
+        Scene {
+            name: "stylesheet-book",
+            description: "the stylesheets' sample in Book: EB Garamond on A5, justified and hyphenated, its first two pages, at 96 pixels per inch",
+            ppi: 96.0,
+            page: stylesheets::book,
+            pages: None,
+        },
+        Scene {
+            name: "stylesheet-literary",
+            description: "the stylesheets' sample in Literary: Alegreya, ragged, with headings in its small capitals, its first two pages, at 96 pixels per inch",
+            ppi: 96.0,
+            page: stylesheets::literary,
+            pages: None,
+        },
+        Scene {
+            name: "stylesheet-modern",
+            description: "the stylesheets' sample in Modern: Inter throughout, its first two pages, at 96 pixels per inch",
+            ppi: 96.0,
+            page: stylesheets::modern,
+            pages: None,
+        },
+        Scene {
+            name: "stylesheet-technical",
+            description: "the stylesheets' sample in Technical: Source Serif 4, numbered headings, JetBrains Mono, its first two pages, at 96 pixels per inch",
+            ppi: 96.0,
+            page: stylesheets::technical,
+            pages: None,
+        },
+        Scene {
+            name: "stylesheet-manuscript",
+            description: "the stylesheets' sample in Manuscript: double-spaced, for submissions, its first two pages, at 96 pixels per inch",
+            ppi: 96.0,
+            page: stylesheets::manuscript,
+            pages: None,
         },
         Scene {
             name: "typeset",

@@ -1,0 +1,114 @@
+// Technical (M2's stage 9; project owner, 2026-10-24, review 30dmn1js):
+// Source Serif 4 and JetBrains Mono, for specifications, manuals and
+// papers. Headings numbered by level, "1", "1.2", "1.2.3", their numbers
+// hanging in a wider left margin so the headings' text lines up with the
+// body's; code set off on a tint; tables ruled.
+//
+// Lengths are Pt(...), Mm(...) or In(...); colours are #rrggbb, or a
+// colour below by name. `Some(...)` may be left out around a value.
+(
+    name: "Technical",
+    version: 1,
+    faces: [
+        (name: "Text", role: "text", family: "Source Serif 4"),
+        (name: "Heading", role: "heading", family: "Source Serif 4"),
+        (name: "Code", role: "code", family: "JetBrains Mono"),
+    ],
+    colours: [
+        (name: "Ink", role: "ink", colour: "#16181d"),
+        (name: "Link", role: "link", colour: "#1f4fbf"),
+        (name: "Quote bar", role: "quote-bar", colour: "#9aa3b2"),
+        (name: "Code tint", role: "code-tint", colour: "#eef1f5"),
+        (name: "Rule", role: "rule", colour: "#16181d"),
+        (name: "Hairline", role: "hairline", colour: "#c9ced8"),
+        (name: "Missing picture", role: "missing-picture", colour: "#e3e7ed"),
+    ],
+    lists: [
+        (name: "Bullets", role: "bullets", bullets: ["•", "–"], indent: Pt(16), gap: Pt(5)),
+        (name: "Numbers", role: "numbers", numbers: "1.", indent: Pt(16), gap: Pt(5)),
+        // How headings are numbered: their counts by level, joined by
+        // full stops, hanging 8 pt before the heading.
+        (name: "Headings", role: "headings", numbers: "1", indent: Pt(0), gap: Pt(8)),
+    ],
+    // A4, its left margin wide enough for headings' numbers.
+    page: (width: Mm(210), height: Mm(297), top: Mm(24), bottom: Mm(26), left: Mm(32), right: Mm(24)),
+    defaults: (face: "Text", size: Pt(10.5), colour: "Ink", line_height: 1330),
+    paragraph: [
+        (name: "Body", role: "body", align: Justify, space_after: Pt(6)),
+        (
+            name: "Heading 1",
+            role: "heading-1",
+            based_on: "Heading",
+            heading: 1,
+            size: Pt(16),
+            space_before: Pt(20),
+            space_after: Pt(8),
+        ),
+        (
+            name: "Heading 2",
+            role: "heading-2",
+            based_on: "Heading",
+            heading: 2,
+            size: Pt(12.5),
+            space_before: Pt(14),
+            space_after: Pt(5),
+        ),
+        (
+            name: "Heading 3",
+            role: "heading-3",
+            based_on: "Heading",
+            heading: 3,
+            size: Pt(11),
+            space_before: Pt(10),
+            space_after: Pt(3),
+        ),
+        // Below the third level, headings aren't numbered.
+        (
+            name: "Heading 4",
+            role: "heading-4",
+            based_on: "Heading 3",
+            heading: 4,
+            numbered: false,
+            italic: true,
+            bold: false,
+        ),
+        (name: "Heading 5", role: "heading-5", based_on: "Heading 4", heading: 5, size: Pt(10.5)),
+        (name: "Heading 6", role: "heading-6", based_on: "Heading 5", heading: 6, italic: false),
+        (
+            name: "Code",
+            role: "code",
+            code: true,
+            face: "Code",
+            ligatures: (standard: false, contextual: false),
+            size: Pt(9),
+            line_height: 1350,
+            space_before: Pt(8),
+            space_after: Pt(10),
+        ),
+        // What every heading shares: bold, numbered, kept with what
+        // follows.
+        (name: "Heading", face: "Heading", bold: true, numbered: true, line_height: 1200, keep_with_next: true),
+    ],
+    character: [
+        (name: "Emphasis", role: "emphasis", italic: true),
+        (name: "Strong", role: "strong", bold: true),
+        (name: "Code", role: "code", face: "Code", size: Pt(9.5), ligatures: (standard: false, contextual: false)),
+        (name: "Link", role: "link", colour: "Link"),
+        (name: "Strikethrough", role: "strikethrough", strikethrough: true),
+    ],
+    document: (
+        tab_interval: Mm(10),
+        quote_indent: Pt(14),
+        quote_bar: Pt(2),
+        quote_colour: "Quote bar",
+        code_tint: "Code tint",
+        code_padding: Pt(6),
+        table_space: Pt(8),
+        cell_padding: Pt(4),
+        rule: Pt(1),
+        hairline: Pt(0.5),
+        rule_colour: "Rule",
+        hairline_colour: "Hairline",
+        missing_picture: "Missing picture",
+    ),
+)

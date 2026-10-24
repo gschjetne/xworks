@@ -1,0 +1,91 @@
+// Manuscript (M2's stage 9; project owner, 2026-10-24, review 30dmn1js):
+// double-spaced, for submissions to editors and publishers, as standard
+// manuscript format asks: a 12 pt serif, every line twice its height,
+// paragraphs indented half an inch with no space between, ragged right
+// and unhyphenated, an inch of margin all round, and nothing in colour.
+// A paragraph that opens a section takes "First Paragraph", without the
+// indent.
+//
+// Lengths are Pt(...), Mm(...) or In(...); colours are #rrggbb, or a
+// colour below by name. `Some(...)` may be left out around a value.
+(
+    name: "Manuscript",
+    version: 1,
+    faces: [
+        (name: "Text", role: "text", family: "Source Serif 4"),
+        (name: "Heading", role: "heading", family: "Source Serif 4"),
+        (name: "Code", role: "code", family: "JetBrains Mono"),
+    ],
+    colours: [
+        (name: "Ink", role: "ink", colour: "#000000"),
+        (name: "Quote bar", role: "quote-bar", colour: "#ffffff"),
+        (name: "Code tint", role: "code-tint", colour: "#f2f2f2"),
+        (name: "Rule", role: "rule", colour: "#000000"),
+        (name: "Hairline", role: "hairline", colour: "#9a9a9a"),
+        (name: "Missing picture", role: "missing-picture", colour: "#e5e5e5"),
+    ],
+    lists: [
+        (name: "Bullets", role: "bullets", bullets: ["•", "–"], indent: In(0.5), gap: Pt(6)),
+        (name: "Numbers", role: "numbers", numbers: "1.", indent: In(0.5), gap: Pt(6)),
+    ],
+    // A4, with an inch of margin all round.
+    page: (width: Mm(210), height: Mm(297), top: In(1), bottom: In(1), left: In(1), right: In(1)),
+    defaults: (face: "Text", size: Pt(12), colour: "Ink", line_height: 2000, hyphenate: false),
+    paragraph: [
+        (name: "Body", role: "body", indent_first: In(0.5)),
+        (name: "First Paragraph", role: "first", based_on: "Body", indent_first: In(0)),
+        // Chapter and section titles: centred, plain, set apart by a
+        // blank line.
+        (
+            name: "Heading 1",
+            role: "heading-1",
+            based_on: "Heading",
+            heading: 1,
+            align: Center,
+            space_before: Pt(24),
+            space_after: Pt(24),
+        ),
+        (name: "Heading 2", role: "heading-2", based_on: "Heading", heading: 2, align: Center, space_before: Pt(24)),
+        (name: "Heading 3", role: "heading-3", based_on: "Heading", heading: 3, italic: true),
+        (name: "Heading 4", role: "heading-4", based_on: "Heading 3", heading: 4),
+        (name: "Heading 5", role: "heading-5", based_on: "Heading 3", heading: 5),
+        (name: "Heading 6", role: "heading-6", based_on: "Heading 3", heading: 6),
+        (
+            name: "Code",
+            role: "code",
+            code: true,
+            face: "Code",
+            ligatures: (standard: false, contextual: false),
+            size: Pt(10.5),
+            line_height: 1500,
+            space_before: Pt(12),
+            space_after: Pt(12),
+        ),
+        // What every heading shares: the text's own face, kept with what
+        // follows.
+        (name: "Heading", face: "Heading", keep_with_next: true),
+    ],
+    // Links underlined, in the ink.
+    character: [
+        (name: "Emphasis", role: "emphasis", italic: true),
+        (name: "Strong", role: "strong", bold: true),
+        (name: "Code", role: "code", face: "Code", size: Pt(11), ligatures: (standard: false, contextual: false)),
+        (name: "Link", role: "link", colour: "Ink", underline: true),
+        (name: "Strikethrough", role: "strikethrough", strikethrough: true),
+    ],
+    document: (
+        tab_interval: In(0.5),
+        quote_indent: In(0.5),
+        quote_bar: Pt(0),
+        quote_colour: "Quote bar",
+        code_tint: "Code tint",
+        code_padding: Pt(4),
+        table_space: Pt(12),
+        cell_padding: Pt(3),
+        rule: Pt(0.75),
+        hairline: Pt(0.4),
+        rule_colour: "Rule",
+        hairline_colour: "Hairline",
+        missing_picture: "Missing picture",
+    ),
+)

@@ -301,6 +301,41 @@ pub fn indents(paragraph: &Paragraph, sheet: &StyleSheet) -> Indents {
     }
 }
 
+/// `paragraph`'s indents at `place`, as [`indents`] gives them, but where
+/// its container lends it its geometry (project owner, 2026-10-24, review
+/// 30dmn1js, "containers lend geometry only"): a table's cell takes only
+/// its own indents, as the table places its text, and a paragraph that
+/// starts a list item, or is numbered, only its own first-line indent,
+/// as its marker stands where that indent would.
+pub fn indents_at(paragraph: &Paragraph, sheet: &StyleSheet, place: &Place) -> Indents {
+    let own = |key| number(paragraph, key, -MOST_SPACE..=MOST_SPACE);
+    if place.cell.is_some() {
+        return Indents {
+            start: own(keys::INDENT_START).unwrap_or(0),
+            end: own(keys::INDENT_END).unwrap_or(0),
+            first: own(keys::INDENT_FIRST).unwrap_or(0),
+        };
+    }
+    let mut indents = indents(paragraph, sheet);
+    if place.marker.is_some() || place.task.is_some() {
+        indents.first = own(keys::INDENT_FIRST).unwrap_or(0);
+    }
+    indents
+}
+
+/// How `paragraph`'s lines are aligned at `place`, as [`align`] gives it,
+/// but a table's cell as it says, as its column's alignment, or else to
+/// the start: the table places its cells' text.
+pub fn align_at(paragraph: &Paragraph, sheet: &StyleSheet, place: &Place) -> Align {
+    if place.cell.is_some() {
+        return match paragraph.props.get(keys::ALIGN) {
+            Some(Value::Text(align)) => sheet::align_of(align).unwrap_or(Align::Start),
+            _ => Align::Start,
+        };
+    }
+    align(paragraph, sheet)
+}
+
 /// How tall `paragraph`'s lines are, in thousandths of their font size,
 /// from a quarter of the font to ten times it: its own, where it sets it,
 /// or its style's; none, as tall as their fonts make them, where it's 0
@@ -770,7 +805,7 @@ pub fn lay_out_at(
     let paragraph = document.paragraph(id).expect("a paragraph of the document");
     let style = sheet.style_of(paragraph);
     let (spans, looks) = styled(paragraph, sheet, Some(place));
-    let align = align(paragraph, sheet);
+    let align = align_at(paragraph, sheet, place);
     let inset = if style.code {
         sheet.blocks.code_padding
     } else {
@@ -779,7 +814,7 @@ pub fn lay_out_at(
     // Its own indents narrow it, but never to less than a quarter of its
     // room; its tab stops stay where they are on the ruler, measured from
     // its place's start edge; its pictures fit what's left.
-    let indents = indents(paragraph, sheet);
+    let indents = indents_at(paragraph, sheet, place);
     let room = (place.width - 2 * inset).max(1);
     let width = (room - indents.start - indents.end).max(room / 4).max(1);
     let mut tabs = paragraph_tabs(paragraph, sheet);

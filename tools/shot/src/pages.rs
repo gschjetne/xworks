@@ -262,7 +262,7 @@ pub fn document_sheet() -> Page {
 }
 
 /// `pages` side by side on a grey sheet, a quarter of an inch apart.
-fn sheet(pages: &[Page]) -> Page {
+pub(crate) fn sheet(pages: &[Page]) -> Page {
     let width = pages.first().map_or(0, |p| p.width);
     let height = pages.first().map_or(0, |p| p.height);
     let gap = INCH / 4;

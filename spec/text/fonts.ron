@@ -3,6 +3,8 @@
 //
 // - Source Serif 4, Inter and JetBrains Mono, documents' serif, sans and
 //   code (project owner, 2026-10-22, review pysc65hp);
+// - EB Garamond and Alegreya, for stylesheets of other moods (project
+//   owner, 2026-10-24, review 30dmn1js);
 // - Inter, the interface's font too (review frhewnk0);
 // - Noto, for every script the others lack.
 //
@@ -16,10 +18,16 @@
 // falls back to the serif CJK face, Noto Sans to the sans (project owner,
 // 2026-10-21).
 //
-// The app loads a file marked `on_demand` only once text needs a character
-// the others lack. The CJK faces are 83 MB of the 87, and a document
-// without CJK text never needs them (project owner, 2026-10-22, review
-// 094846qg). Tests load every file.
+// EB Garamond, Alegreya and Alegreya SC are the faces of the Book and
+// Literary stylesheets that come with xWorks (M2's stage 9), static
+// faces from their projects' repositories at pinned commits.
+//
+// The app loads a file marked `on_demand` only once it's needed: once
+// text needs a character the others lack, or, for one that names its
+// `family`, once a document's stylesheet sets text in that family. The
+// CJK faces are 83 MB of the 87, and a document without CJK text never
+// needs them (project owner, 2026-10-22, review 094846qg); a document in
+// Neutral never needs Garamond. Tests load every file.
 (
     files: [
         (
@@ -187,6 +195,83 @@
             sha256: "4039d5ce0ed225bf9c8b2c8c6436290ae2f356b7e90d70fa666227238324aa3b",
         ),
         (
+            file: "EBGaramond-Regular.ttf",
+            url: "https://raw.githubusercontent.com/octaviopardo/EBGaramond12/106a4a6d377987459ae5e68673a4570f13b957fb/fonts/ttf/EBGaramond-Regular.ttf",
+            sha256: "2028dc06d3c130b4761693481436a32a8e35ed500bf58c25c53de004106125b8",
+            on_demand: true,
+            family: Some("EB Garamond"),
+        ),
+        (
+            file: "EBGaramond-Italic.ttf",
+            url: "https://raw.githubusercontent.com/octaviopardo/EBGaramond12/106a4a6d377987459ae5e68673a4570f13b957fb/fonts/ttf/EBGaramond-Italic.ttf",
+            sha256: "d4ad1d0a9390d26d6d3f176117a1d121441edb8c8632bfca52cfad084b9059cb",
+            on_demand: true,
+            family: Some("EB Garamond"),
+        ),
+        (
+            file: "EBGaramond-SemiBold.ttf",
+            url: "https://raw.githubusercontent.com/octaviopardo/EBGaramond12/106a4a6d377987459ae5e68673a4570f13b957fb/fonts/ttf/EBGaramond-SemiBold.ttf",
+            sha256: "ebf827a102983972abb2a1a3964afd5a7b79ca04f2ddd9e53917ce623cefdf2c",
+            on_demand: true,
+            family: Some("EB Garamond"),
+        ),
+        (
+            file: "EBGaramond-Bold.ttf",
+            url: "https://raw.githubusercontent.com/octaviopardo/EBGaramond12/106a4a6d377987459ae5e68673a4570f13b957fb/fonts/ttf/EBGaramond-Bold.ttf",
+            sha256: "0cfed122e51e3fd44ccedaef7637efed6d5bdc4ad89a6117d70241510309a186",
+            on_demand: true,
+            family: Some("EB Garamond"),
+        ),
+        (
+            file: "EBGaramond-BoldItalic.ttf",
+            url: "https://raw.githubusercontent.com/octaviopardo/EBGaramond12/106a4a6d377987459ae5e68673a4570f13b957fb/fonts/ttf/EBGaramond-BoldItalic.ttf",
+            sha256: "3437cf76a720b01580218614e7f0ce9d66035a075c34a98394cec9a888cf38d6",
+            on_demand: true,
+            family: Some("EB Garamond"),
+        ),
+        (
+            file: "Alegreya-Regular.ttf",
+            url: "https://raw.githubusercontent.com/huertatipografica/Alegreya/254c16b651af6926154b9af159c7af8eb908a6ea/fonts/ttf/Alegreya-Regular.ttf",
+            sha256: "1065bc1fcfd1da0c1a18ddec81537dfdf06749db1ca3ae4d6dc40244058a6036",
+            on_demand: true,
+            family: Some("Alegreya"),
+        ),
+        (
+            file: "Alegreya-Italic.ttf",
+            url: "https://raw.githubusercontent.com/huertatipografica/Alegreya/254c16b651af6926154b9af159c7af8eb908a6ea/fonts/ttf/Alegreya-Italic.ttf",
+            sha256: "fd1c753738c464976419fe3194ebcf06c50bb33bd921ff153de463de83f45a5d",
+            on_demand: true,
+            family: Some("Alegreya"),
+        ),
+        (
+            file: "Alegreya-Bold.ttf",
+            url: "https://raw.githubusercontent.com/huertatipografica/Alegreya/254c16b651af6926154b9af159c7af8eb908a6ea/fonts/ttf/Alegreya-Bold.ttf",
+            sha256: "ba5f7c026c7677a879442ffda746aaf544e7b8e1cb394f476df80147986d1684",
+            on_demand: true,
+            family: Some("Alegreya"),
+        ),
+        (
+            file: "Alegreya-BoldItalic.ttf",
+            url: "https://raw.githubusercontent.com/huertatipografica/Alegreya/254c16b651af6926154b9af159c7af8eb908a6ea/fonts/ttf/Alegreya-BoldItalic.ttf",
+            sha256: "4ddfa2c0344a283365788d1f3894332d7c9160f23b7bd6ffb709673459f67951",
+            on_demand: true,
+            family: Some("Alegreya"),
+        ),
+        (
+            file: "AlegreyaSC-Regular.ttf",
+            url: "https://raw.githubusercontent.com/huertatipografica/Alegreya/254c16b651af6926154b9af159c7af8eb908a6ea/fonts/ttf/AlegreyaSC-Regular.ttf",
+            sha256: "6554d5eb8d5448b3aaf8e74147a5907dbe826414924b183e5a7e2211bacd649e",
+            on_demand: true,
+            family: Some("Alegreya SC"),
+        ),
+        (
+            file: "AlegreyaSC-Bold.ttf",
+            url: "https://raw.githubusercontent.com/huertatipografica/Alegreya/254c16b651af6926154b9af159c7af8eb908a6ea/fonts/ttf/AlegreyaSC-Bold.ttf",
+            sha256: "f093d42bb725d4523c590b53313018cc715d46029eb0d40813f1f550de27aee0",
+            on_demand: true,
+            family: Some("Alegreya SC"),
+        ),
+        (
             file: "NotoSansCJKsc-Regular.otf",
             url: "https://raw.githubusercontent.com/notofonts/noto-cjk/f8d157532fbfaeda587e826d4cd5b21a49186f7c/Sans/OTF/SimplifiedChinese/NotoSansCJKsc-Regular.otf",
             sha256: "2c76254f6fc379fddfce0a7e84fb5385bb135d3e399294f6eeb6680d0365b74b",
@@ -229,6 +314,18 @@
         (
             family: "Source Serif 4",
             fallback: ["Noto Serif", "Noto Naskh Arabic", "Noto Serif Hebrew", "Noto Serif CJK SC"],
+        ),
+        (
+            family: "EB Garamond",
+            fallback: ["Noto Serif", "Noto Naskh Arabic", "Noto Serif Hebrew", "Noto Serif CJK SC"],
+        ),
+        (
+            family: "Alegreya",
+            fallback: ["Noto Serif", "Noto Naskh Arabic", "Noto Serif Hebrew", "Noto Serif CJK SC"],
+        ),
+        (
+            family: "Alegreya SC",
+            fallback: ["Alegreya", "Noto Serif", "Noto Naskh Arabic", "Noto Serif Hebrew", "Noto Serif CJK SC"],
         ),
         (
             family: "JetBrains Mono",

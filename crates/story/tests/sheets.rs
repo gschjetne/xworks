@@ -541,3 +541,44 @@ fn numbered_headings_are_counted_by_level() {
         ]
     );
 }
+
+/// Containers lend geometry: in a sheet whose body text is justified and
+/// indented, as Book's is, a table's cells sit at the start of their
+/// columns without the indent, and an item's first line starts at its
+/// marker; a paragraph in neither keeps both.
+#[test]
+fn containers_lend_their_geometry() {
+    let book = stylesheets()
+        .into_iter()
+        .find(|(n, _)| n == "book")
+        .expect("Book")
+        .1;
+    let body =
+        |text: &str| story::BlockSpec::Paragraph("Body".into(), vec![(text.into(), Props::new())]);
+    let document = story::build(
+        &book,
+        &[
+            body("Plain"),
+            story::BlockSpec::List(false, vec![vec![body("Item")]]),
+            story::BlockSpec::Table(
+                vec![String::new()],
+                vec![vec![vec![("Cell".into(), Props::new())]]],
+            ),
+        ],
+    );
+    let sheet = StyleSheet::from_spec(&book);
+    let flow = story::flow(&document, &sheet, 100 * MILLIMETRE);
+    let at = |k: usize| {
+        let entry = &flow.entries[k];
+        let p = document.paragraph(entry.id).unwrap();
+        (
+            story::indents_at(p, &sheet, &entry.place).first,
+            story::align_at(p, &sheet, &entry.place),
+        )
+    };
+    let indent = sheet.default_style().indents.first;
+    assert!(indent > 0);
+    assert_eq!(at(0), (indent, text::Align::Justify));
+    assert_eq!(at(1), (0, text::Align::Justify));
+    assert_eq!(at(2), (0, text::Align::Start));
+}

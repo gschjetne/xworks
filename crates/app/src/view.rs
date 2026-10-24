@@ -103,7 +103,15 @@ pub(crate) fn draw(editor: &Editor, look: &Look) -> Page {
             }
             let (ranges, whole) = editor.direct_formatting(k);
             for range in ranges {
-                highlight(editor, &mut out, k, &p.layout, range, look.formatting, false);
+                highlight(
+                    editor,
+                    &mut out,
+                    k,
+                    &p.layout,
+                    range,
+                    look.formatting,
+                    false,
+                );
             }
             if whole {
                 let bar = x - p.margin - p.inset - 6 * PIXEL;
