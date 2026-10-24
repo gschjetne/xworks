@@ -281,3 +281,63 @@ fn a_markdown_file_made_an_xw_file_keeps_its_history_and_pictures() {
     );
     key(&mut editor, Key::Down);
 }
+
+/// A task's box, clicked, ticks or unticks it, and the file changes in
+/// the box alone.
+#[test]
+fn a_tasks_box_clicked_ticks_it() {
+    let res = resources("click");
+    let path = file(
+        &res,
+        "Tasks.md",
+        b"- [ ] Sow the beans\n- [x] Dig the bed\n",
+    );
+    let mut editor = Editor::open(res, &path).expect("it opens");
+    editor.update(Event::Resize {
+        width: 900.0,
+        height: 700.0,
+    });
+    // The boxes, as drawn: outlines of four sides.
+    let boxes: Vec<scene::Rect> = editor
+        .view()
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            Item::Stroke { path, .. } if path.0.len() == 5 => {
+                let points: Vec<scene::Point> = path
+                    .0
+                    .iter()
+                    .filter_map(|s| match s {
+                        scene::Segment::MoveTo(p) | scene::Segment::LineTo(p) => Some(*p),
+                        _ => None,
+                    })
+                    .collect();
+                Some(scene::Rect::new(
+                    points[0].x,
+                    points[0].y,
+                    points[2].x - points[0].x,
+                    points[2].y - points[0].y,
+                ))
+            }
+            _ => None,
+        })
+        .collect();
+    assert_eq!(boxes.len(), 2, "two boxes");
+    let px = |v: i64| v as f64 / text::units::PIXEL as f64;
+    let click = |editor: &mut Editor, r: &scene::Rect| {
+        editor.update(Event::Press {
+            x: px(r.x + r.width / 2),
+            y: px(r.y + r.height / 2),
+            shift: false,
+            count: 1,
+        });
+        editor.update(Event::Release);
+    };
+    click(&mut editor, &boxes[0]);
+    assert_eq!(read(&path), "- [x] Sow the beans\n- [x] Dig the bed\n");
+    click(&mut editor, &boxes[1]);
+    assert_eq!(read(&path), "- [x] Sow the beans\n- [ ] Dig the bed\n");
+    // Undone, as any edit.
+    command(&mut editor, "undo");
+    assert_eq!(read(&path), "- [x] Sow the beans\n- [x] Dig the bed\n");
+}
