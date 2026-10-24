@@ -1,0 +1,7 @@
+// An approved golden image (spec/golden/README.md), written by `shot --approve`.
+Golden(
+    name: "ruler-paper-edge",
+    size: (1280, 120),
+    sha256: "8ca60b7a8ef11db7ae57b650d9ce8142136e09054262d4f4ec8e9b33b8cbcf80",
+    approved_by: "Grim Schjetne",
+)
