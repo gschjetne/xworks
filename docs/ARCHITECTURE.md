@@ -568,10 +568,11 @@ below are its own, open to the owner's review.
   part of the typing. Pasting makes none. In `.xw` documents it's off
   until the owner says (`spec/editing.ron`).
 - **Measured** (under WSL, render-cpu, the 95th percentile): a 500-page
-  Markdown file, 0.6 MB and 13,545 paragraphs, opens in 160 ms, once it
-  was laid out once rather than on pages and again as a draft; a
-  keystroke in it takes 8.3 ms, of which making the file's bytes is
-  about 3 ms and laying out what changed the most of the rest.
+  Markdown file, 0.6 MB and 13,545 paragraphs, opens in 150 ms, about
+  half of it reading the Markdown, once it was laid out once rather than
+  on pages and again as a draft; a keystroke in it takes 6.6 ms, of which
+  making the file's bytes is about 1.6 ms, once runs of blocks as the
+  file had them are copied whole.
 
 **A document carries its own stylesheet and page style** (project owner,
 2026-10-24, review ydqhfds0), edited by operations like the rest of it, so
