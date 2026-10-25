@@ -516,9 +516,12 @@ owner approved in review a23vvez8.
   and the system's caret rate. A follow-up built them, with the ruler
   counting from the margin or the paper's edge, spacing in points and the
   inspector's tab stops read as the ruler reads (review 77nh3z47).
+- **Stage 6** is built, with a follow-up from live use: saving as you
+  type, files changed by other programs, autolinks and Markdown budgets.
+  It awaits the owner's review (jy4a2tx5).
 - **The owner added stage 9,** a document's own styles. Its research came
-  back as a design the owner settled (review 30dmn1js), and its agent
-  builds it now.
+  back as a design the owner settled and accepted (review 30dmn1js). It's
+  built and awaits the owner's review (sjj5ak5a).
 
 ### Exit criteria
 
