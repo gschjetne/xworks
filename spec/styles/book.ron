@@ -10,7 +10,9 @@
 // colour below by name. `Some(...)` may be left out around a value.
 (
     name: "Book",
-    version: 1,
+    // Version 2 sets extracts off with space above and below (M2's stage
+    // 9's follow-up, review sjj5ak5a); version 1 is kept in versions/.
+    version: 2,
     faces: [
         (name: "Text", role: "text", family: "EB Garamond"),
         (name: "Heading", role: "heading", family: "EB Garamond"),
@@ -99,6 +101,12 @@
         quote_indent: Mm(9),
         quote_bar: Pt(0),
         quote_colour: "Quote bar",
+        // An extract is set off by half a line above and below, 7.2 pt of
+        // the 14.375 pt the text is leaded: paragraphs are told apart by
+        // an indent, with no space between, so without it an extract
+        // would read on as the next paragraph; a whole line would open a
+        // hole in a small page.
+        quote_space: Pt(7.2),
         code_tint: "Code tint",
         code_padding: Pt(5),
         table_space: Pt(9),

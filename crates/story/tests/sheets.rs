@@ -118,6 +118,45 @@ fn every_stylesheet_reads_and_has_what_documents_need() {
     }
 }
 
+/// Every earlier version of the stylesheets that come with xWorks is kept,
+/// frozen, in `spec/styles/versions/` as NAME-VERSION.ron (review
+/// sjj5ak5a), so a document that copied one takes a newer three-way: each
+/// reads and passes the checks, is a version of a sheet that comes with
+/// xWorks, older than its current file, and every version before the
+/// current one is there.
+#[test]
+fn every_earlier_version_is_kept_and_older() {
+    let current = stylesheets();
+    let kept = testkit::specs("styles/versions").expect("spec/styles/versions/");
+    let mut seen: Vec<(String, u32)> = Vec::new();
+    for (file, text) in &kept {
+        let spec = SheetSpec::parse(text).unwrap_or_else(|e| panic!("{file}: {e}"));
+        let (stem, version) = file
+            .rsplit_once('-')
+            .unwrap_or_else(|| panic!("{file} isn't NAME-VERSION"));
+        assert_eq!(version, spec.version.to_string(), "{file}");
+        let (_, now) = current
+            .iter()
+            .find(|(n, _)| n == stem)
+            .unwrap_or_else(|| panic!("{file} is a version of no sheet"));
+        assert_eq!(spec.name, now.name, "{file}");
+        assert!(
+            spec.version < now.version,
+            "{file} is older than {stem}.ron, at {}",
+            now.version
+        );
+        seen.push((stem.to_string(), spec.version));
+    }
+    for (stem, spec) in &current {
+        for version in 1..spec.version {
+            assert!(
+                seen.contains(&(stem.clone(), version)),
+                "spec/styles/versions/{stem}-{version}.ron is kept"
+            );
+        }
+    }
+}
+
 /// Neutral is M2's look from before documents held their own styles.
 #[test]
 fn neutral_is_m2s_look() {

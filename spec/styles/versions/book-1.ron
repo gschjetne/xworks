@@ -1,0 +1,115 @@
+// Book, version 1, kept as it was: a document that copied this
+// version takes a newer one three-way, from it (spec/styles.ron).
+//
+// Book (M2's stage 9; project owner, 2026-10-24, review 30dmn1js): EB
+// Garamond, justified and hyphenated, as a book is set. Georg Duffner's
+// and Octavio Pardo's revival of Claude Garamont's roman and Robert
+// Granjon's italic, on an A5 page with a deeper margin below than above,
+// paragraphs told apart by an indent rather than by space, and headings
+// set apart by size, italic and space rather than weight. A paragraph
+// that opens a section takes "First Paragraph", without the indent.
+//
+// Lengths are Pt(...), Mm(...) or In(...); colours are #rrggbb, or a
+// colour below by name. `Some(...)` may be left out around a value.
+(
+    name: "Book",
+    version: 1,
+    faces: [
+        (name: "Text", role: "text", family: "EB Garamond"),
+        (name: "Heading", role: "heading", family: "EB Garamond"),
+        (name: "Code", role: "code", family: "JetBrains Mono"),
+    ],
+    colours: [
+        // A warm near-black, as ink on cream paper reads.
+        (name: "Ink", role: "ink", colour: "#1c1a17"),
+        (name: "Link", role: "link", colour: "#7a2e1d"),
+        (name: "Quote bar", role: "quote-bar", colour: "#ffffff"),
+        (name: "Code tint", role: "code-tint", colour: "#f4f1ea"),
+        (name: "Rule", role: "rule", colour: "#1c1a17"),
+        (name: "Hairline", role: "hairline", colour: "#cfc9bf"),
+        (name: "Missing picture", role: "missing-picture", colour: "#e8e3d9"),
+    ],
+    lists: [
+        (name: "Bullets", role: "bullets", bullets: ["•", "◦"], indent: Mm(6), gap: Pt(5)),
+        (name: "Numbers", role: "numbers", numbers: "1.", indent: Mm(6), gap: Pt(5)),
+    ],
+    // A5, its text block a little above the middle.
+    page: (width: Mm(148), height: Mm(210), top: Mm(17), bottom: Mm(23), left: Mm(17), right: Mm(17)),
+    defaults: (face: "Text", size: Pt(11.5), colour: "Ink", line_height: 1250),
+    paragraph: [
+        // Justified, so hyphenated; each paragraph's first line indented
+        // by about an em, with no space between.
+        (name: "Body", role: "body", align: Justify, indent_first: Mm(4.5)),
+        (name: "First Paragraph", role: "first", based_on: "Body", indent_first: Mm(0)),
+        (
+            name: "Heading 1",
+            role: "heading-1",
+            based_on: "Heading",
+            heading: 1,
+            size: Pt(19),
+            align: Center,
+            space_before: Pt(28),
+            space_after: Pt(16),
+        ),
+        (
+            name: "Heading 2",
+            role: "heading-2",
+            based_on: "Heading",
+            heading: 2,
+            size: Pt(13.5),
+            italic: true,
+            align: Center,
+            space_before: Pt(16),
+            space_after: Pt(8),
+        ),
+        (
+            name: "Heading 3",
+            role: "heading-3",
+            based_on: "Heading",
+            heading: 3,
+            italic: true,
+            space_before: Pt(12),
+            space_after: Pt(4),
+        ),
+        (name: "Heading 4", role: "heading-4", based_on: "Heading 3", heading: 4, italic: false),
+        (name: "Heading 5", role: "heading-5", based_on: "Heading 3", heading: 5, size: Pt(10.5)),
+        (name: "Heading 6", role: "heading-6", based_on: "Heading 5", heading: 6, italic: false),
+        (
+            name: "Code",
+            role: "code",
+            code: true,
+            face: "Code",
+            ligatures: (standard: false, contextual: false),
+            size: Pt(8.5),
+            line_height: 1300,
+            space_before: Pt(8),
+            space_after: Pt(10),
+        ),
+        // What every heading shares: the text's own face, regular, kept
+        // with what follows.
+        (name: "Heading", face: "Heading", keep_with_next: true, line_height: 1150),
+    ],
+    character: [
+        (name: "Emphasis", role: "emphasis", italic: true),
+        (name: "Strong", role: "strong", bold: true),
+        (name: "Code", role: "code", face: "Code", size: Pt(9.5), ligatures: (standard: false, contextual: false)),
+        (name: "Link", role: "link", colour: "Link"),
+        (name: "Strikethrough", role: "strikethrough", strikethrough: true),
+    ],
+    // Quotes indented, without a bar, as a book sets extracts.
+    document: (
+        tab_interval: Mm(10),
+        quote_indent: Mm(9),
+        quote_bar: Pt(0),
+        quote_colour: "Quote bar",
+        code_tint: "Code tint",
+        code_padding: Pt(5),
+        table_space: Pt(9),
+        cell_padding: Pt(3.5),
+        rule: Pt(0.75),
+        hairline: Pt(0.35),
+        rule_colour: "Rule",
+        hairline_colour: "Hairline",
+        missing_picture: "Missing picture",
+    ),
+)

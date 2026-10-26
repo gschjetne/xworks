@@ -2,6 +2,11 @@
 // 30dmn1js), by their files in spec/styles/, in the order File, New with
 // Stylesheet lists them. New documents copy the first unless the person
 // chooses another.
+//
+// Each counts its version up when it changes, and the version it replaces
+// is kept, frozen, in spec/styles/versions/ as NAME-VERSION.ron (review
+// sjj5ak5a): a document records the version it copied, and takes a newer
+// one three-way, with what that one changed since and nothing else.
 (
     stylesheets: ["neutral", "book", "literary", "modern", "technical", "manuscript"],
 )

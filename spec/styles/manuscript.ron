@@ -10,7 +10,9 @@
 // colour below by name. `Some(...)` may be left out around a value.
 (
     name: "Manuscript",
-    version: 1,
+    // Version 2 sets extracts off with space above and below (M2's stage
+    // 9's follow-up, review sjj5ak5a); version 1 is kept in versions/.
+    version: 2,
     faces: [
         (name: "Text", role: "text", family: "Source Serif 4"),
         (name: "Heading", role: "heading", family: "Source Serif 4"),
@@ -78,6 +80,11 @@
         quote_indent: In(0.5),
         quote_bar: Pt(0),
         quote_colour: "Quote bar",
+        // A block quotation is set off by a single-spaced line, 12 pt,
+        // above and below, as a typed manuscript leaves one: half the
+        // double spacing, so the indented extract stands apart from the
+        // text without a gap an editor would read as a section break.
+        quote_space: Pt(12),
         code_tint: "Code tint",
         code_padding: Pt(4),
         table_space: Pt(12),

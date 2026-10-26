@@ -290,20 +290,20 @@ fn a_damaged_older_file_is_left_as_it_was() {
 
 /// The stylesheet a schema 2 document gains is Neutral as it was at
 /// version 1, which schema 2's documents were laid out in: the frozen
-/// copy is exactly what the sheet that comes with xWorks makes, while
-/// that sheet is still at version 1.
+/// copy is exactly what Neutral's version 1, kept in
+/// `spec/styles/versions/`, makes.
 #[test]
 fn schema_2s_stylesheet_is_neutral_at_version_1() {
-    let source = std::fs::read_to_string(testkit::workspace_root().join("spec/styles/neutral.ron"))
-        .expect("neutral.ron");
+    let source = std::fs::read_to_string(
+        testkit::workspace_root().join("spec/styles/versions/neutral-1.ron"),
+    )
+    .expect("neutral-1.ron");
     let neutral = story::SheetSpec::parse(&source).expect("a stylesheet");
+    assert_eq!((neutral.name.as_str(), neutral.version), ("Neutral", 1));
     let frozen_path = testkit::workspace_root().join("spec/format/upgrade-2.ron");
     let frozen: Vec<(ObjectId, Object)> =
         ron::from_str(&std::fs::read_to_string(&frozen_path).expect("upgrade-2.ron"))
             .expect("the frozen sheet reads");
-    if neutral.version != 1 {
-        return;
-    }
     let made = neutral.objects(0);
     if made != frozen {
         let written =
