@@ -193,3 +193,256 @@ pub(crate) fn markdown_light() -> Page {
 pub(crate) fn markdown_dark() -> Page {
     markdown(true)
 }
+
+// ---- the Style tab's screens (stage 9's follow-up, review sjj5ak5a)
+
+/// The ID of `window`'s document's style or part of `kind` named `name`.
+fn part(window: &Window, kind: doc::StyleKind, name: &str) -> doc::ObjectId {
+    let document = window.editor().document();
+    document
+        .styles()
+        .iter()
+        .copied()
+        .find(|&s| {
+            let style = document.style(s).expect("a style");
+            style.kind == kind
+                && style.props.get(story::keys::NAME) == Some(&doc::Value::Text(name.into()))
+        })
+        .unwrap_or_else(|| panic!("no {} {name}", kind.name()))
+}
+
+fn id(id: doc::ObjectId) -> Arg {
+    Arg::Int(id.0 as i64)
+}
+
+fn run(window: &mut Window, command: &str, args: Vec<Arg>) {
+    window.update(Event::CommandWith(command.to_string(), args));
+}
+
+/// Opens `window`'s inspector on its Style tab: its title, the second of
+/// three across the inspector's top.
+fn open_style_tab(window: &mut Window) {
+    window.update(Event::Command("toggle-inspector".to_string()));
+    for event in [
+        Event::Press {
+            x: 1130.0,
+            y: 66.0,
+            shift: false,
+            count: 1,
+        },
+        Event::Release,
+    ] {
+        window.update(event);
+    }
+}
+
+/// A character style's screen: the sample's Code, as it sets its face and
+/// ligatures and leaves the rest not set.
+pub(crate) fn style_character() -> Page {
+    let mut window = sample("A walking skeleton", false);
+    open_style_tab(&mut window);
+    let code = part(&window, doc::StyleKind::Character, "Code");
+    run(
+        &mut window,
+        "style-kind",
+        vec![Arg::Text("character".into())],
+    );
+    run(&mut window, "style-show", vec![id(code)]);
+    window.view()
+}
+
+/// The sample's Style tab dark, scrolled part of the way, its scroll bar
+/// in the dark look's colours, the pointer over it.
+pub(crate) fn style_dark() -> Page {
+    let mut window = sample("A walking skeleton", true);
+    open_style_tab(&mut window);
+    window.update(Event::Move {
+        x: 1100.0,
+        y: 400.0,
+    });
+    window.update(Event::Scroll(150.0));
+    window.update(Event::Move {
+        x: 1273.0,
+        y: 400.0,
+    });
+    window.view()
+}
+
+/// The sample with the Style tab showing its Heading face, its list of
+/// families open, each family shown in itself.
+pub(crate) fn style_face() -> Page {
+    let mut window = sample("A walking skeleton", false);
+    open_style_tab(&mut window);
+    let heading = part(&window, doc::StyleKind::Face, "Heading");
+    run(&mut window, "style-kind", vec![Arg::Text("face".into())]);
+    run(&mut window, "style-show", vec![id(heading)]);
+    // The Family field: the face's section's second row.
+    for event in [
+        Event::Press {
+            x: 1160.0,
+            y: 304.0,
+            shift: false,
+            count: 1,
+        },
+        Event::Release,
+    ] {
+        window.update(event);
+    }
+    window.view()
+}
+
+/// The sample with the Style tab showing its Link colour, its value as
+/// `#rrggbb` beside its swatch, and what uses it.
+pub(crate) fn style_colour() -> Page {
+    let mut window = sample("A walking skeleton", false);
+    open_style_tab(&mut window);
+    let link = part(&window, doc::StyleKind::Colour, "Link");
+    run(&mut window, "style-kind", vec![Arg::Text("colour".into())]);
+    run(&mut window, "style-show", vec![id(link)]);
+    window.view()
+}
+
+/// A window on a new document, 1280 by 800, its text typed as `lines`,
+/// a line a paragraph.
+fn new_document(name: &str, lines: &[&str]) -> Window {
+    let documents = folder();
+    let root = testkit::workspace_root();
+    let res = Arc::new(app::Resources::load(&root, documents.clone(), false).expect("resources"));
+    let mut window = Window::create(res).expect("a document");
+    let _ = name;
+    window.update(Event::Resize {
+        width: SIZE.0,
+        height: SIZE.1,
+    });
+    for (k, line) in lines.iter().enumerate() {
+        if k > 0 {
+            window.update(Event::Key {
+                key: Key::Enter,
+                modifiers: Modifiers::default(),
+            });
+        }
+        window.update(Event::Text(line.to_string()));
+    }
+    window
+}
+
+/// A table of contents whose page numbers sit at a tab layout's stop at
+/// the column's end, after dots: the layout's screen, its stop's place,
+/// alignment and leader, and Body taking it.
+pub(crate) fn style_tabs() -> Page {
+    let mut window = new_document(
+        "Contents",
+        &[
+            "Contents",
+            "Introduction\t1",
+            "Layout in fixed-point units\t3",
+            "Text in every script\t6",
+            "Pictures and drawing\t11",
+            "Styles and stylesheets\t17",
+        ],
+    );
+    window.update(Event::Key {
+        key: Key::Home,
+        modifiers: Modifiers {
+            primary: true,
+            ..Modifiers::default()
+        },
+    });
+    window.update(Event::Command("style-heading-1".to_string()));
+    open_style_tab(&mut window);
+    run(
+        &mut window,
+        "style-new",
+        vec![Arg::Text("tabs".into()), Arg::Int(0)],
+    );
+    let layout = part(&window, doc::StyleKind::Tabs, "New Tab Layout");
+    run(
+        &mut window,
+        "style-rename",
+        vec![id(layout), Arg::Text("Contents".into())],
+    );
+    run(&mut window, "layout-stop-add", vec![id(layout)]);
+    // The default stops are every 12.5 mm: the first, moved to the
+    // column's end, 160 mm, right-aligned after dots.
+    let first = 125 * text::units::MILLIMETRE / 10;
+    let end = 160 * text::units::MILLIMETRE;
+    run(
+        &mut window,
+        "layout-stop-place",
+        vec![id(layout), Arg::Int(first), Arg::Int(end)],
+    );
+    run(
+        &mut window,
+        "layout-stop-kind",
+        vec![id(layout), Arg::Int(end), Arg::Text("end".into())],
+    );
+    run(
+        &mut window,
+        "layout-stop-leader",
+        vec![id(layout), Arg::Int(end), Arg::Text(".".into())],
+    );
+    let body = part(&window, doc::StyleKind::Paragraph, "Body");
+    run(
+        &mut window,
+        "style-set",
+        vec![id(body), Arg::Text("tabs".into()), id(layout)],
+    );
+    window.view()
+}
+
+/// A numbered list three deep, its second level lettered in brackets and
+/// its third in small Roman numerals, with the Numbers list definition's
+/// screen.
+pub(crate) fn style_list() -> Page {
+    let mut window = new_document("Steps", &["Steps"]);
+    window.update(Event::Command("style-heading-1".to_string()));
+    let key = |key| Event::Key {
+        key,
+        modifiers: Modifiers::default(),
+    };
+    window.update(key(Key::Enter));
+    window.update(Event::Text("Lay out the paragraph".into()));
+    window.update(Event::Command("list-numbers".to_string()));
+    for (tab, text) in [
+        (false, "Shape its text"),
+        (true, "Break it into lines"),
+        (false, "Align each line"),
+        (true, "Justified lines stretch at their spaces"),
+        (false, "Others sit at their start"),
+    ] {
+        window.update(key(Key::Enter));
+        if tab {
+            window.update(key(Key::Tab));
+        }
+        window.update(Event::Text(text.into()));
+    }
+    open_style_tab(&mut window);
+    let numbers = part(&window, doc::StyleKind::List, "Numbers");
+    run(&mut window, "style-kind", vec![Arg::Text("list".into())]);
+    run(&mut window, "style-show", vec![id(numbers)]);
+    let level = |k: i64, what: &str, value: &str| {
+        vec![
+            id(numbers),
+            Arg::Int(k),
+            Arg::Text(what.into()),
+            Arg::Text(value.into()),
+        ]
+    };
+    run(&mut window, "list-level", level(2, "marker", "a"));
+    run(&mut window, "list-level", level(2, "reads", "(1)"));
+    run(&mut window, "list-level", level(3, "marker", "i"));
+    window.view()
+}
+
+/// The sample's Style tab scrolled to its end: the paragraph style's
+/// last values, and the stylesheet's, under the tabs, which stay.
+pub(crate) fn style_scrolled() -> Page {
+    let mut window = sample("A walking skeleton", false);
+    open_style_tab(&mut window);
+    window.update(Event::Move {
+        x: 1100.0,
+        y: 400.0,
+    });
+    window.update(Event::Scroll(10_000.0));
+    window.view()
+}
