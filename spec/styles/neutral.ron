@@ -11,8 +11,9 @@
 // colour below by name. `Some(...)` may be left out around a value.
 (
     name: "Neutral",
-    // Version 3 has Table Header (M2's stage 9's follow-up, review
-    // sjj5ak5a). Version 2 has the room around a rule across the text
+    // Version 3 has Table Header, and gives every style and part a role,
+    // so a document's own renamed still matches it (M2's stage 9's
+    // follow-up, review sjj5ak5a). Version 2 has the room around a rule across the text
     // (M2's stage 6's follow-up, review jy4a2tx5), which the other sheets
     // take from it. Earlier versions are kept in versions/.
     version: 3,
@@ -118,7 +119,7 @@
         // one place; after the styles paragraphs take, as it's a base for
         // them. Headings, with their level for tagged PDF and
         // accessibility, keep with the paragraph after them.
-        (name: "Heading", face: "Heading", bold: true, keep_with_next: true),
+        (name: "Heading", role: "heading", face: "Heading", bold: true, keep_with_next: true),
     ],
     // The marks: Markdown's emphasis, strong, code, links and lines
     // through text.

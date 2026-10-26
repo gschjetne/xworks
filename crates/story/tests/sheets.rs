@@ -164,6 +164,28 @@ fn every_earlier_version_is_kept_and_older() {
     }
 }
 
+/// Every style and part of every sheet that comes with xWorks has a role,
+/// one of its kind's own, so a document's copy is matched by it however
+/// the person renames it (review sjj5ak5a). Kept versions are as they
+/// were.
+#[test]
+fn every_style_and_part_has_a_role_of_its_own() {
+    for (name, spec) in stylesheets() {
+        let document = story::new_document(&spec);
+        let mut seen = std::collections::BTreeSet::new();
+        for &id in document.styles() {
+            let style = document.style(id).unwrap();
+            let Some(Value::Text(role)) = style.props.get(keys::ROLE) else {
+                panic!("{name}: {:?} has no role", style.props.get(keys::NAME));
+            };
+            assert!(
+                seen.insert((style.kind, role.clone())),
+                "{name}: two of a kind have the role {role}"
+            );
+        }
+    }
+}
+
 /// Neutral is M2's look from before documents held their own styles.
 #[test]
 fn neutral_is_m2s_look() {

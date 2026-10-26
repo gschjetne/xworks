@@ -92,13 +92,15 @@ fn a_document_from_book_1_takes_book_2_and_keeps_its_own_changes() {
     let at = |name: &str| names.iter().position(|n| *n == name).unwrap();
     assert_eq!(at("Table Header"), at("Code") + 1);
     assert_eq!(at("Heading"), at("Table Header") + 1);
-    // Only what Book 2 changed is said, and not Body.
+    // Only what Book 2 changed is said, and not Body: the quote's space,
+    // Table Header, and Heading's role.
     let said = said(&update.changes);
     assert_eq!(
         said,
         [
             "Defaults: quote-space 7.2 pt, not nothing",
             "Table Header: a new paragraph style",
+            "Heading: role heading, not nothing",
         ],
         "{said:?}"
     );
@@ -154,6 +156,81 @@ fn a_style_the_document_removed_stays_removed() {
         .find(|s| s.name == "Run-in Heading")
         .unwrap();
     assert!(style.italic && style.heading == Some(5), "{style:?}");
+}
+
+/// A style the document renamed is still the newer version's of its role:
+/// an update matches it by role, takes what the newer version changed,
+/// keeps the document's name, and adds no second copy.
+#[test]
+fn a_style_renamed_in_the_document_is_matched_by_its_role() {
+    let mut document = story::new_document(&book_2());
+    let heading = id(&document, "Heading");
+    set(
+        &mut document,
+        heading,
+        keys::NAME,
+        Value::Text("Display".to_string()),
+    );
+    let mut newer = book_2();
+    newer.version = 3;
+    newer
+        .paragraph
+        .iter_mut()
+        .find(|s| s.name == "Heading")
+        .unwrap()
+        .line_height = Some(1200);
+    let (update, after) = updated(&document, &book_2(), &newer);
+    assert!(story::style_named(&after, "Heading").is_none(), "no copy");
+    let display = after.style(id(&after, "Display")).unwrap();
+    assert_eq!(
+        display.props.get(keys::LINE_HEIGHT),
+        Some(&Value::Int(1200))
+    );
+    assert_eq!(
+        said(&update.changes),
+        ["Display: line-height 1200, not 1150"]
+    );
+    assert_eq!(
+        after.styles().len(),
+        document.styles().len(),
+        "the same styles"
+    );
+}
+
+/// Where the document and the newer version changed the same value
+/// differently, the document's stays and that's said; where they made the
+/// same change, nothing is.
+#[test]
+fn where_both_changed_a_value_the_documents_stays_and_is_said() {
+    let mut newer = book_2();
+    newer.version = 3;
+    let body = newer
+        .paragraph
+        .iter_mut()
+        .find(|s| s.name == "Body")
+        .unwrap();
+    body.indent_first = Some(Length::Mm(5.0));
+    body.size = Some(Length::Pt(12.0));
+    let mut document = story::new_document(&book_2());
+    let body = id(&document, "Body");
+    set(
+        &mut document,
+        body,
+        keys::INDENT_FIRST,
+        Value::Int(6 * MILLIMETRE),
+    );
+    set(&mut document, body, keys::SIZE, Value::Int(12 * POINT));
+    let (update, after) = updated(&document, &book_2(), &newer);
+    let resolved = StyleSheet::of(&after, &StyleSheet::from_spec(&newer));
+    let body = resolved.default_style();
+    assert_eq!(body.indents.first, 6 * MILLIMETRE, "the document's stays");
+    assert_eq!(body.size, 12 * POINT);
+    assert_eq!(
+        said(&update.kept),
+        ["Body: indent-first 17.01 pt, kept as the document has it; the new version has 14.17 pt"]
+    );
+    assert!(update.changes.is_empty(), "{:?}", said(&update.changes));
+    assert_eq!(resolved.origin, Some(("Book".to_string(), 3)));
 }
 
 /// A style the newer version removes goes, if nothing uses it and the

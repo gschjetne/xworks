@@ -10,9 +10,10 @@
 // colour below by name. `Some(...)` may be left out around a value.
 (
     name: "Manuscript",
-    // Version 2 sets extracts off with space above and below, and has
-    // Table Header (M2's stage 9's follow-up, review sjj5ak5a); version 1
-    // is kept in versions/.
+    // Version 2 sets extracts off with space above and below, has Table
+    // Header, and gives every style and part a role, so a document's own
+    // renamed still matches it (M2's stage 9's follow-up, review
+    // sjj5ak5a); version 1 is kept in versions/.
     version: 2,
     faces: [
         (name: "Text", role: "text", family: "Source Serif 4"),
@@ -69,7 +70,7 @@
         (name: "Table Header", role: "table-header", based_on: "Body", italic: true),
         // What every heading shares: the text's own face, kept with what
         // follows.
-        (name: "Heading", face: "Heading", keep_with_next: true),
+        (name: "Heading", role: "heading", face: "Heading", keep_with_next: true),
     ],
     // Links underlined, in the ink.
     character: [

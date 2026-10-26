@@ -8,8 +8,9 @@
 // colour below by name. `Some(...)` may be left out around a value.
 (
     name: "Literary",
-    // Version 2 has Table Header (M2's stage 9's follow-up, review
-    // sjj5ak5a); version 1 is kept in versions/.
+    // Version 2 has Table Header, and gives every style and part a role,
+    // so a document's own renamed still matches it (M2's stage 9's
+    // follow-up, review sjj5ak5a); version 1 is kept in versions/.
     version: 2,
     faces: [
         (name: "Text", role: "text", family: "Alegreya"),
@@ -86,7 +87,7 @@
         (name: "Table Header", role: "table-header", based_on: "Body", face: "Heading"),
         // What every heading shares: small capitals, kept with what
         // follows.
-        (name: "Heading", face: "Heading", keep_with_next: true, line_height: 1150),
+        (name: "Heading", role: "heading", face: "Heading", keep_with_next: true, line_height: 1150),
     ],
     character: [
         (name: "Emphasis", role: "emphasis", italic: true),
