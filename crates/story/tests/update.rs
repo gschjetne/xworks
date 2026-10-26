@@ -401,3 +401,104 @@ fn every_kept_version_updates_to_the_current_one() {
         );
     }
 }
+
+/// The ID of `document`'s style or part of `kind` named `name`.
+fn named(document: &Document, kind: doc::StyleKind, name: &str) -> ObjectId {
+    document
+        .styles()
+        .iter()
+        .copied()
+        .find(|&id| {
+            document.style(id).is_some_and(|s| {
+                s.kind == kind && s.props.get(keys::NAME) == Some(&Value::Text(name.into()))
+            })
+        })
+        .unwrap_or_else(|| panic!("no {} {name}", kind.name()))
+}
+
+/// A list definition's levels and a tab stop's leader (the inspector's
+/// screens, review sjj5ak5a) are values like any other: what the newer
+/// version changed of them the document takes, what the document changed
+/// itself stays, and where both changed one differently the document's
+/// stays, said.
+#[test]
+fn list_levels_and_leaders_update_as_other_values() {
+    use doc::StyleKind;
+    use story::sheet::{LevelSpec, TabsSpec};
+    let mut base = spec("styles", "technical");
+    base.tabs.push(TabsSpec {
+        name: "Contents".to_string(),
+        role: Some("contents".to_string()),
+        stops: vec![story::TabStopSpec {
+            at: Length::Mm(160.0),
+            align: text::TabAlign::End,
+            leader: None,
+        }],
+    });
+    let mut newer = base.clone();
+    newer.version += 1;
+    let headings = newer
+        .lists
+        .iter_mut()
+        .find(|l| l.name == "Headings")
+        .expect("Headings");
+    headings.levels = vec![LevelSpec {
+        level: 1,
+        marker: Some("I".to_string()),
+        ..LevelSpec::default()
+    }];
+    newer.tabs[0].stops[0].leader = Some('.');
+    let props = |document: &Document, id: ObjectId| document.style(id).unwrap().props.clone();
+    let marker = |k: usize| keys::level(k, keys::LEVEL_MARKER);
+
+    // The document set a level of another definition apart itself.
+    let mut document = story::new_document(&base);
+    let numbers = named(&document, StyleKind::List, "Numbers");
+    set(&mut document, numbers, &marker(2), Value::Text("a".into()));
+    let (update, after) = updated(&document, &base, &newer);
+    assert!(update.kept.is_empty(), "{:?}", said(&update.kept));
+    let headings = named(&after, StyleKind::List, "Headings");
+    assert_eq!(
+        props(&after, headings).get(&marker(1)),
+        Some(&Value::Text("I".into())),
+        "the newer version's level"
+    );
+    assert_eq!(
+        props(&after, numbers).get(&marker(2)),
+        Some(&Value::Text("a".into())),
+        "the document's own"
+    );
+    let contents = named(&after, StyleKind::Tabs, "Contents");
+    let stops = match props(&after, contents).get(keys::TABS) {
+        Some(Value::Text(t)) => story::parse_tabs(t).expect("stops"),
+        other => panic!("stops: {other:?}"),
+    };
+    assert_eq!(stops[0].leader, Some('.'), "the newer version's leader");
+    let changes = said(&update.changes);
+    assert!(
+        changes
+            .iter()
+            .any(|c| c.starts_with("Headings: level-1-marker")),
+        "{changes:?}"
+    );
+    assert!(
+        changes.iter().any(|c| c.starts_with("Contents: tabs")),
+        "{changes:?}"
+    );
+
+    // Where the document numbered the same level otherwise, its own stays.
+    let mut document = story::new_document(&base);
+    let headings = named(&document, StyleKind::List, "Headings");
+    set(&mut document, headings, &marker(1), Value::Text("A".into()));
+    let (update, after) = updated(&document, &base, &newer);
+    assert_eq!(
+        props(&after, headings).get(&marker(1)),
+        Some(&Value::Text("A".into()))
+    );
+    let kept = said(&update.kept);
+    assert!(
+        kept.iter()
+            .any(|c| c.starts_with("Headings: level-1-marker A, kept as the document has it")),
+        "{kept:?}"
+    );
+}
