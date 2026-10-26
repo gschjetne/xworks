@@ -51,6 +51,10 @@ pub struct Resources {
     /// Stylesheet lists them; new documents copy the first unless the
     /// person chooses another.
     pub stylesheets: Arc<Vec<SheetSpec>>,
+    /// Their earlier versions, kept as they were (`spec/styles/versions/`),
+    /// which documents that copied them take newer ones from, three-way
+    /// (review sjj5ak5a).
+    pub kept: Arc<Vec<SheetSpec>>,
     /// The first of them, resolved on its own: the program's stylesheet,
     /// which a document whose sheet lacks a value takes it from, and which
     /// Markdown files take, as they can't hold one.
@@ -214,7 +218,48 @@ fn spec<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, Error> {
     })
 }
 
+/// The earlier versions of the stylesheets that come with xWorks, each a
+/// file in `folder`, in the order of their files' names; none if there's
+/// no such folder.
+fn kept_versions(folder: &Path) -> Result<Vec<SheetSpec>, Error> {
+    let entries = match std::fs::read_dir(folder) {
+        Ok(entries) => entries,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(source) => {
+            return Err(Error::Io {
+                path: folder.to_path_buf(),
+                source,
+            });
+        }
+    };
+    let mut paths: Vec<PathBuf> = entries
+        .filter_map(Result::ok)
+        .map(|e| e.path())
+        .filter(|p| p.extension().is_some_and(|e| e == "ron"))
+        .collect();
+    paths.sort();
+    paths
+        .into_iter()
+        .map(|path| {
+            SheetSpec::parse(&read(&path)?).map_err(|e| Error::Spec {
+                path: path.clone(),
+                message: e.to_string(),
+            })
+        })
+        .collect()
+}
+
 impl Resources {
+    /// The version `version` of the stylesheet named `name` that comes
+    /// with xWorks, the current one or one kept, if there is one.
+    pub fn stylesheet_version(&self, name: &str, version: u32) -> Option<SheetSpec> {
+        self.stylesheets
+            .iter()
+            .chain(self.kept.iter())
+            .find(|s| s.name == name && s.version == version)
+            .cloned()
+    }
+
     /// Loads the specs from `root/spec` and the bundled fonts from
     /// `root/fonts`, for documents in `documents`.
     pub fn load(root: &Path, documents: PathBuf, mac: bool) -> Result<Resources, Error> {
@@ -255,6 +300,7 @@ impl Resources {
                 message: "it names no stylesheet".to_string(),
             });
         };
+        let kept = kept_versions(&root.join("spec/styles/versions"))?;
         let program = StyleSheet::from_spec(first);
         let commands_path = root.join("spec/commands/m1.ron");
         let commands_spec: chrome::Spec = spec(&commands_path)?;
@@ -281,6 +327,7 @@ impl Resources {
             on_demand: Arc::new(on_demand),
             program: Arc::new(program),
             stylesheets: Arc::new(stylesheets),
+            kept: Arc::new(kept),
             own: Arc::new(OwnSheets::default()),
             commands,
             sizes,

@@ -459,9 +459,13 @@ fn a_newer_version_of_the_stylesheet_is_offered_never_applied() {
     editor.update(Event::Text("Offered".to_string()));
     let path = editor.path().to_path_buf();
     drop(editor);
-    // A newer Neutral, whose body is a point larger.
+    // A newer Neutral, whose body is a point larger; the one it replaces
+    // kept, as a new version of xWorks keeps it.
     let mut newer = (*res).clone();
     let mut neutral = newer.stylesheets[0].clone();
+    let mut kept = (*newer.kept).clone();
+    kept.push(neutral.clone());
+    newer.kept = Arc::new(kept);
     neutral.version += 1;
     neutral.paragraph[0].size = Some(text::units::Length::Pt(12.0));
     let mut sheets = (*newer.stylesheets).clone();
@@ -494,6 +498,256 @@ fn a_newer_version_of_the_stylesheet_is_offered_never_applied() {
         Some(("Neutral".to_string(), neutral_version(&res) + 1))
     );
     assert!(!editor.state("update-stylesheet").enabled);
+}
+
+/// A document copied from stylesheet `spec`, holding `text`, written as
+/// `name` in the documents folder.
+fn written(res: &Resources, spec: &story::SheetSpec, name: &str, text: &str) -> std::path::PathBuf {
+    let document = story::document(spec, &[("Body", vec![(text, doc::Props::new())])]);
+    let path = res.documents.join(name);
+    drop(store::Store::create(&path, &document, "story").expect("written"));
+    path
+}
+
+/// The kept version `version` of the stylesheet named `name`.
+fn kept(res: &Resources, name: &str, version: u32) -> story::SheetSpec {
+    res.kept
+        .iter()
+        .find(|s| s.name == name && s.version == version)
+        .unwrap_or_else(|| panic!("{name} {version} is kept"))
+        .clone()
+}
+
+/// The panel's rows, as text.
+fn rows(editor: &Editor) -> Vec<String> {
+    editor.panel().expect("a panel").1.to_vec()
+}
+
+/// A document copied from Book 1, its Body changed, takes Book 2 three-way
+/// (review sjj5ak5a): the panel shows only what Book 2 changed, Table
+/// Header and the quote's space, and taking it keeps the Body change;
+/// Undo takes the update back whole.
+#[test]
+fn an_update_takes_only_what_the_newer_version_changed() {
+    let res = res("app-styles-three-way");
+    let path = written(&res, &kept(&res, "Book", 1), "Old Book.xw", "Booked");
+    let mut editor = Editor::open(res.clone(), &path).expect("it opens");
+    let body = style(&editor, "Body");
+    with(
+        &mut editor,
+        "style-set",
+        vec![
+            id_arg(body),
+            Arg::Text(keys::SIZE.to_string()),
+            Arg::Int(12 * POINT),
+        ],
+    );
+    let before = editor.document().to_snapshot().objects;
+    command(&mut editor, "update-stylesheet");
+    let shown = rows(&editor);
+    assert!(
+        shown
+            .iter()
+            .any(|r| r.contains("Table Header: a new paragraph style")),
+        "{shown:?}"
+    );
+    assert!(
+        shown
+            .iter()
+            .any(|r| r.contains("Defaults: quote-space 7.2 pt")),
+        "{shown:?}"
+    );
+    assert!(!shown.iter().any(|r| r.contains("Body")), "{shown:?}");
+    assert!(
+        !shown.iter().any(|r| r.contains("can't be found")),
+        "{shown:?}"
+    );
+    key(&mut editor, Key::Enter, false, false);
+    let sheet = editor.sheet();
+    assert_eq!(sheet.origin, Some(("Book".to_string(), 2)));
+    assert!(sheet.table_header().is_some_and(|s| s.italic));
+    assert_eq!(sheet.blocks.quote_space, 7 * POINT + POINT / 5);
+    assert_eq!(sheet.default_style().size, 12 * POINT, "its own change");
+    // One step, which Undo takes back whole.
+    command(&mut editor, "undo");
+    assert_eq!(editor.document().to_snapshot().objects, before);
+    assert_eq!(editor.sheet().origin, Some(("Book".to_string(), 1)));
+    assert!(editor.sheet().table_header().is_none());
+}
+
+/// A value the document and the newer version both changed, differently,
+/// stays as the document has it, and the panel says so; a style the newer
+/// version removes goes where nothing uses it.
+#[test]
+fn an_update_keeps_what_both_changed_and_says_so() {
+    let res = res("app-styles-conflict");
+    let path = written(&res, &kept(&res, "Book", 1), "Conflict.xw", "Kept");
+    let mut editor = Editor::open(res.clone(), &path).expect("it opens");
+    let h6 = style(&editor, "Heading 6");
+    with(
+        &mut editor,
+        "style-set",
+        vec![
+            id_arg(h6),
+            Arg::Text(keys::SIZE.to_string()),
+            Arg::Int(9 * POINT),
+        ],
+    );
+    drop(editor);
+    // A newer Book whose Heading 6 is larger, and whose Heading 4 is gone.
+    let mut newer = (*res).clone();
+    let mut sheets = (*newer.stylesheets).clone();
+    let book = sheets.iter_mut().find(|s| s.name == "Book").unwrap();
+    book.version += 1;
+    book.paragraph
+        .iter_mut()
+        .find(|s| s.name == "Heading 6")
+        .unwrap()
+        .size = Some(text::units::Length::Pt(12.0));
+    book.paragraph.retain(|s| s.name != "Heading 4");
+    newer.stylesheets = Arc::new(sheets);
+    let mut kept_all = (*newer.kept).clone();
+    kept_all.push(
+        res.stylesheets
+            .iter()
+            .find(|s| s.name == "Book")
+            .unwrap()
+            .clone(),
+    );
+    newer.kept = Arc::new(kept_all);
+    let newer = Arc::new(newer);
+    let mut editor = Editor::open(newer.clone(), &path).expect("it opens");
+    command(&mut editor, "update-stylesheet");
+    let shown = rows(&editor);
+    let kept_at = shown
+        .iter()
+        .position(|r| r.contains("Kept as the document has them"))
+        .unwrap_or_else(|| panic!("{shown:?}"));
+    assert!(
+        shown[kept_at..]
+            .iter()
+            .any(|r| r.contains("Heading 6: size 9 pt, kept as the document has it")),
+        "{shown:?}"
+    );
+    assert!(
+        shown.iter().any(|r| r.contains("Heading 4: removed")),
+        "{shown:?}"
+    );
+    key(&mut editor, Key::Enter, false, false);
+    assert_eq!(
+        editor.sheet().paragraph_style(Some(h6)).size,
+        9 * POINT,
+        "the document's stays"
+    );
+    assert!(
+        !editor
+            .sheet()
+            .paragraph
+            .iter()
+            .any(|s| s.name == "Heading 4")
+    );
+    assert!(
+        editor.message().contains("keeping 1"),
+        "{}",
+        editor.message()
+    );
+}
+
+/// Where the version the document copied can't be found, the update
+/// compares the document's sheet with the newer one alone, and the panel
+/// says so.
+#[test]
+fn an_update_without_its_base_says_so() {
+    let res = res("app-styles-no-base");
+    let path = written(&res, &kept(&res, "Book", 1), "Lost.xw", "Lost");
+    let mut lost = (*res).clone();
+    lost.kept = Arc::new(Vec::new());
+    let mut editor = Editor::open(Arc::new(lost), &path).expect("it opens");
+    command(&mut editor, "update-stylesheet");
+    let shown = rows(&editor);
+    assert!(
+        shown
+            .iter()
+            .any(|r| r.contains("Book's version 1, which the document copied, can't be found")),
+        "{shown:?}"
+    );
+}
+
+/// The person's own stylesheet, kept again, keeps the version it replaces
+/// beside it, so a document that copied that version takes the newer one
+/// three-way, keeping its own changes; a kept version that doesn't read
+/// is as if it weren't there.
+#[test]
+fn ones_own_stylesheet_keeps_its_versions_and_updates_three_way() {
+    let res = res("app-styles-own-versions");
+    let mut first = Editor::create(res.clone()).expect("a document");
+    command(&mut first, "save-stylesheet");
+    assert_eq!(first.sheet().origin, Some(("My Neutral".to_string(), 1)));
+    // A second document, from My Neutral 1, changes Heading 1 itself.
+    let effects = with(
+        &mut first,
+        "new-with-stylesheet",
+        vec![Arg::Text("own:My Neutral".to_string())],
+    );
+    let Some(Effect::Open(Some(second))) = effects.first().cloned() else {
+        panic!("a new document: {effects:?}");
+    };
+    let mut other = Editor::open(res.clone(), &second).expect("it opens");
+    let h1 = style(&other, "Heading 1");
+    with(
+        &mut other,
+        "style-set",
+        vec![
+            id_arg(h1),
+            Arg::Text(keys::SIZE.to_string()),
+            Arg::Int(30 * POINT),
+        ],
+    );
+    drop(other);
+    // The first changes Body, and keeps the sheet again: My Neutral 2.
+    let body = style(&first, "Body");
+    with(
+        &mut first,
+        "style-set",
+        vec![
+            id_arg(body),
+            Arg::Text(keys::SIZE.to_string()),
+            Arg::Int(13 * POINT),
+        ],
+    );
+    command(&mut first, "save-stylesheet");
+    assert_eq!(first.sheet().origin, Some(("My Neutral".to_string(), 2)));
+    let versions = res.documents.join("stylesheets/versions");
+    assert!(versions.join("My Neutral-1.ron").is_file());
+    assert_eq!(res.own.version("My Neutral", 1).map(|s| s.version), Some(1));
+    let (own, bad) = res.own.list();
+    assert_eq!(
+        (own.len(), bad.len()),
+        (1, 0),
+        "a kept version isn't listed"
+    );
+    // The second takes it: Body from version 2, its own Heading 1 kept.
+    let mut other = Editor::open(res.clone(), &second).expect("it opens");
+    command(&mut other, "update-stylesheet");
+    let shown = rows(&other);
+    assert!(
+        shown.iter().any(|r| r.contains("Body: size 13 pt")),
+        "{shown:?}"
+    );
+    assert!(!shown.iter().any(|r| r.contains("Heading 1")), "{shown:?}");
+    key(&mut other, Key::Enter, false, false);
+    assert_eq!(other.sheet().default_style().size, 13 * POINT);
+    assert_eq!(other.sheet().paragraph_style(Some(h1)).size, 30 * POINT);
+    command(&mut other, "undo");
+    // A kept version that doesn't read: two-way, said.
+    std::fs::write(versions.join("My Neutral-1.ron"), "(name: ").unwrap();
+    assert!(res.own.version("My Neutral", 1).is_none());
+    command(&mut other, "update-stylesheet");
+    assert!(
+        rows(&other).iter().any(|r| r.contains("can't be found")),
+        "{:?}",
+        rows(&other)
+    );
 }
 
 #[test]

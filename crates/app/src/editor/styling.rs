@@ -113,6 +113,27 @@ impl Editor {
         (found.1.version > version).then_some(found)
     }
 
+    /// The version of the stylesheet the document's was copied from, the
+    /// base an update takes the newer version from, if it can be had: one
+    /// that comes with xWorks, current or kept, or one of the person's
+    /// own, current or kept, as [`Editor::newer_stylesheet`] finds the
+    /// newer one.
+    fn base_stylesheet(&self) -> Option<SheetSpec> {
+        let (name, version) = self.sheet.origin.clone()?;
+        if self.res.stylesheets.iter().any(|s| s.name == name) {
+            return self.res.stylesheet_version(&name, version);
+        }
+        self.res.own.version(&name, version)
+    }
+
+    /// What taking `newer` would do to the document, as it is: three-way
+    /// from the version it copied, or two-way if that can't be had.
+    fn updating(&self, newer: &SheetSpec) -> story::Update {
+        let base = self.base_stylesheet().map(|s| story::new_document(&s));
+        let mut scratch = self.document.clone();
+        story::update(&mut scratch, base.as_ref(), &story::new_document(newer))
+    }
+
     /// Says, in the status bar, that a newer version of the document's
     /// stylesheet can be had, where one can: an offer the person can take
     /// from Format, Stylesheet, or leave.
@@ -523,14 +544,16 @@ impl Editor {
     }
 
     /// Format, Stylesheet, Update: what the newer version of the
-    /// document's stylesheet would change, to take or leave.
+    /// document's stylesheet changed since the version the document
+    /// copied, which it would take, and what of that it keeps as it has
+    /// it, to take or leave (review sjj5ak5a). Where the version it copied
+    /// can't be had, every difference is shown, and taken, and it says so.
     pub(super) fn update_panel(&mut self) {
         let Some((key, newer)) = self.newer_stylesheet() else {
             self.message = "The stylesheet is as new as the one it came from".to_string();
             return;
         };
-        let incoming = story::new_document(&newer);
-        let changes = story::changes(&self.document, &incoming);
+        let update = self.updating(&newer);
         let mut rows = vec![
             (
                 format!("Take {}'s version {}", newer.name, newer.version),
@@ -538,12 +561,33 @@ impl Editor {
             ),
             ("Leave the styles as they are".to_string(), Pick::Nothing),
         ];
-        rows.extend(
-            changes
-                .into_iter()
-                .take(40)
-                .map(|c| (format!("    {}: {}", c.style, c.what), Pick::Nothing)),
-        );
+        let line = |c: &story::Change| (format!("    {}: {}", c.style, c.what), Pick::Nothing);
+        if !update.three_way {
+            let (name, version) = self.sheet.origin.clone().unwrap_or_default();
+            rows.push((
+                format!(
+                    "  {name}'s version {version}, which the document copied, can't be found: \
+                     every difference is shown, and your own changes would go too"
+                ),
+                Pick::Nothing,
+            ));
+        }
+        if update.changes.is_empty() {
+            rows.push((
+                "  Nothing it changed is new to the document".to_string(),
+                Pick::Nothing,
+            ));
+        } else {
+            rows.push(("  What it changed:".to_string(), Pick::Nothing));
+            rows.extend(update.changes.iter().take(40).map(line));
+        }
+        if !update.kept.is_empty() {
+            rows.push((
+                "  Kept as the document has them:".to_string(),
+                Pick::Nothing,
+            ));
+            rows.extend(update.kept.iter().take(40).map(line));
+        }
         self.panel = Some(Panel {
             title: format!("{} has changed since the document copied it", newer.name),
             rows,
@@ -552,10 +596,25 @@ impl Editor {
     }
 
     /// Takes the stylesheet `key` names as a newer version of the
-    /// document's, chosen from the update's panel.
+    /// document's, chosen from the update's panel: three-way, from the
+    /// version the document copied, as one step Undo takes back whole.
     pub(super) fn take_update(&mut self, key: &str) {
-        if let Some(spec) = self.stylesheet_for(key) {
-            self.take_stylesheet(&spec, &format!("Update to {} {}", spec.name, spec.version));
+        let Some(newer) = self.stylesheet_for(key) else {
+            return;
+        };
+        let update = self.updating(&newer);
+        if self.commit(
+            &format!("Update to {} {}", newer.name, newer.version),
+            update.ops,
+            false,
+        ) {
+            self.message = match update.kept.len() {
+                0 => format!("Took {}'s version {}", newer.name, newer.version),
+                n => format!(
+                    "Took {}'s version {}, keeping {n} of the document's own",
+                    newer.name, newer.version
+                ),
+            };
         }
     }
 
