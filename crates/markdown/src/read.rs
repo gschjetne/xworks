@@ -367,11 +367,12 @@ fn style_by(sheet: &[(ObjectId, Object)], role: &str, key: &str, value: Value) -
 struct Builder<'a> {
     text: &'a str,
     sheet: &'a [(ObjectId, Object)],
-    /// The sheet's styles paragraphs take: body text's, code's, and each
-    /// heading level's, found once.
+    /// The sheet's styles paragraphs take: body text's, code's, each
+    /// heading level's, and a table's header row's, found once.
     body: Option<ObjectId>,
     code: Option<ObjectId>,
     headings: [Option<ObjectId>; 6],
+    table_header: Option<ObjectId>,
     sizes: &'a dyn Fn(&str) -> Option<(i64, i64)>,
     language: Option<String>,
     next: u64,
@@ -407,6 +408,12 @@ impl<'a> Builder<'a> {
                     Value::Int(level),
                 )
             }),
+            table_header: style_by(
+                settings.sheet,
+                story::TABLE_HEADER,
+                keys::ROLE,
+                Value::Text(story::TABLE_HEADER.to_string()),
+            ),
             sizes: settings.sizes,
             language,
             next: settings
@@ -1383,13 +1390,14 @@ impl<'a> Builder<'a> {
             }
             Tag::TableCell => {
                 let column = self.stack.last().map_or(0, |f| f.children.len());
-                let align = self
-                    .stack
-                    .iter()
-                    .rev()
-                    .find(|f| f.kind == FrameKind::Table)
-                    .and_then(|t| t.aligns.get(column).copied());
-                self.open(ParaKind::Cell, None, range);
+                let table = self.stack.iter().rev().find(|f| f.kind == FrameKind::Table);
+                let align = table.and_then(|t| t.aligns.get(column).copied());
+                // The header row's cells, the first row's, take the sheet's
+                // Table Header, as headings take theirs; the others name
+                // no style, so they're in body text's.
+                let header = table.is_some_and(|t| t.children.is_empty());
+                let style = if header { self.table_header } else { None };
+                self.open(ParaKind::Cell, style, range);
                 if let Some(p) = &mut self.para {
                     let align = match align {
                         Some(Alignment::Left) => Some("start"),

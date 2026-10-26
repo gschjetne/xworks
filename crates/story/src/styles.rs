@@ -823,6 +823,12 @@ impl StyleSheet {
             .or_else(|| self.paragraph.iter().find(|s| s.heading == Some(level)))
     }
 
+    /// The paragraph style of a table's header row's paragraphs: the one
+    /// with the role [`crate::TABLE_HEADER`], if the sheet has one.
+    pub fn table_header(&self) -> Option<&ParagraphStyle> {
+        self.by_role(crate::TABLE_HEADER)
+    }
+
     /// The paragraph style of code blocks: the one with the role "code",
     /// or else the first that's a code block's.
     pub fn code(&self) -> Option<&ParagraphStyle> {

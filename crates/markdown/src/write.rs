@@ -608,7 +608,7 @@ impl<'a> Writer<'a> {
         let whole = self.whole_plan(id);
         match object {
             Object::Paragraph(p) if whole.is_none() && vanishes(p, self.sheet) => {
-                self.check_paragraph(id, p, false)?;
+                self.check_paragraph(id, p, false, false)?;
                 return Ok(());
             }
             Object::Block(b)
@@ -1055,7 +1055,7 @@ impl<'a> Writer<'a> {
         p: &Paragraph,
         (first, rest): (bool, bool),
     ) -> Result<Vec<Line>, Unheld> {
-        self.check_paragraph(id, p, false)?;
+        self.check_paragraph(id, p, false, false)?;
         if let Some(last) = self.last
             && let (Some(a), Some(b)) = (last.document.object(id), self.document.object(id))
             && std::ptr::eq(a, b)
@@ -1093,14 +1093,28 @@ impl<'a> Writer<'a> {
     }
 
     /// What Markdown can't hold of paragraph `id`, if anything, `cell` if
-    /// it's a table's.
-    fn check_paragraph(&self, id: ObjectId, p: &Paragraph, cell: bool) -> Result<(), Unheld> {
+    /// it's a table's, and `header` if it's in the table's header row.
+    fn check_paragraph(
+        &self,
+        id: ObjectId,
+        p: &Paragraph,
+        cell: bool,
+        header: bool,
+    ) -> Result<(), Unheld> {
         let unheld = |what| Err(Unheld { block: id, what });
         let style = self.sheet.style_of(p);
         // Markdown holds the program's sheet's styles that it has: body
-        // text, headings and code.
-        let markdown = |role: &str| {
-            role == "body" || role == "code" || role.strip_prefix("heading-").is_some()
+        // text, headings and code; and in a table, Table Header in the
+        // header row, as reading gives it, and body text in the others.
+        // It writes the first row as the header by its place, never the
+        // style.
+        let table_header = self.sheet.table_header().is_some();
+        let markdown = |role: &str| match (cell, header) {
+            (true, true) if table_header => role == story::TABLE_HEADER,
+            (true, _) => role == "body",
+            (false, _) => {
+                role == "body" || role == "code" || role.strip_prefix("heading-").is_some()
+            }
         };
         if style.id.is_some() && !style.role.as_deref().is_some_and(markdown) {
             return unheld(What::Style(style.name.clone()));
@@ -1581,7 +1595,7 @@ impl<'a> Writer<'a> {
             .iter()
             .map(|&c| align_of(c))
             .collect();
-        for &row in &rows {
+        for (i, &row) in rows.iter().enumerate() {
             let r = document.block(row).expect("a row");
             check_props(row, &r.props, &[])?;
             if r.children.len() > columns {
@@ -1592,7 +1606,7 @@ impl<'a> Writer<'a> {
             }
             for (column, &cell) in r.children.iter().enumerate() {
                 let p = document.paragraph(cell).expect("a cell");
-                self.check_paragraph(cell, p, true)?;
+                self.check_paragraph(cell, p, true, i == 0)?;
                 let align = align_of(cell);
                 if align != aligns[column]
                     || !["", "start", "center", "end"].contains(&align.as_str())

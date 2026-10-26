@@ -11,7 +11,9 @@
 //! and parts, are matched with the destination's by role and then by name,
 //! and those it lacks come along with their chains, as `story::merge`
 //! brings them. Nothing is renamed "Body 2". Pictures don't come along, as
-//! their files are the other document's.
+//! their files are the other document's. A table's cells paste as
+//! paragraphs, and those of its header row take the default style, as
+//! Table Header is a header row's (review sjj5ak5a).
 
 use doc::{Document, ObjectId, Op, Props, Run, Value};
 use std::collections::HashMap;
@@ -119,6 +121,30 @@ impl Editor {
         }
         let (styles, map) = story::merge(&mut scratch, &fragment.source, false);
         ops.extend(styles);
+        let body = self.sheet.default_style().id;
+        // A paragraph's own properties as pasted: its style the
+        // destination's, but for a header row's, which isn't one here.
+        let pasted_props = |props: &Props| -> Props {
+            let mut out = mapped(props, &map);
+            let header = match props.get(story::keys::STYLE) {
+                Some(Value::Ref(id)) => fragment.source.style(*id).is_some_and(|s| {
+                    s.props.get(story::keys::ROLE)
+                        == Some(&Value::Text(story::TABLE_HEADER.to_string()))
+                }),
+                _ => false,
+            };
+            if header {
+                match body {
+                    Some(body) => {
+                        out.insert(story::keys::STYLE.to_string(), Value::Ref(body));
+                    }
+                    None => {
+                        out.remove(story::keys::STYLE);
+                    }
+                }
+            }
+            out
+        };
         let mut caret: Position = at;
         for (i, (props, text, runs)) in fragment.paragraphs.iter().enumerate() {
             if i > 0 {
@@ -127,7 +153,7 @@ impl Editor {
                     paragraph: caret.paragraph,
                     offset: caret.offset,
                     new,
-                    new_props: mapped(props, &map),
+                    new_props: pasted_props(props),
                 };
                 if scratch.apply(&op).is_err() {
                     return true;

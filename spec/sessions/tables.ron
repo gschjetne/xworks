@@ -1,7 +1,8 @@
 // A table typed with the keyboard (docs/ROADMAP.md, M2 stage 2): the table
 // command puts one in, Tab goes from cell to cell and makes a row after
 // the last, Shift+Tab goes back, Enter goes to the cell below and makes a
-// row at the end, and Down leaves the table.
+// row at the end, and Down leaves the table. The header row's cells are in
+// Table Header (review sjj5ak5a), the others in no style of their own.
 (
     size: (900, 700),
     events: [
@@ -29,8 +30,8 @@
     ],
     expect: [
         ("Body", "Prices"),
-        ("", "Item"),
-        ("", "Price"),
+        ("Table Header", "Item"),
+        ("Table Header", "Price"),
         ("", "Tea"),
         ("", "2"),
         ("", "Cake"),
@@ -43,8 +44,8 @@
         "Body: Prices",
         "table",
         "  row",
-        "    Body: Item",
-        "    Body: Price",
+        "    Table Header: Item",
+        "    Table Header: Price",
         "  row",
         "    Body: Tea",
         "    Body: 2",

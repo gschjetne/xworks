@@ -11,9 +11,11 @@
 // colour below by name. `Some(...)` may be left out around a value.
 (
     name: "Neutral",
-    // Version 2 has the room around a rule across the text (M2's stage 6's
-    // follow-up, review jy4a2tx5), which the other sheets take from it.
-    version: 2,
+    // Version 3 has Table Header (M2's stage 9's follow-up, review
+    // sjj5ak5a). Version 2 has the room around a rule across the text
+    // (M2's stage 6's follow-up, review jy4a2tx5), which the other sheets
+    // take from it. Earlier versions are kept in versions/.
+    version: 3,
     faces: [
         (name: "Text", role: "text", family: "Source Serif 4"),
         (name: "Heading", role: "heading", family: "Inter"),
@@ -108,6 +110,10 @@
             space_before: Pt(10),
             space_after: Pt(12),
         ),
+        // A table's header row's paragraphs take it, as headings take
+        // theirs (review sjj5ak5a): the body's text, bold, as header rows
+        // were bold by their place before.
+        (name: "Table Header", role: "table-header", based_on: "Body", bold: true),
         // What every heading shares, so their face and weight change in
         // one place; after the styles paragraphs take, as it's a base for
         // them. Headings, with their level for tagged PDF and

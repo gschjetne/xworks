@@ -885,8 +885,10 @@ pub(crate) fn insert_rule(doc: &Document, sheet: &StyleSheet, at: Position) -> O
 
 /// A table of two columns, a header and one row, after the caret's
 /// paragraph, or after its table if it's in one; before it if it's empty,
-/// so typing goes on after the table. The caret goes to its first cell.
-pub(crate) fn insert_table(doc: &Document, at: Position) -> Option<Outcome> {
+/// so typing goes on after the table. The header's cells are in the
+/// sheet's Table Header, as headings are in theirs (review sjj5ak5a), the
+/// row's in no style of their own. The caret goes to its first cell.
+pub(crate) fn insert_table(doc: &Document, sheet: &StyleSheet, at: Position) -> Option<Outcome> {
     let mut place = at.paragraph;
     while matches!(parent_kind(doc, place), Some(Kind::Row | Kind::Table)) {
         place = doc.parent(place)?;
@@ -902,7 +904,12 @@ pub(crate) fn insert_table(doc: &Document, at: Position) -> Option<Outcome> {
     let mut objects = vec![(table, container(Kind::Table, parent, Props::new()))];
     let mut rows = Vec::new();
     let mut first = None;
-    for _ in 0..2 {
+    let header = sheet
+        .table_header()
+        .and_then(|s| s.id)
+        .map(|id| Props::from([(keys::STYLE.to_string(), Value::Ref(id))]))
+        .unwrap_or_default();
+    for index in 0..2 {
         let row = b.fresh();
         rows.push(row);
         let row_at = objects.len();
@@ -912,7 +919,12 @@ pub(crate) fn insert_table(doc: &Document, at: Position) -> Option<Outcome> {
             let cell = b.fresh();
             first.get_or_insert(cell);
             cells.push(cell);
-            objects.push((cell, empty_paragraph(row, Props::new())));
+            let props = if index == 0 {
+                header.clone()
+            } else {
+                Props::new()
+            };
+            objects.push((cell, empty_paragraph(row, props)));
         }
         if let Object::Block(r) = &mut objects[row_at].1 {
             r.children = cells;

@@ -656,3 +656,85 @@ fn an_html_block_ending_an_item_keeps_its_lines() {
         );
     }
 }
+
+/// A table's header row's cells are read in Table Header, as headings are
+/// read in their styles, and its other cells in body text's (review
+/// sjj5ak5a); written, the first row is the header by its place, and the
+/// style is never written. A header cell in another style, or Table
+/// Header anywhere but a header row, is what Markdown can't hold.
+#[test]
+fn a_tables_header_row_is_in_table_header() {
+    use story::{BlockSpec, props};
+    let sheet = sheet();
+    let text = b"| Name | Size |\n| --- | ---: |\n| Pear | Small |\n";
+    let read = read(text, &sheet);
+    let document = &read.document;
+    let style = |needle: &str| {
+        let (id, _) = find(document, needle);
+        sheet
+            .style_of(document.paragraph(id).expect("a paragraph"))
+            .name
+            .clone()
+    };
+    assert_eq!(style("Name"), "Table Header");
+    assert_eq!(style("Size"), "Table Header");
+    assert_eq!(style("Pear"), "Body");
+    let (pear, _) = find(document, "Pear");
+    assert_eq!(
+        document.paragraph(pear).unwrap().props.get(keys::STYLE),
+        None,
+        "a body row's cells name no style"
+    );
+    // Written afresh, as built, it's a table as any.
+    let cell = |text: &str| vec![(text.to_string(), props(&[]))];
+    let built = story::build(
+        &neutral(),
+        &[BlockSpec::Table(
+            vec![String::new(), "end".into()],
+            vec![
+                vec![cell("Name"), cell("Size")],
+                vec![cell("Pear"), cell("Small")],
+            ],
+        )],
+    );
+    let written = markdown::File::empty(None)
+        .write(&built, &sheet)
+        .expect("it writes");
+    assert_eq!(
+        String::from_utf8_lossy(&written),
+        "| Name |  Size |\n| ---- | ----: |\n| Pear | Small |\n"
+    );
+    assert_eq!(
+        shape(&self::read(&written, &sheet).document, &sheet),
+        shape(&built, &sheet)
+    );
+    // A header cell in body text, and a paragraph in Table Header outside
+    // a header row, aren't held.
+    let restyled = |document: &Document, needle: &str, name: &str| {
+        let (id, _) = find(document, needle);
+        let mut document = document.clone();
+        let style = story::style_named(&document, name).map(Value::Ref);
+        document
+            .apply(&Op::SetParaProp {
+                paragraph: id,
+                key: keys::STYLE.to_string(),
+                value: style,
+            })
+            .expect("it applies");
+        document
+    };
+    let alone = story::build(
+        &neutral(),
+        &[BlockSpec::Paragraph("Body".into(), cell("Alone"))],
+    );
+    for (document, name) in [
+        (restyled(&built, "Name", "Body"), "Body"),
+        (restyled(&built, "Pear", "Table Header"), "Table Header"),
+        (restyled(&alone, "Alone", "Table Header"), "Table Header"),
+    ] {
+        let unheld = markdown::File::empty(None)
+            .write(&document, &sheet)
+            .expect_err("Markdown can't hold it");
+        assert_eq!(unheld.what, markdown::What::Style(name.into()));
+    }
+}

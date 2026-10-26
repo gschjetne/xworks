@@ -1,0 +1,107 @@
+// Modern, version 1, kept as it was: a document that copied this
+// version takes a newer one three-way, from it (spec/styles.ron).
+//
+// Modern (M2's stage 9; project owner, 2026-10-24, review 30dmn1js):
+// Inter throughout, Rasmus Andersson's face for screens, for reports,
+// notes and documentation. Open leading and space between paragraphs,
+// ragged right, tight large headings, and a blue that marks links and
+// quotes alike.
+//
+// Lengths are Pt(...), Mm(...) or In(...); colours are #rrggbb, or a
+// colour below by name. `Some(...)` may be left out around a value.
+(
+    name: "Modern",
+    version: 1,
+    faces: [
+        (name: "Text", role: "text", family: "Inter"),
+        (name: "Heading", role: "heading", family: "Inter"),
+        (name: "Code", role: "code", family: "JetBrains Mono"),
+    ],
+    colours: [
+        (name: "Ink", role: "ink", colour: "#1f2328"),
+        (name: "Heading", role: "heading", colour: "#0d1117"),
+        (name: "Accent", role: "accent", colour: "#2463eb"),
+        (name: "Link", role: "link", colour: "#2463eb"),
+        (name: "Quote bar", role: "quote-bar", colour: "#2463eb"),
+        (name: "Code tint", role: "code-tint", colour: "#f2f4f7"),
+        (name: "Rule", role: "rule", colour: "#1f2328"),
+        (name: "Hairline", role: "hairline", colour: "#dde1e6"),
+        (name: "Missing picture", role: "missing-picture", colour: "#e6e9ee"),
+    ],
+    lists: [
+        (name: "Bullets", role: "bullets", bullets: ["•", "◦", "▪"], indent: Pt(16), gap: Pt(6)),
+        (name: "Numbers", role: "numbers", numbers: "1.", indent: Pt(16), gap: Pt(6)),
+    ],
+    // A4, with 22 mm margins.
+    page: (width: Mm(210), height: Mm(297), top: Mm(22), bottom: Mm(24), left: Mm(22), right: Mm(22)),
+    defaults: (face: "Text", size: Pt(10.5), colour: "Ink", line_height: 1500),
+    paragraph: [
+        (name: "Body", role: "body", space_after: Pt(8)),
+        (
+            name: "Heading 1",
+            role: "heading-1",
+            based_on: "Heading",
+            heading: 1,
+            size: Pt(26),
+            space_before: Pt(20),
+            space_after: Pt(10),
+        ),
+        (
+            name: "Heading 2",
+            role: "heading-2",
+            based_on: "Heading",
+            heading: 2,
+            size: Pt(17),
+            space_before: Pt(20),
+            space_after: Pt(6),
+        ),
+        (
+            name: "Heading 3",
+            role: "heading-3",
+            based_on: "Heading",
+            heading: 3,
+            size: Pt(13),
+            space_before: Pt(14),
+            space_after: Pt(4),
+        ),
+        (name: "Heading 4", role: "heading-4", based_on: "Heading", heading: 4, size: Pt(11), space_before: Pt(12), space_after: Pt(3)),
+        (name: "Heading 5", role: "heading-5", based_on: "Heading 4", heading: 5, size: Pt(10.5)),
+        (name: "Heading 6", role: "heading-6", based_on: "Heading 5", heading: 6, colour: "Ink"),
+        (
+            name: "Code",
+            role: "code",
+            code: true,
+            face: "Code",
+            ligatures: (standard: false, contextual: false),
+            size: Pt(9),
+            line_height: 1450,
+            space_before: Pt(6),
+            space_after: Pt(12),
+        ),
+        // What every heading shares: bold, tight, darker, kept with what
+        // follows.
+        (name: "Heading", face: "Heading", bold: true, colour: "Heading", line_height: 1200, keep_with_next: true),
+    ],
+    character: [
+        (name: "Emphasis", role: "emphasis", italic: true),
+        (name: "Strong", role: "strong", bold: true),
+        (name: "Code", role: "code", face: "Code", size: Pt(9.5), ligatures: (standard: false, contextual: false)),
+        (name: "Link", role: "link", colour: "Link"),
+        (name: "Strikethrough", role: "strikethrough", strikethrough: true),
+    ],
+    document: (
+        tab_interval: Mm(12.5),
+        quote_indent: Pt(16),
+        quote_bar: Pt(3),
+        quote_colour: "Quote bar",
+        code_tint: "Code tint",
+        code_padding: Pt(8),
+        table_space: Pt(10),
+        cell_padding: Pt(5),
+        rule: Pt(1),
+        hairline: Pt(0.5),
+        rule_colour: "Rule",
+        hairline_colour: "Hairline",
+        missing_picture: "Missing picture",
+    ),
+)

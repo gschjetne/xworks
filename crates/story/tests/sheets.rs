@@ -75,8 +75,15 @@ fn every_stylesheet_reads_and_has_what_documents_need() {
     assert_eq!(sheets[0].0, "neutral", "new documents take Neutral");
     for (name, spec) in &sheets {
         let sheet = StyleSheet::from_spec(spec);
-        // Markdown's styles, by role.
-        for role in ["body", "heading-1", "heading-2", "heading-3", "code"] {
+        // Markdown's styles, by role, and a table's header row's.
+        for role in [
+            "body",
+            "heading-1",
+            "heading-2",
+            "heading-3",
+            "code",
+            story::TABLE_HEADER,
+        ] {
             assert!(
                 sheet.by_role(role).is_some(),
                 "{name} has a style for {role}"
@@ -186,6 +193,25 @@ fn neutral_is_m2s_look() {
         (h6.size, h6.italic, h6.bold, h6.heading),
         (10 * POINT, true, true, Some(6))
     );
+    // A table's header row as header rows were by their place: the body's
+    // text, bold.
+    let header = sheet.table_header().unwrap();
+    assert_eq!(header.name, "Table Header");
+    assert_eq!(header.base, body.id);
+    assert_eq!(
+        story::ParagraphStyle {
+            bold: false,
+            ..header.clone()
+        },
+        story::ParagraphStyle {
+            id: header.id,
+            name: header.name.clone(),
+            role: header.role.clone(),
+            base: header.base,
+            ..body.clone()
+        }
+    );
+    assert!(header.bold);
     let code = sheet.code().unwrap();
     assert_eq!(
         (code.family.as_str(), code.size, code.ligatures),

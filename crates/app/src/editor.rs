@@ -2338,7 +2338,7 @@ impl Editor {
                 let ids = self.ids().to_vec();
                 let outcome = match id {
                     "quote" => blocks::toggle_quote(&self.document, &ids, start, end),
-                    "insert-table" => blocks::insert_table(&self.document, start),
+                    "insert-table" => blocks::insert_table(&self.document, &self.sheet, start),
                     "insert-rule" => blocks::insert_rule(&self.document, &self.sheet, start),
                     _ => {
                         blocks::toggle_list(&self.document, &ids, start, end, id == "list-numbers")

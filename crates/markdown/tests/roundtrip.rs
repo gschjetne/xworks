@@ -294,7 +294,7 @@ fn objects(next: &mut u64, b: &B, parent: ObjectId, out: &mut Vec<(ObjectId, Obj
         B::Rule => out.push((id, container(Kind::Rule, Props::new()))),
         B::Table(aligns, rows) => {
             out.push((id, container(Kind::Table, Props::new())));
-            for cells in rows {
+            for (index, cells) in rows.iter().enumerate() {
                 let row = ObjectId(*next);
                 *next += 1;
                 let row_at = out.len();
@@ -314,7 +314,10 @@ fn objects(next: &mut u64, b: &B, parent: ObjectId, out: &mut Vec<(ObjectId, Obj
                     if !aligns[column].is_empty() {
                         props.insert(keys::ALIGN.to_string(), Value::Text(aligns[column].clone()));
                     }
-                    out.push((cell, para(row, None, runs, props)));
+                    // The header row's cells in Table Header, as reading
+                    // gives them, the others in no style of their own.
+                    let style = (index == 0).then_some("Table Header");
+                    out.push((cell, para(row, style, runs, props)));
                     push(out, row_at, cell);
                 }
                 push(out, at, row);

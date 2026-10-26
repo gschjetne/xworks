@@ -5,7 +5,9 @@
 //! - [`read`]: CommonMark with GitHub's tables, strikethrough and task
 //!   lists, read with pulldown-cmark into a [`Document`]: headings are the
 //!   Heading styles; paragraphs, lists, quotes, code blocks and tables are
-//!   stage 2's blocks, and thematic breaks are rules; emphasis, strong,
+//!   stage 2's blocks, a table's header row's cells in the sheet's Table
+//!   Header and written as the header by their place, never by the style
+//!   (`story::TABLE_HEADER`), and thematic breaks are rules; emphasis, strong,
 //!   code, links and lines through text are marks, and GitHub's autolinks,
 //!   bare web and e-mail addresses, are links ([`autolinks`]); images are
 //!   pictures in the text, linked by their paths

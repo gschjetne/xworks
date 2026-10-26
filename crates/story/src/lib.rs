@@ -572,7 +572,9 @@ pub fn spans(paragraph: &Paragraph, sheet: &StyleSheet) -> Vec<Span> {
 }
 
 /// `paragraph`'s text as spans, as [`spans`] gives them, for a paragraph
-/// at `place`: a table's header cells are bold.
+/// at `place`, which doesn't change how it looks: nothing looks as it does
+/// by where it sits, and a table's header row's paragraphs take their
+/// style, Table Header, as headings take theirs (review sjj5ak5a).
 pub fn spans_at(paragraph: &Paragraph, sheet: &StyleSheet, place: Option<&Place>) -> Vec<Span> {
     styled(paragraph, sheet, place).0
 }
@@ -591,13 +593,14 @@ pub struct Look {
 /// its paragraph style's values; then for each run its character style's,
 /// each of its marks' character style's, in [`styles::MARKS`]' order, and
 /// its own formatting's ([`styles::CHARACTER_FORMATTING`]), each over the
-/// last; then its language.
+/// last; then its language. Its place, `_place`, doesn't change it, as
+/// [`spans_at`] says.
 pub fn styled(
     paragraph: &Paragraph,
     sheet: &StyleSheet,
-    place: Option<&Place>,
+    _place: Option<&Place>,
 ) -> (Vec<Span>, Vec<Look>) {
-    let (base, look) = base_style(paragraph, sheet, place);
+    let (base, look) = base_style(paragraph, sheet);
     let mut chars = paragraph.text.chars();
     let mut spans = Vec::with_capacity(paragraph.runs.len().max(1));
     let mut looks = Vec::with_capacity(paragraph.runs.len().max(1));
@@ -712,17 +715,14 @@ pub fn decoration(props: &Props) -> text::Decoration {
 }
 
 /// The style of `paragraph`'s text before its runs' own properties, and
-/// how it looks: its paragraph style's, and bold in a table's header.
-fn base_style(paragraph: &Paragraph, sheet: &StyleSheet, place: Option<&Place>) -> (Style, Look) {
+/// how it looks: its paragraph style's, wherever it sits.
+fn base_style(paragraph: &Paragraph, sheet: &StyleSheet) -> (Style, Look) {
     let style = sheet.style_of(paragraph);
-    let header = place
-        .and_then(|p| p.cell)
-        .is_some_and(|cell| cell.index == 0);
     (
         Style {
             family: style.family.clone(),
             size: style.size,
-            weight: if style.bold || header { 700 } else { 400 },
+            weight: if style.bold { 700 } else { 400 },
             italic: style.italic,
             language: language(paragraph.props.get(keys::LANGUAGE)).unwrap_or_default(),
             ligatures: style.ligatures,
@@ -863,7 +863,7 @@ pub fn lay_out_at(
     let figure = pictures.len() == 1 && paragraph.text.chars().eq([OBJECT]);
     // The marker is in the paragraph's style, whatever its runs say.
     let marker = place.marker.as_ref().map(|marker| {
-        let style = base_style(paragraph, sheet, Some(place)).0;
+        let style = base_style(paragraph, sheet).0;
         text::layout(
             fonts,
             &text::Paragraph {
@@ -978,6 +978,11 @@ pub fn lay_out(
         .map(|entry| lay_out_at(document, entry.id, &entry.place, sheet, fonts, &hyphenation))
         .collect()
 }
+
+/// The role of the paragraph style a table's header row's paragraphs
+/// take, wherever a table is made, as a heading's take theirs (review
+/// sjj5ak5a): Table Header, in the stylesheets that come with xWorks.
+pub const TABLE_HEADER: &str = "table-header";
 
 /// Where a new document's stylesheet's objects start, a Markdown file's
 /// read among them: #2, after the story and its first paragraph.
@@ -1147,7 +1152,8 @@ pub enum BlockSpec {
 /// `blocks`, made with `doc`'s operations as an importer would make it:
 /// each block inserted whole. Paragraphs name styles by name, a name the
 /// sheet hasn't the default style; code blocks take the sheet's style
-/// with the role "code".
+/// with the role "code", and a table's header row's cells the one with
+/// the role [`TABLE_HEADER`], its other cells naming none.
 pub fn build(spec: &SheetSpec, blocks: &[BlockSpec]) -> Document {
     let mut document = new_document(spec);
     let root = document.root();
@@ -1243,7 +1249,10 @@ fn objects_of(
         }
         BlockSpec::Table(align, rows) => {
             out.push((id, container(Kind::Table, Props::new())));
-            for cells in rows {
+            // The header row's cells take the sheet's Table Header, the
+            // others the default style.
+            let header = style_with_role(document, TABLE_HEADER);
+            for (index, cells) in rows.iter().enumerate() {
                 let row = document.new_id();
                 let row_at = out.len();
                 out.push((
@@ -1262,8 +1271,8 @@ fn objects_of(
                     if let Some(a) = align.get(column).filter(|a| !a.is_empty()) {
                         props.insert(keys::ALIGN.to_string(), Value::Text(a.clone()));
                     }
-                    // Cells name no style: they're in the default one.
-                    out.push((cell, paragraph_object(row, None, runs, props)));
+                    let style = if index == 0 { header } else { None };
+                    out.push((cell, paragraph_object(row, style, runs, props)));
                     children.push(cell);
                 }
                 set_children(&mut out[row_at].1, children);

@@ -8,7 +8,9 @@
 // colour below by name. `Some(...)` may be left out around a value.
 (
     name: "Technical",
-    version: 1,
+    // Version 2 has Table Header (M2's stage 9's follow-up, review
+    // sjj5ak5a); version 1 is kept in versions/.
+    version: 2,
     faces: [
         (name: "Text", role: "text", family: "Source Serif 4"),
         (name: "Heading", role: "heading", family: "Source Serif 4"),
@@ -85,6 +87,9 @@
             space_before: Pt(8),
             space_after: Pt(10),
         ),
+        // A table's header row: bold, in the headings' face, as a
+        // specification's column heads are.
+        (name: "Table Header", role: "table-header", based_on: "Body", face: "Heading", bold: true),
         // What every heading shares: bold, numbered, kept with what
         // follows.
         (name: "Heading", face: "Heading", bold: true, numbered: true, line_height: 1200, keep_with_next: true),

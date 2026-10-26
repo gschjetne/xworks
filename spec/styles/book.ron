@@ -10,8 +10,9 @@
 // colour below by name. `Some(...)` may be left out around a value.
 (
     name: "Book",
-    // Version 2 sets extracts off with space above and below (M2's stage
-    // 9's follow-up, review sjj5ak5a); version 1 is kept in versions/.
+    // Version 2 sets extracts off with space above and below, and has
+    // Table Header (M2's stage 9's follow-up, review sjj5ak5a); version 1
+    // is kept in versions/.
     version: 2,
     faces: [
         (name: "Text", role: "text", family: "EB Garamond"),
@@ -84,6 +85,10 @@
             space_before: Pt(8),
             space_after: Pt(10),
         ),
+        // A table's header row: its column heads in the text's italic, as
+        // a book sets them and its headings, not bold, which it keeps for
+        // little.
+        (name: "Table Header", role: "table-header", based_on: "Body", italic: true),
         // What every heading shares: the text's own face, regular, kept
         // with what follows.
         (name: "Heading", face: "Heading", keep_with_next: true, line_height: 1150),

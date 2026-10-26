@@ -288,13 +288,18 @@ fn the_page_is_the_documents_own_and_kept() {
     assert_eq!(reopened.sheet().page.width, 148 * MILLIMETRE);
 }
 
-/// The version of Neutral that comes with xWorks.
-fn neutral_version(res: &Resources) -> u32 {
+/// The version of stylesheet `name` that comes with xWorks.
+fn version(res: &Resources, name: &str) -> u32 {
     res.stylesheets
         .iter()
-        .find(|s| s.name == "Neutral")
-        .expect("Neutral")
+        .find(|s| s.name == name)
+        .unwrap_or_else(|| panic!("{name}"))
         .version
+}
+
+/// The version of Neutral that comes with xWorks.
+fn neutral_version(res: &Resources) -> u32 {
+    version(res, "Neutral")
 }
 
 #[test]
@@ -314,7 +319,10 @@ fn a_new_document_copies_the_stylesheet_chosen_and_can_take_another() {
         panic!("a new document to open: {effects:?}");
     };
     let mut book = Editor::open(res.clone(), path).expect("it opens");
-    assert_eq!(book.sheet().origin, Some(("Book".to_string(), 1)));
+    assert_eq!(
+        book.sheet().origin,
+        Some(("Book".to_string(), version(&res, "Book")))
+    );
     assert_eq!(book.sheet().default_style().family, "EB Garamond");
     // Replaced by Modern: matched by role, so Body is still Body, and a
     // style of the document's own stays.
@@ -326,7 +334,10 @@ fn a_new_document_copies_the_stylesheet_chosen_and_can_take_another() {
         vec![Arg::Text("app:Modern".to_string())],
     );
     assert_eq!(book.sheet().default_style().family, "Inter");
-    assert_eq!(book.sheet().origin, Some(("Modern".to_string(), 1)));
+    assert_eq!(
+        book.sheet().origin,
+        Some(("Modern".to_string(), version(&res, "Modern")))
+    );
     assert!(book.sheet().paragraph.iter().any(|s| s.name == "New Style"));
     command(&mut book, "undo");
     assert_eq!(book.sheet().default_style().family, "EB Garamond");
@@ -473,6 +484,47 @@ fn pasting_from_another_document_brings_its_styles_matched() {
             .count(),
         1
     );
+}
+
+/// Insert, Table makes a table whose header row's cells are in Table
+/// Header, as headings are in theirs (review sjj5ak5a), and whose other
+/// cells name no style; a copied table's cells paste as paragraphs, those
+/// of its header in the default style, as Table Header is a header row's.
+#[test]
+fn a_tables_header_row_is_in_table_header() {
+    let res = res("app-styles-table");
+    let mut editor = Editor::create(res.clone()).expect("a document");
+    editor.update(Event::Text("Before".to_string()));
+    command(&mut editor, "insert-table");
+    for (k, text) in ["Name", "Size", "Pear"].into_iter().enumerate() {
+        if k > 0 {
+            key(&mut editor, Key::Tab, false, false);
+        }
+        editor.update(Event::Text(text.to_string()));
+    }
+    let header = style(&editor, "Table Header");
+    assert_eq!(own(&editor, 1, keys::STYLE), Some(Value::Ref(header)));
+    assert_eq!(own(&editor, 2, keys::STYLE), Some(Value::Ref(header)));
+    assert_eq!(own(&editor, 3, keys::STYLE), None);
+    select_all(&mut editor);
+    let effects = command(&mut editor, "copy");
+    let Some(Effect::Copy(text)) = effects.first() else {
+        panic!("copied: {effects:?}");
+    };
+    let mut to = Editor::create(res.clone()).expect("another document");
+    to.update(Event::Text("Here: ".to_string()));
+    to.update(Event::Pasted(text.clone()));
+    let document = to.document();
+    let names: Vec<(String, String)> = document
+        .paragraphs()
+        .iter()
+        .map(|&id| {
+            let p = document.paragraph(id).unwrap();
+            (to.sheet().style_of(p).name.clone(), p.text.clone())
+        })
+        .collect();
+    assert!(names.iter().any(|(_, text)| text == "Name"), "{names:?}");
+    assert!(names.iter().all(|(style, _)| style == "Body"), "{names:?}");
 }
 
 #[test]

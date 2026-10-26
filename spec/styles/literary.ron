@@ -8,7 +8,9 @@
 // colour below by name. `Some(...)` may be left out around a value.
 (
     name: "Literary",
-    version: 1,
+    // Version 2 has Table Header (M2's stage 9's follow-up, review
+    // sjj5ak5a); version 1 is kept in versions/.
+    version: 2,
     faces: [
         (name: "Text", role: "text", family: "Alegreya"),
         (name: "Heading", role: "heading", family: "Alegreya SC"),
@@ -79,6 +81,9 @@
             space_before: Pt(10),
             space_after: Pt(12),
         ),
+        // A table's header row: its column heads in Alegreya's small
+        // capitals, as its headings are, rather than bold.
+        (name: "Table Header", role: "table-header", based_on: "Body", face: "Heading"),
         // What every heading shares: small capitals, kept with what
         // follows.
         (name: "Heading", face: "Heading", keep_with_next: true, line_height: 1150),

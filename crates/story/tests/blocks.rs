@@ -190,7 +190,8 @@ fn blocks_lay_out_in_their_places() {
     assert_eq!(code.layout.lines.len(), 2);
     let face = fonts().face(code.layout.lines[0].runs[0].face);
     assert_eq!(face.family(), "JetBrains Mono");
-    // A header's cells are bold; a cell set to end its lines does.
+    // A header's cells are in Table Header, bold in Neutral; a cell set
+    // to end its lines does.
     let header = fonts().face(laid[9].layout.lines[0].runs[0].face);
     assert_eq!(header.weight(), 700);
     let body = fonts().face(laid[11].layout.lines[0].runs[0].face);
@@ -204,6 +205,64 @@ fn blocks_lay_out_in_their_places() {
             .filter_map(|p| p.marker.as_ref())
             .all(|m| !m.missing)
     );
+}
+
+/// A table's header row's paragraphs are in Table Header, as headings are
+/// in theirs, so nothing looks as it does by where it sits (review
+/// sjj5ak5a): a header cell in body text's style isn't bold, and a cell
+/// of another row in Table Header is. A document whose sheet has no Table
+/// Header, as one made before it had, draws its header row as its other
+/// rows, in body text's style.
+#[test]
+fn a_header_row_looks_as_its_style_says() {
+    let sheet = sheet();
+    let mut document = story::build(&neutral(), &every_kind());
+    let header = story::style_with_role(&document, story::TABLE_HEADER).expect("Table Header");
+    let body = story::style_named(&document, "Body").unwrap();
+    let flow = story::flow(&document, &sheet, WIDTH).entries;
+    let style = |document: &doc::Document, k: usize| {
+        document
+            .paragraph(flow[k].id)
+            .unwrap()
+            .props
+            .get(keys::STYLE)
+            .cloned()
+    };
+    assert_eq!(style(&document, 9), Some(Value::Ref(header)));
+    assert_eq!(style(&document, 10), Some(Value::Ref(header)));
+    assert_eq!(style(&document, 11), None);
+    let weight = |document: &doc::Document, sheet: &StyleSheet, k: usize| {
+        let laid = story::lay_out(document, sheet, fonts(), WIDTH);
+        fonts().face(laid[k].layout.lines[0].runs[0].face).weight()
+    };
+    for (k, to) in [(9, body), (11, header)] {
+        document
+            .apply(&doc::Op::SetParaProp {
+                paragraph: flow[k].id,
+                key: keys::STYLE.to_string(),
+                value: Some(Value::Ref(to)),
+            })
+            .unwrap();
+    }
+    assert_eq!(weight(&document, &sheet, 9), 400, "a header cell in Body");
+    assert_eq!(weight(&document, &sheet, 10), 700);
+    assert_eq!(weight(&document, &sheet, 11), 700, "a cell in Table Header");
+    // Neutral's version 2, from before Table Header: the header row names
+    // no style, and is in Body.
+    let older = story::SheetSpec::parse(
+        &testkit::specs("styles/versions")
+            .expect("spec/styles/versions")
+            .into_iter()
+            .find(|(name, _)| name == "neutral-2")
+            .expect("neutral-2.ron")
+            .1,
+    )
+    .expect("a stylesheet");
+    let document = story::build(&older, &every_kind());
+    let sheet = StyleSheet::of(&document, &StyleSheet::from_spec(&neutral()));
+    assert!(sheet.table_header().is_none());
+    assert_eq!(style(&document, 9), None);
+    assert_eq!(weight(&document, &sheet, 9), 400);
 }
 
 #[test]
