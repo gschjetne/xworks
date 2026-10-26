@@ -501,6 +501,11 @@ the stage's own, open to the owner's review.
   have it; Check Off has no shortcut for now.
 - **Markdown files have `.xw` files' budgets:** a 500-page file opens in
   200 ms, and a keystroke takes 16.7 ms.
+- **Addresses typed become links in every document** (project owner,
+  2026-10-25, review jy4a2tx5), `.xw` documents too: a web or e-mail
+  address becomes a link once a space or punctuation follows it, and Undo
+  right after takes the link off, as Word, Pages, Writer and Google Docs
+  do.
 
 **What stage 6's follow-up built** (from review jy4a2tx5). The choices
 below are its own, open to the owner's review.
@@ -567,8 +572,8 @@ below are its own, open to the owner's review.
   leaves the caret, and typing on in a link made so takes it along, as
   part of the typing. Pasting links the addresses that came with it, as
   an edit of its own Undo takes back, since in a Markdown file an
-  address left plain would be written escaped. In `.xw` documents both
-  are off until the owner says (`spec/editing.ron`).
+  address left plain would be written escaped. `.xw` documents link
+  addresses as typed and pasted too (below; `spec/editing.ron`).
 - **Measured** (under WSL, render-cpu, the 95th percentile): a 500-page
   Markdown file, 0.6 MB and 13,545 paragraphs, opens in 150 ms, about
   half of it reading the Markdown, once it was laid out once rather than

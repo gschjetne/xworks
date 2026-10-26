@@ -5,8 +5,9 @@
     // punctuation follows it, as GitHub's autolinks read it, and Undo
     // right after takes the link off, leaving the text (review jy4a2tx5).
     // In Markdown documents it must, or the file would read back
-    // otherwise; in xWorks documents it's still open with the owner.
-    links_as_typed: (markdown: true, xworks: false),
+    // otherwise; in xWorks documents it does too, as Word, Pages, Writer
+    // and Google Docs do (project owner, 2026-10-25, review jy4a2tx5).
+    links_as_typed: (markdown: true, xworks: true),
     // A Markdown file is written this many milliseconds after the first
     // edit not yet written, with the edits made meanwhile, on a worker, so
     // it's on disk within a second and the keystroke doesn't wait for it

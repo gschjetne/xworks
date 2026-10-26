@@ -304,9 +304,10 @@ fn a_rule_is_drawn_and_printed_but_isnt_text() {
     assert_eq!(with.view().items.len(), without.view().items.len() + 1);
 }
 
-/// Typing an address makes it a link in an `.xw` document only where
-/// spec/editing.ron says so, which it doesn't yet (review jy4a2tx5); where
-/// it does, Undo right after takes the link off and leaves the text.
+/// Typing an address makes it a link in an `.xw` document where
+/// spec/editing.ron says so, as it does (review jy4a2tx5), and Undo right
+/// after takes the link off and leaves the text; switched off, it stays
+/// text.
 #[test]
 fn links_as_typed_in_xworks_documents_follow_the_switch() {
     let linked = |res: Arc<Resources>| {
@@ -321,14 +322,14 @@ fn links_as_typed_in_xworks_documents_follow_the_switch() {
         let link = p.runs.iter().find_map(|r| r.props.get(keys::LINK).cloned());
         (editor, link)
     };
-    let res = resources("links-off");
-    assert!(!res.editing.links_as_typed.xworks);
-    let (_, link) = linked(res);
+    let mut off = (*resources("links-off")).clone();
+    off.editing.links_as_typed.xworks = false;
+    let (_, link) = linked(Arc::new(off));
     assert_eq!(link, None);
 
-    let mut on = (*resources("links-on")).clone();
-    on.editing.links_as_typed.xworks = true;
-    let (mut editor, link) = linked(Arc::new(on));
+    let res = resources("links-on");
+    assert!(res.editing.links_as_typed.xworks);
+    let (mut editor, link) = linked(res);
     assert_eq!(link, Some(Value::Text("http://www.example.net".into())));
     command(&mut editor, "undo");
     let document = editor.document();
