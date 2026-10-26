@@ -280,15 +280,18 @@ impl Kit<'_> {
     }
 
     /// `text` laid out in `ty`, in `family`, or the interface's family
-    /// for none: a font family's name shown in itself.
+    /// for none: a font family's name shown in itself. A family that
+    /// can't show it, as one for a script without Latin letters can't
+    /// show its own name, leaves it to the interface's.
     pub fn layout_in(&self, text: &str, family: Option<&str>, ty: Type) -> Arc<text::Layout> {
-        self.labels.get(
-            self.fonts,
-            family.unwrap_or(&self.theme.sizes.family),
-            text,
-            ty.size,
-            ty.weight,
-        )
+        let ui = &self.theme.sizes.family;
+        let laid = self
+            .labels
+            .get(self.fonts, family.unwrap_or(ui), text, ty.size, ty.weight);
+        if laid.missing && family.is_some_and(|f| f != ui) {
+            return self.labels.get(self.fonts, ui, text, ty.size, ty.weight);
+        }
+        laid
     }
 
     /// How wide `text` is in `ty`.

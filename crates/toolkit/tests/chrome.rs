@@ -53,6 +53,20 @@ fn icons() -> &'static Icons {
     })
 }
 
+/// `items`, with the items of groups among them in their places: what's
+/// drawn, however it's grouped.
+fn flat(items: &[scene::Item]) -> Vec<scene::Item> {
+    let mut out = Vec::new();
+    let mut stack: Vec<&scene::Item> = items.iter().rev().collect();
+    while let Some(item) = stack.pop() {
+        match item {
+            scene::Item::Group(group) => stack.extend(group.items.iter().rev()),
+            other => out.push(other.clone()),
+        }
+    }
+    out
+}
+
 fn px(n: i64) -> i64 {
     n * PIXEL
 }
@@ -545,7 +559,7 @@ fn the_inspector_hits_its_controls() {
     assert_eq!(view.hit(px(900), px(100)), None);
     let field = Field::new("12 pt");
     let drawn = view.draw(&kit, &model, 0, None, Some((at(0, 2, 0), &field)));
-    assert!(drawn.len() > 20);
+    assert!(flat(&drawn).len() > 20);
 }
 
 /// A tab of `rows` rows, each a length with a note beside it, under one
@@ -796,7 +810,7 @@ fn colours_show_their_swatches_and_faces_themselves() {
     };
     let (x, y) = view.control(colour).unwrap().centre();
     assert_eq!(view.hit(x, y), Some(InspectorHit::Control(colour, 0)));
-    let drawn = view.draw(&kit, &model, 0, None, None);
+    let drawn: Vec<scene::Item> = flat(&view.draw(&kit, &model, 0, None, None));
     let fills = |items: &[scene::Item], c: scene::Color| {
         items
             .iter()
