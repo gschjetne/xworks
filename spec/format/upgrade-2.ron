@@ -1,10 +1,13 @@
 // The stylesheet a schema 2 document gains when it's upgraded to schema 3
 // (README.md, "Upgrading"): Neutral as it was at version 1, which every
-// schema 2 document was laid out in, as the document's objects, the sheet
-// first at ID 0 and its styles and parts after it. The upgrade moves the
-// IDs above every ID the file uses. It's frozen: Neutral may change, but
-// what a schema 2 document looked like doesn't (crates/store/tests/
-// fixtures.rs checks it against Neutral while that's at version 1).
+// schema 2 document was laid out in, with a Table Header before Heading
+// that looks as header rows did, by their place, the body's text in bold
+// (review sjj5ak5a), which their header rows' paragraphs take; as the
+// document's objects, the sheet first at ID 0 and its styles and parts
+// after it. The upgrade moves the IDs above every ID the file uses. It's
+// frozen: Neutral may change, but what a schema 2 document looked like
+// doesn't (crates/store/tests/fixtures.rs checks it against Neutral's
+// version 1, kept in spec/styles/versions/).
 [
     ((0), Sheet((
         styles: [
@@ -35,6 +38,7 @@
             (25),
             (26),
             (27),
+            (28),
         ],
         props: {
             "align": Text("start"),
@@ -228,7 +232,7 @@
     ((15), Style((
         sheet: (0),
         kind: Paragraph,
-        base: Some((22)),
+        base: Some((23)),
         props: {
             "heading": Int(1),
             "name": Text("Heading 1"),
@@ -241,7 +245,7 @@
     ((16), Style((
         sheet: (0),
         kind: Paragraph,
-        base: Some((22)),
+        base: Some((23)),
         props: {
             "heading": Int(2),
             "name": Text("Heading 2"),
@@ -254,7 +258,7 @@
     ((17), Style((
         sheet: (0),
         kind: Paragraph,
-        base: Some((22)),
+        base: Some((23)),
         props: {
             "heading": Int(3),
             "name": Text("Heading 3"),
@@ -267,7 +271,7 @@
     ((18), Style((
         sheet: (0),
         kind: Paragraph,
-        base: Some((22)),
+        base: Some((23)),
         props: {
             "heading": Int(4),
             "name": Text("Heading 4"),
@@ -279,7 +283,7 @@
     ((19), Style((
         sheet: (0),
         kind: Paragraph,
-        base: Some((22)),
+        base: Some((23)),
         props: {
             "heading": Int(5),
             "name": Text("Heading 5"),
@@ -318,6 +322,16 @@
     ((22), Style((
         sheet: (0),
         kind: Paragraph,
+        base: Some((14)),
+        props: {
+            "bold": Bool(true),
+            "name": Text("Table Header"),
+            "role": Text("table-header"),
+        },
+    ))),
+    ((23), Style((
+        sheet: (0),
+        kind: Paragraph,
         base: None,
         props: {
             "bold": Bool(true),
@@ -326,7 +340,7 @@
             "name": Text("Heading"),
         },
     ))),
-    ((23), Style((
+    ((24), Style((
         sheet: (0),
         kind: Character,
         base: None,
@@ -336,7 +350,7 @@
             "role": Text("emphasis"),
         },
     ))),
-    ((24), Style((
+    ((25), Style((
         sheet: (0),
         kind: Character,
         base: None,
@@ -346,7 +360,7 @@
             "role": Text("strong"),
         },
     ))),
-    ((25), Style((
+    ((26), Style((
         sheet: (0),
         kind: Character,
         base: None,
@@ -357,7 +371,7 @@
             "role": Text("code"),
         },
     ))),
-    ((26), Style((
+    ((27), Style((
         sheet: (0),
         kind: Character,
         base: None,
@@ -367,7 +381,7 @@
             "role": Text("link"),
         },
     ))),
-    ((27), Style((
+    ((28), Style((
         sheet: (0),
         kind: Character,
         base: None,

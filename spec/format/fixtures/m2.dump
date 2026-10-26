@@ -50,9 +50,9 @@ root #0
     1 {"picture": Text("3af5ab1b47f86f9c2927ae82d8271a40f994dad2783dc7cb2ac05d5aca9ae894"), "picture-alt": Text("gradient"), "picture-height": Int(228600), "picture-width": Int(304800)}
 #27 table in #0 [#28, #31] {}
 #28 row in #27 [#29, #30] {}
-#29 paragraph in #28 "Name" {}
+#29 paragraph in #28 "Name" {"style": Text("Table Header")}
     4 {}
-#30 paragraph in #28 "Size" {}
+#30 paragraph in #28 "Size" {"style": Text("Table Header")}
     4 {}
 #31 row in #27 [#32, #33] {}
 #32 paragraph in #31 "Pear" {}

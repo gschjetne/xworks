@@ -143,14 +143,20 @@ so it's upgraded whole or not at all:
   table, and every snapshot and every log entry is read with schema 1's
   types, kept frozen in `store`; then it's upgraded as a schema 2 file is.
 - **From schema 2:** every snapshot gains the stylesheet schema 2's
-  documents were laid out in, Neutral as it was at version 1, frozen as
-  objects in [upgrade-2.ron](upgrade-2.ron), at IDs above every ID the
-  file has ever given out, in a snapshot or an operation; every snapshot's
-  next ID goes past them. In every snapshot and every log entry, applied
-  or undoing, a paragraph's `style`, which named its style by its name,
-  names it by ID; a name the sheet hasn't, which laid out as the default
-  style, is unset. Everything is written in schema 3's encoding, and the
-  user version becomes 3. Named versions replay from the snapshots before
+  documents were laid out in, Neutral as it was at version 1, with a
+  Table Header that looks as header rows did by their place, the body's
+  text in bold, frozen as objects in [upgrade-2.ron](upgrade-2.ron), at
+  IDs above every ID the file has ever given out, in a snapshot or an
+  operation; every snapshot's next ID goes past them. In every snapshot
+  and every log entry, applied or undoing, a paragraph's `style`, which
+  named its style by its name, names it by ID; a name the sheet hasn't,
+  which laid out as the default style, is unset. A paragraph that's ever
+  a cell of a table's first row, its header, in a snapshot or a table an
+  operation inserts, names Table Header wherever its style is set to
+  none or to the default style, as it laid out bold in that; schema 2's
+  tables keep their shape, so that's the same in every snapshot as
+  replaying the log makes it. Everything is written in schema 3's
+  encoding, and the user version becomes 3. Named versions replay from the snapshots before
   them, and undo and redo take back what they did. What doesn't decode
   leaves the file as it was, and opening it is an error.
 

@@ -11,7 +11,7 @@ an older file upgrades it, so the tests open copies.
 | `m1.dump` | M1's own dump of it (`xworks-dump`), which later dumps must match but for the schema line |
 | `m1.ron` | the session that wrote it |
 | `m2.xw` | a schema 2 document, written by M2 before its stage 9 |
-| `m2.dump` | that code's own dump of it, which later dumps must match but for the schema line |
+| `m2.dump` | that code's own dump of it, which later dumps must match but for the schema line; its header row's cells name Table Header, as the upgrade has them since stage 9's follow-up (review sjj5ak5a) |
 | `m2.ron` | the session that wrote it |
 
 `m1.xw` was written at commit 74aaffb, M1's code, by playing `m1.ron`

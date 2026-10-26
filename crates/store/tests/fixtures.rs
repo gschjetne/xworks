@@ -170,7 +170,14 @@ fn m2s_file_opens_with_its_text_and_history() {
             .iter()
             .any(|(s, t)| s == "Code" && t.starts_with("let answer"))
     );
-    // Table cells name no style, as before.
+    // Its table's header row is in Table Header, which looks as header
+    // rows did by their place (review sjj5ak5a); its other cells name no
+    // style, as before.
+    assert!(
+        styles
+            .iter()
+            .any(|(s, t)| s == "Table Header" && t == "Name")
+    );
     assert!(styles.iter().any(|(s, t)| s.is_empty() && t == "Pear"));
 
     let versions = opened.store.versions().expect("versions");
@@ -200,6 +207,28 @@ fn m2s_file_opens_with_its_text_and_history() {
             .1
             .ends_with("the same history.")
     );
+
+    // The table, made in entry 50, is the same whether replayed from the
+    // first snapshot or read from the one after entry 100: its header
+    // row's cells in Table Header either way.
+    for seq in [99, 100] {
+        let document = opened.store.document_at(seq).expect("a version");
+        let table: Vec<(String, String)> = styled(&document)
+            .into_iter()
+            .filter(|(_, t)| ["Name", "Size", "Pear", "Small"].contains(&t.as_str()))
+            .collect();
+        let pair = |s: &str, t: &str| (s.to_string(), t.to_string());
+        assert_eq!(
+            table,
+            [
+                pair("Table Header", "Name"),
+                pair("Table Header", "Size"),
+                pair("", "Pear"),
+                pair("", "Small"),
+            ],
+            "after entry {seq}"
+        );
+    }
 
     // Undo and Redo pick up where M2 left them, styles and all.
     let (mut document, mut history) = (opened.document.clone(), opened.history);
@@ -289,17 +318,34 @@ fn a_damaged_older_file_is_left_as_it_was() {
 }
 
 /// The stylesheet a schema 2 document gains is Neutral as it was at
-/// version 1, which schema 2's documents were laid out in: the frozen
-/// copy is exactly what Neutral's version 1, kept in
-/// `spec/styles/versions/`, makes.
+/// version 1, which schema 2's documents were laid out in, with a Table
+/// Header for their header rows that looks as header rows did, the body's
+/// text in bold (review sjj5ak5a), before Heading as Neutral 3 has it:
+/// the frozen copy is exactly what that makes of Neutral's version 1, kept
+/// in `spec/styles/versions/`.
 #[test]
 fn schema_2s_stylesheet_is_neutral_at_version_1() {
     let source = std::fs::read_to_string(
         testkit::workspace_root().join("spec/styles/versions/neutral-1.ron"),
     )
     .expect("neutral-1.ron");
-    let neutral = story::SheetSpec::parse(&source).expect("a stylesheet");
+    let mut neutral = story::SheetSpec::parse(&source).expect("a stylesheet");
     assert_eq!((neutral.name.as_str(), neutral.version), ("Neutral", 1));
+    let heading = neutral
+        .paragraph
+        .iter()
+        .position(|s| s.name == "Heading")
+        .expect("Heading");
+    neutral.paragraph.insert(
+        heading,
+        story::sheet::StyleSpec {
+            name: "Table Header".to_string(),
+            role: Some(story::TABLE_HEADER.to_string()),
+            based_on: Some("Body".to_string()),
+            bold: Some(true),
+            ..story::sheet::StyleSpec::default()
+        },
+    );
     let frozen_path = testkit::workspace_root().join("spec/format/upgrade-2.ron");
     let frozen: Vec<(ObjectId, Object)> =
         ron::from_str(&std::fs::read_to_string(&frozen_path).expect("upgrade-2.ron"))

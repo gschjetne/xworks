@@ -697,8 +697,9 @@ pub fn dump(path: &Path) -> Result<String, Error> {
 /// log in today's encoding, so every named version still replays from the
 /// snapshot before it. A schema 1 file's are read with schema 1's types;
 /// a schema 2 file's documents gain the stylesheet they were laid out
-/// with, and their paragraphs name its styles by ID. If anything in it
-/// doesn't decode, the file is left as it was.
+/// with, and their paragraphs name its styles by ID, its tables' header
+/// rows' its Table Header. If anything in it doesn't decode, the file is
+/// left as it was.
 fn upgrade(connection: &mut Connection, from: i64) -> Result<(), Error> {
     let tx = connection.transaction()?;
     if from == 1 {
@@ -751,7 +752,11 @@ fn upgrade(connection: &mut Connection, from: i64) -> Result<(), Error> {
         )
         .max()
         .unwrap_or(0);
-    let upgrade = v2::Upgrade::new(top)?;
+    let headers = v2::header_cells(
+        snapshots.iter().map(|(_, s)| s),
+        entries.iter().flat_map(|(_, a, b)| a.iter().chain(b)),
+    );
+    let upgrade = v2::Upgrade::new(top, headers)?;
     for (seq, mut snapshot) in snapshots {
         upgrade.snapshot(&mut snapshot);
         tx.execute(
