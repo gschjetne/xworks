@@ -829,7 +829,9 @@ impl Editor {
     /// Where style `style`'s value of `key` comes from, as the Style tab
     /// notes it: "this style", the style up its chain that sets it, or
     /// the defaults; for a character style, whose chain ends in nothing,
-    /// "not set" where none does. And whether the style sets it itself.
+    /// "the paragraph's" where none sets it, as the text then has it as
+    /// its paragraph does, while its field says it's not set. And whether
+    /// the style sets it itself.
     fn source_note(&self, style: ObjectId, key: &str, defaults: bool) -> (String, bool) {
         match find(&self.document, Some(style), key, defaults, &valid(key)) {
             Some((_, source)) => match source.level {
@@ -839,7 +841,7 @@ impl Editor {
                 Level::Direct | Level::Program => ("xWorks".to_string(), false),
             },
             None if defaults => ("xWorks".to_string(), false),
-            None => ("not set".to_string(), false),
+            None => ("the paragraph's".to_string(), false),
         }
     }
 
@@ -1437,9 +1439,11 @@ impl Editor {
     }
 
     /// The screen of tab layout `id`: its name, what uses it, and its
-    /// stops, each its place on the ruler, read from its zero in its
-    /// unit, its alignment and its leader, to move, change and remove,
-    /// and one more to add, as the Text tab has a paragraph's.
+    /// stops, each a section of its own: its place on the ruler, read
+    /// from its zero in its unit, as the Text tab reads a paragraph's, its
+    /// alignment and its leader, each a field or a list as the other
+    /// screens' values are, and a button to remove it; and one more to
+    /// add.
     fn layout_screen(&self, id: ObjectId, writable: bool) -> Vec<Section> {
         let unit = self.res.settings.units();
         let stops: Vec<TabStop> = match self.sheet.part(id) {
@@ -1454,71 +1458,80 @@ impl Editor {
             StopKind::Decimal('.'),
             StopKind::Decimal(','),
         ];
-        let mut rows: Vec<Row> = stops
-            .iter()
-            .map(|stop| {
-                let at = vec![id_arg(id), Arg::Int(stop.position)];
-                let kind = stop_kind(stop.align);
-                let mut options = kinds.to_vec();
-                if !options.contains(&kind) {
-                    options.push(kind);
-                }
-                let mut leaders: Vec<(String, String)> = LEADERS
-                    .iter()
-                    .map(|(c, l)| (c.to_string(), l.to_string()))
-                    .collect();
-                let leader = stop.leader.map(String::from).unwrap_or_default();
-                if !leaders.iter().any(|(c, _)| *c == leader) {
-                    leaders.push((leader.clone(), format!("Leader {leader}")));
-                }
-                row(
-                    "",
-                    vec![
-                        control(
-                            "layout-stop-place",
-                            at.clone(),
-                            writable,
-                            ControlKind::Length {
-                                value: Some(Length {
-                                    value: stop.position + shift,
-                                    unit,
-                                }),
-                                prefix: String::new(),
-                                plain: true,
-                            },
-                        ),
-                        control(
+        let mut sections = vec![Section {
+            title: "Tab layout".to_string(),
+            rows: self.part_rows(id, writable),
+        }];
+        for (k, stop) in stops.iter().enumerate() {
+            let at = vec![id_arg(id), Arg::Int(stop.position)];
+            let kind = stop_kind(stop.align);
+            let mut options = kinds.to_vec();
+            if !options.contains(&kind) {
+                options.push(kind);
+            }
+            let mut leaders: Vec<(String, String)> = LEADERS
+                .iter()
+                .map(|(c, l)| (c.to_string(), l.to_string()))
+                .collect();
+            let leader = stop.leader.map(String::from).unwrap_or_default();
+            if !leaders.iter().any(|(c, _)| *c == leader) {
+                leaders.push((leader.clone(), format!("Leader {leader}")));
+            }
+            sections.push(Section {
+                title: format!("Tab stop {}", k + 1),
+                rows: vec![
+                    row(
+                        "Position",
+                        vec![
+                            control(
+                                "layout-stop-place",
+                                at.clone(),
+                                writable,
+                                length(stop.position + shift, unit),
+                            ),
+                            button(
+                                "layout-stop-remove",
+                                at.clone(),
+                                writable,
+                                "Remove",
+                                Some("x"),
+                            ),
+                        ],
+                    ),
+                    row(
+                        "Alignment",
+                        vec![control(
                             "layout-stop-kind",
                             at.clone(),
                             writable,
-                            ControlKind::Choice {
-                                selected: options.iter().position(|k| *k == kind),
-                                choices: options
+                            choice(
+                                options
                                     .iter()
                                     .map(|k| Choice::new(Arg::Text(k.id()), stop_label(*k)))
                                     .collect(),
-                                plain: true,
-                            },
-                        ),
-                        control(
+                                options.iter().position(|k| *k == kind),
+                            ),
+                        )],
+                    ),
+                    row(
+                        "Leader",
+                        vec![control(
                             "layout-stop-leader",
-                            at.clone(),
+                            at,
                             writable,
-                            ControlKind::Choice {
-                                selected: leaders.iter().position(|(c, _)| *c == leader),
-                                choices: leaders
+                            choice(
+                                leaders
                                     .iter()
                                     .map(|(c, l)| Choice::new(Arg::Text(c.clone()), l.clone()))
                                     .collect(),
-                                plain: true,
-                            },
-                        ),
-                        button("layout-stop-remove", at, writable, "Remove", Some("x")),
-                    ],
-                )
-            })
-            .collect();
-        rows.push(row(
+                                leaders.iter().position(|(c, _)| *c == leader),
+                            ),
+                        )],
+                    ),
+                ],
+            });
+        }
+        let add = row(
             "",
             vec![button(
                 "layout-stop-add",
@@ -1527,17 +1540,16 @@ impl Editor {
                 "Add a tab stop",
                 None,
             )],
-        ));
-        vec![
-            Section {
-                title: "Tab layout".to_string(),
-                rows: self.part_rows(id, writable),
-            },
-            Section {
+        );
+        // Add, under the last stop, or alone, where there's none yet.
+        match sections.last_mut().filter(|_| !stops.is_empty()) {
+            Some(last) => last.rows.push(add),
+            None => sections.push(Section {
                 title: "Tab stops".to_string(),
-                rows,
-            },
-        ]
+                rows: vec![row("", vec![note("None yet")]), add],
+            }),
+        }
+        sections
     }
 
     /// The screen of list definition `id`: its name and what it's for, and
@@ -1654,7 +1666,7 @@ impl Editor {
                 length(level.indent, unit),
             ));
             rows.push(with_reset(
-                "After marker",
+                "Marker gap",
                 keys::LEVEL_GAP,
                 length(level.gap, unit),
             ));

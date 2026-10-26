@@ -276,21 +276,31 @@ fn a_tab_layouts_stop_moved_moves_every_paragraphs_stops() {
     let stop = stops(&window);
     assert_eq!(stop.align, text::TabAlign::End);
     assert_eq!(stop.leader, Some('.'));
-    // The stop's row on the layout's screen: where it is, its kind, its
-    // leader, and a button to remove it.
+    // The stop's section on the layout's screen: where it is, a field,
+    // with a button to remove it; its alignment and its leader, lists; and
+    // Add under it.
     let tab = style_tab(&window);
     let rows = &tab
         .sections
         .iter()
-        .find(|s| s.title == "Tab stops")
+        .find(|s| s.title == "Tab stop 1")
         .unwrap()
         .rows;
-    assert_eq!(rows.len(), 2, "a stop and Add");
-    let ControlKind::Length { value, .. } = &rows[0].controls[0].kind else {
+    let labels: Vec<&str> = rows.iter().map(|r| r.label.as_str()).collect();
+    assert_eq!(labels, ["Position", "Alignment", "Leader", ""]);
+    let ControlKind::Length { value, plain, .. } = &rows[0].controls[0].kind else {
         panic!("a length");
     };
     assert_eq!(value.unwrap().value, 100 * MILLIMETRE);
-    assert_eq!(rows[0].controls[3].command, "layout-stop-remove");
+    assert!(!plain, "a field");
+    assert_eq!(rows[0].controls[1].command, "layout-stop-remove");
+    for row in &rows[1..3] {
+        assert!(matches!(
+            row.controls[0].kind,
+            ControlKind::Choice { plain: false, .. }
+        ));
+    }
+    assert_eq!(rows[3].controls[0].command, "layout-stop-add");
     // Its leader is drawn on the page.
     let dots = window.view().items.len();
     with(
@@ -484,7 +494,7 @@ fn a_character_styles_values_are_set_and_let_go() {
     assert_eq!(
         weight_row.controls[1].kind,
         ControlKind::Note {
-            text: "not set".to_string()
+            text: "the paragraph's".to_string()
         }
     );
     // Set, and let go.

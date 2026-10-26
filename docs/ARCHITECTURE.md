@@ -944,17 +944,18 @@ review; ★ marks those the owner should decide.
   go left the value too little room.
 - **Each screen.** A character style sets each value it can (face, size,
   weight, slant, colour, underline, strikethrough, ligatures), and "Not
-  set", which leaves the text as its paragraph has it, is a choice of its
-  own. A face's family is chosen from those xWorks has, each shown in
-  itself, or in Inter where it can't show its own name, as a script's
-  can't. A colour is typed as `#rrggbb` (or `#rgb`, or without `#`)
-  beside its swatch. A tab layout's stops read from the ruler's zero, in
-  its unit, as the Text tab reads a paragraph's (a layout has no
-  paragraph, so as one straight in the story), each with its alignment
-  and leader. A list definition shows at least three levels, each its
-  marker, a bullet or a numbering, its bullet or how its number reads
-  and where it starts, its indent and the room after its marker. A part's
-  screen says what uses it.
+  set" is a choice of its own, noted as "the paragraph's", as the text
+  then has it as its paragraph does. A face's family is chosen from those
+  xWorks has, each shown in itself, or in Inter where it can't show its
+  own name, as a script's can't. A colour is typed as `#rrggbb` (or
+  `#rgb`, or without `#`) beside its swatch. A tab layout's stops are a
+  section each, a field for its place, read from the ruler's zero in its
+  unit as the Text tab reads a paragraph's (a layout has no paragraph,
+  so as one straight in the story), and lists for its alignment and
+  leader. A list definition shows at least three levels, each its marker,
+  a bullet or a numbering, its bullet or how its number reads and where
+  it starts, its indent and its marker's gap. A part's screen says what
+  uses it.
 - ★ **Leaders and levels are new to the model.** A tab stop's leader is a
   character, kept after its position (`"end 4950000 ."`) and in
   stylesheet files, and drawn as glyphs on a grid from the paragraph's
@@ -962,8 +963,11 @@ review; ★ marks those the owner should decide.
   A list definition's level is a set of properties, `level-2-marker` and
   so on, each one edit; what a level doesn't set it takes from the
   definition, as every list did before. Technical's heading numbers are
-  its Headings definition's levels. ★ The "hanging indent" asked for is
-  the room after the marker ("After marker"), as our markers hang
+  its Headings definition's levels. An update takes both three-way as it
+  takes any value: a level's properties one by one, a leader with its
+  layout's stops. No sheet that comes with xWorks sets either yet, so
+  none changed version. ★ The "hanging indent" asked for is the room
+  between the marker and the text ("Marker gap"), as our markers hang
   right-aligned before the text.
 - **New, rename and delete** for every kind, each one step for Undo. New
   makes a style based on the one shown, or a part that copies it, named
