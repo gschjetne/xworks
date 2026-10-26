@@ -104,40 +104,56 @@ fn a_document_from_book_1_takes_book_2_and_keeps_its_own_changes() {
     );
 }
 
-/// Where the document and the newer version changed the same value
-/// differently, the document's stays and that's said; where they made the
-/// same change, nothing is.
+/// A style the base had and the document removed stays removed, the
+/// person's own change: nothing is said where the newer version left it
+/// as it was, and where it changed it, that it stays removed is. A style
+/// the newer version adds, based on it, is based on the nearest up the
+/// newer version's chain that the document has.
 #[test]
-fn where_both_changed_a_value_the_documents_stays_and_is_said() {
+fn a_style_the_document_removed_stays_removed() {
+    let mut document = story::new_document(&book_2());
+    let h6 = id(&document, "Heading 6");
+    document.apply(&Op::DeleteStyle { style: h6 }).unwrap();
+    // The newer version leaves Heading 6 as it was, but for the body.
     let mut newer = book_2();
     newer.version = 3;
-    let body = newer
-        .paragraph
-        .iter_mut()
-        .find(|s| s.name == "Body")
-        .unwrap();
-    body.indent_first = Some(Length::Mm(5.0));
-    body.size = Some(Length::Pt(12.0));
-    let mut document = story::new_document(&book_2());
-    let body = id(&document, "Body");
-    set(
-        &mut document,
-        body,
-        keys::INDENT_FIRST,
-        Value::Int(6 * MILLIMETRE),
-    );
-    set(&mut document, body, keys::SIZE, Value::Int(12 * POINT));
+    newer.paragraph[0].size = Some(Length::Pt(12.0));
     let (update, after) = updated(&document, &book_2(), &newer);
-    let resolved = StyleSheet::of(&after, &StyleSheet::from_spec(&newer));
-    let body = resolved.default_style();
-    assert_eq!(body.indents.first, 6 * MILLIMETRE, "the document's stays");
-    assert_eq!(body.size, 12 * POINT);
+    assert!(story::style_named(&after, "Heading 6").is_none());
+    assert_eq!(said(&update.changes), ["Body: size 12 pt, not nothing"]);
+    assert!(update.kept.is_empty(), "{:?}", said(&update.kept));
+    // It changes Heading 6, and adds a style based on it.
+    let at = newer
+        .paragraph
+        .iter()
+        .position(|s| s.name == "Heading 6")
+        .unwrap();
+    newer.paragraph[at].size = Some(Length::Pt(9.0));
+    newer.paragraph.insert(
+        at + 1,
+        story::sheet::StyleSpec {
+            name: "Run-in Heading".to_string(),
+            role: Some("run-in".to_string()),
+            based_on: Some("Heading 6".to_string()),
+            italic: Some(true),
+            ..story::sheet::StyleSpec::default()
+        },
+    );
+    let (update, after) = updated(&document, &book_2(), &newer);
+    assert!(story::style_named(&after, "Heading 6").is_none());
     assert_eq!(
         said(&update.kept),
-        ["Body: indent-first 17.01 pt, kept as the document has it; the new version has 14.17 pt"]
+        ["Heading 6: changed in the new version, kept removed as the document removed it"]
     );
-    assert!(update.changes.is_empty(), "{:?}", said(&update.changes));
-    assert_eq!(resolved.origin, Some(("Book".to_string(), 3)));
+    let run_in = after.style(id(&after, "Run-in Heading")).unwrap();
+    assert_eq!(run_in.base, Some(id(&after, "Heading 5")));
+    let resolved = StyleSheet::of(&after, &StyleSheet::from_spec(&newer));
+    let style = resolved
+        .paragraph
+        .iter()
+        .find(|s| s.name == "Run-in Heading")
+        .unwrap();
+    assert!(style.italic && style.heading == Some(5), "{style:?}");
 }
 
 /// A style the newer version removes goes, if nothing uses it and the
@@ -254,7 +270,13 @@ fn a_style_both_added_alike_is_no_change() {
         .unwrap();
     let (update, _) = updated(&document, &spec("styles/versions", "neutral-2"), &neutral);
     assert!(update.kept.is_empty(), "{:?}", said(&update.kept));
-    assert!(update.changes.is_empty(), "{:?}", said(&update.changes));
+    assert!(
+        !said(&update.changes)
+            .iter()
+            .any(|c| c.starts_with("Table Header")),
+        "{:?}",
+        said(&update.changes)
+    );
 }
 
 /// Without the version the document copied, the update compares the

@@ -9,10 +9,16 @@
 //! - A value the document changed, and the newer version didn't, stays.
 //! - Where both changed the same value, differently, the document's
 //!   stays, and the update says so.
-//! - Styles and parts the newer version adds come in, after the style
-//!   before them in its order.
-//! - One it removes goes only if nothing uses it and the document didn't
-//!   change it; otherwise it stays, and the update says so.
+//! - Styles and parts the newer version adds, those the base hadn't, come
+//!   in, after the style before them in its order.
+//! - One the base had and the document removed stays removed, and if the
+//!   newer version changed it, the update says so. A style the newer
+//!   version bases on it is based on the nearest up the newer version's
+//!   chain that the document has, and a value naming it is the
+//!   document's, said.
+//! - One the newer version removes goes only if nothing uses it and the
+//!   document didn't change it; otherwise it stays, and the update says
+//!   so.
 //! - The document then records the newer version as its origin.
 //!
 //! Where the base can't be had, [`update`] falls back to comparing the
@@ -210,15 +216,35 @@ pub fn update(document: &mut Document, base: Option<&Document>, newer: &Document
     let mut n_to_d = matches(newer, document);
     let b_to_d = matches(base, document);
     let b_from_n = inverse(&n_to_b);
-    // Those the document lacks get IDs of its own.
+    // Those the document lacks: new, getting IDs of its own, where the
+    // base hadn't them either; removed by the document where it had.
     let mut fresh: Vec<ObjectId> = Vec::new();
+    let mut removed: Vec<ObjectId> = Vec::new();
     for &id in newer.styles() {
         if let std::collections::hash_map::Entry::Vacant(slot) = n_to_d.entry(id) {
-            slot.insert(document.new_id());
-            fresh.push(id);
+            if n_to_b.contains_key(&id) {
+                removed.push(id);
+            } else {
+                slot.insert(document.new_id());
+                fresh.push(id);
+            }
         }
     }
     n_to_d.insert(newer_sheet, sheet);
+    // The document's style a newer style's base is: the one it matches,
+    // or where the document removed that, the nearest up the newer
+    // version's chain the document has, or none.
+    let base_in_document = |base: Option<ObjectId>| -> Option<ObjectId> {
+        let mut at = base;
+        for _ in 0..=newer.styles().len() {
+            let n = at?;
+            if let Some(&d) = n_to_d.get(&n) {
+                return Some(d);
+            }
+            at = newer.style(n).and_then(|s| s.base);
+        }
+        None
+    };
 
     // The changes said in the newer sheet's order: the defaults first,
     // then each style, new or matched.
@@ -249,7 +275,7 @@ pub fn update(document: &mut Document, base: Option<&Document>, newer: &Document
             &seen_base(base_base, Some(&b_to_d)),
             &seen_base(ours.base, None),
         );
-        let want = theirs.base.and_then(|x| n_to_d.get(&x).copied());
+        let want = base_in_document(theirs.base);
         let ours_is_newer = ours.base == want;
         let name = name_of(document, d);
         match way(newer_changed, ours_changed, ours_is_newer) {
@@ -297,7 +323,7 @@ pub fn update(document: &mut Document, base: Option<&Document>, newer: &Document
             let Some(style) = newer.style(n) else {
                 return false;
             };
-            let base_of = style.base.and_then(|b| n_to_d.get(&b).copied());
+            let base_of = base_in_document(style.base);
             if base_of.is_some_and(|b| document.style(b).is_none()) {
                 return true;
             }
@@ -330,6 +356,34 @@ pub fn update(document: &mut Document, base: Option<&Document>, newer: &Document
         if document.style(n_to_d[&n]).is_some() {
             let kind = newer.style(n).map_or("style", |s| s.kind.name());
             say(n, name_of(newer, n), format!("a new {kind}"), false);
+        }
+    }
+
+    // Those the document removed stay removed; said, where the newer
+    // version changed them.
+    for &n in &removed {
+        let (Some(theirs), Some(was)) =
+            (newer.style(n), n_to_b.get(&n).and_then(|&b| base.style(b)))
+        else {
+            continue;
+        };
+        let keys: BTreeSet<&String> = was.props.keys().chain(theirs.props.keys()).collect();
+        let changed = keys.iter().any(|key| {
+            !same(
+                &seen(theirs.props.get(*key), Some(&n_to_b)),
+                &seen(was.props.get(*key), None),
+            )
+        }) || !same(
+            &seen_base(theirs.base, Some(&n_to_b)),
+            &seen_base(was.base, None),
+        );
+        if changed {
+            say(
+                n,
+                name_of(newer, n),
+                "changed in the new version, kept removed as the document removed it".to_string(),
+                true,
+            );
         }
     }
 
@@ -371,6 +425,18 @@ pub fn update(document: &mut Document, base: Option<&Document>, newer: &Document
             );
             match way(newer_changed, ours_changed, ours_is_newer) {
                 Way::Leave => {}
+                // A value naming what the document removed stays as the
+                // document has it.
+                Way::Take if matches!(theirs.get(key), Some(Value::Ref(id)) if !n_to_d.contains_key(id)) =>
+                {
+                    let what = format!(
+                        "{key} {}, kept as the document has it; the new version names {}, \
+                         which the document removed",
+                        show(document, key, ours.get(key)),
+                        show(newer, key, theirs.get(key))
+                    );
+                    say(n, name.clone(), what, true);
+                }
                 Way::Take => {
                     let value = theirs.get(key).and_then(|v| match v {
                         Value::Ref(id) => n_to_d.get(id).map(|to| Value::Ref(*to)),
