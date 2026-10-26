@@ -925,6 +925,67 @@ that need the owner's decision.
     of the person's own, renamed in the document or in the newer version,
     is still a style removed and one added.
 
+**What stage 9's follow-up built: the inspector's screens** (review
+sjj5ak5a). The choices below are the follow-up's own, open to the owner's
+review; ★ marks those the owner should decide.
+- ★ **Choosing what to edit.** The Style tab stays between Text and Page.
+  At its head are two lists, a kind (Paragraph styles, Character styles,
+  Faces, Colours, Tab layouts, Lists) and one of that kind, with New and
+  Delete under them: one list grouped by kind would be thirty rows and
+  more, taller than a window. ★ The tab opens on the caret's paragraph
+  style and follows the caret until the person chooses another style or
+  part, which it then keeps however the caret moves; opening the tab
+  again follows the caret once more.
+- ★ **Following a part.** Where a value names a part, a style's face,
+  colour or tab layout, or, in the Text tab, the list definition the
+  caret's list takes, its row's label is a link to the part's screen,
+  and "Back to" the style goes back. A link in the label's place, not an
+  arrow at the row's end, as an arrow beside the button that lets a value
+  go left the value too little room.
+- **Each screen.** A character style sets each value it can (face, size,
+  weight, slant, colour, underline, strikethrough, ligatures), and "Not
+  set", which leaves the text as its paragraph has it, is a choice of its
+  own. A face's family is chosen from those xWorks has, each shown in
+  itself, or in Inter where it can't show its own name, as a script's
+  can't. A colour is typed as `#rrggbb` (or `#rgb`, or without `#`)
+  beside its swatch. A tab layout's stops read from the ruler's zero, in
+  its unit, as the Text tab reads a paragraph's (a layout has no
+  paragraph, so as one straight in the story), each with its alignment
+  and leader. A list definition shows at least three levels, each its
+  marker, a bullet or a numbering, its bullet or how its number reads
+  and where it starts, its indent and the room after its marker. A part's
+  screen says what uses it.
+- ★ **Leaders and levels are new to the model.** A tab stop's leader is a
+  character, kept after its position (`"end 4950000 ."`) and in
+  stylesheet files, and drawn as glyphs on a grid from the paragraph's
+  edge, so leaders one under another line up; it isn't part of the text.
+  A list definition's level is a set of properties, `level-2-marker` and
+  so on, each one edit; what a level doesn't set it takes from the
+  definition, as every list did before. Technical's heading numbers are
+  its Headings definition's levels. ★ The "hanging indent" asked for is
+  the room after the marker ("After marker"), as our markers hang
+  right-aligned before the text.
+- **New, rename and delete** for every kind, each one step for Undo. New
+  makes a style based on the one shown, or a part that copies it, named
+  "New Colour" and so on, shown to rename. Delete is refused where another
+  style is based on it, and the screen says which; a part styles use can
+  be deleted, and they take what they would without it, as the model has
+  it.
+- **The flaws.** A paragraph style's weight and slant are two rows,
+  Weight (Regular, Bold) and Slant (Upright, Italic). A note beside a
+  value, where it comes from, takes the room its words need, so "As its
+  fonts" fits its field; what still doesn't fit ends in an ellipsis.
+- **The inspector scrolls** under its tabs: with the wheel and touchpad,
+  a thin bar at its edge whose thumb drags and whose track pages, and Tab
+  in a field moving to the next and scrolling it into view. Each row is
+  drawn as a group of its own, so a scroll redraws only the inspector and
+  a hover or a caret only its row. Screen readers get the inspector as a
+  pane of tabs and a scroll view, each control where it's drawn and
+  hidden when it's scrolled away. A recorded session's start keeps the
+  scroll, and the style chosen.
+- ★ **Format, Styles' access key is S;** Align to Start's moves from S to
+  A, as every letter of "Styles" was another item's.
+
 **Container: SQLite** (project owner, 2026-10-18). A document is an SQLite
 database with a fixed, versioned schema: objects, the transaction log, embedded
 fonts and images, and metadata. The reasons:
