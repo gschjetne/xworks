@@ -550,7 +550,7 @@ below are its own, open to the owner's review.
   and a selection across it takes it. It's drawn a hairline wide in the
   rules' colour, across its column, in a quote under its bar, with space
   above and below that the document's stylesheet sets, `rule-space` in
-  its document section: Neutral's is 9 points, and so its version is 2;
+  its document section: Neutral's is 9 points, which made its version 2;
   the other sheets have none and take Neutral's. Written afresh it's
   `---`, or `***` or `___` beside an item's `-` on its line, which would
   make the line itself a rule. Insert, Rule splits the caret's paragraph
@@ -703,7 +703,8 @@ are the stage's own, open to the owner's review unless marked settled.
   file after its own upgrade, gains the sheet schema 2's documents were
   laid out in, Neutral at version 1, frozen in `spec/format/upgrade-2.ron`
   at IDs above any the file used, and its paragraphs' styles named by ID,
-  in every snapshot and log entry, in one SQLite transaction. M2's file
+  in every snapshot and log entry, in one SQLite transaction; since the
+  follow-up, with a Table Header its header rows take (below). M2's file
   is kept as a fixture and opens with its own dump, as M1's does
   (`spec/format/`).
 - **Resolving stays cheap:** an editor resolves its document's sheet once
@@ -733,14 +734,17 @@ are the stage's own, open to the owner's review unless marked settled.
   checked against every limit and never trusted (a fuzz target reads
   them). Format, Styles, Keep Stylesheet as My Own keeps the document's
   there under its sheet's name, or "My Neutral" for one that came with
-  xWorks; keeping it again replaces it, one version on.
+  xWorks; keeping it again replaces it, one version on, and since the
+  follow-up keeps the version it replaces (below).
 - ★ **An update is offered, never applied:** a document whose sheet came
   from one of a newer version, xWorks' or the person's own, says so in
   the status bar when it opens; Format, Styles, Update Stylesheet shows
   what would change, style by style, to take in one step or leave. It
-  compares the document's styles with the newer sheet's, so a style the
+  compared the document's styles with the newer sheet's, so a style the
   person changed would show and be taken back too. The owner had updates
-  made three-way (below), which needs each sheet's older versions kept.
+  made three-way (below), which needs each sheet's older versions kept;
+  the follow-up built that, and compares two ways only where the version
+  the document copied can't be had.
 - **The inspector** marks the style's name with "+" where the selection
   has formatting of its own, as InDesign does. A Style tab, between Text
   and Page, shows the caret's paragraph style: its name, which can be
@@ -756,7 +760,8 @@ are the stage's own, open to the owner's review unless marked settled.
   takes it away. A style applied replaces the paragraph's own paragraph
   formatting and keeps its text's; ★ held Shift as it's chosen from the
   inspector's list takes the text's away too, as InDesign's
-  Alt+Shift-click does.
+  Alt+Shift-click does, and since the follow-up its marks and character
+  styles with it, as Clear Formatting takes them (below).
 - **The page style is the document's:** the Page tab sets its size and
   margins, refusing margins that leave no room.
 - ★ **Pasting with styles** keeps, in the program, a fragment of what Copy
@@ -791,6 +796,120 @@ are the stage's own, open to the owner's review unless marked settled.
   scrolls.
 - **Other programs get plain text in M2;** formatted copying to them
   (HTML) comes with Write.
+
+**What stage 9's follow-up built: stylesheets** (from review sjj5ak5a).
+The choices below are its own, open to the owner's review; ★ marks those
+that need the owner's decision.
+
+- **A quote's space** is `quote_space` in a stylesheet's document
+  section, `quote-space` in the document's sheet, beside `table_space`.
+  The flow marks the paragraph or rule each quote starts with and the one
+  it ends with, in reading order (`Place::quote_above`, `quote_below`),
+  and pouring adds the space to what those blocks have above and below
+  themselves, as a table's adds to its neighbours', outside the quote's
+  bar, dropped at the top and foot of a page as any space is. Where
+  quotes start or end together, as one nested at the start of another,
+  the space goes in once. A sheet without it has none, not the
+  program's, so documents from before keep their look.
+- **Book and Manuscript set off their extracts:** Book by half a line
+  above and below, 7.2 pt of its 14.375 pt leading, as its paragraphs
+  are told apart by an indent with no space between and a whole line
+  would open a hole in an A5 page; Manuscript by one single-spaced line,
+  12 pt, half its double spacing. Literary, Modern and Technical have
+  space between paragraphs already and leave it out, and so does
+  Neutral, whose goldens hold.
+- **Table Header** is a paragraph style with the role `table-header`
+  (`story::TABLE_HEADER`) in each of the six sheets, based on Body, so a
+  header cell is the body's text but for what the style says: Neutral
+  bold, as header rows were by their place; Book and Manuscript italic,
+  as a book and a manuscript keep bold for little; Literary in its
+  headings' small capitals; Modern bold in its headings' darker ink;
+  Technical bold in its headings' face. A table's cells still take only
+  their own indents and their column's alignment, so Book's justified,
+  indented Body doesn't reach into them. Nothing is bold by its place:
+  `story::base_style` reads the paragraph's style alone.
+- **Where a table is made,** its header row's paragraphs name Table
+  Header and its other cells name no style, as before: `story::build`,
+  a Markdown table read in, and Insert, Table. Pasting never makes a
+  table; a copied table's cells paste as paragraphs, and those of its
+  header row take the default style, as Table Header is a header row's.
+  Tagged PDF still marks the first row's cells as headers, by their
+  place, which is structure, not looks.
+- **Markdown** writes a table's first row as its header by its place,
+  never the style. It holds Table Header in a header row and body text in
+  the other rows; a header cell in another style, or Table Header
+  anywhere else, is a style Markdown can't hold, asked about as any
+  other is.
+- ★ **A schema 3 document from before Table Header,** whose sheet has
+  none, opens and draws: its header rows name no style, so they're in
+  body text, plain, like its other rows, not bold as they were. Taking a
+  newer version of its sheet brings Table Header into the sheet but
+  doesn't name it on the header rows; Insert, Table does from then on.
+  Schema 3 hasn't reached anyone beyond tests, so nothing else is done.
+- **Schema 2's upgrade, amended** rather than a schema 4 added: the
+  frozen sheet gains a Table Header before Heading, the body's text in
+  bold, so it's Neutral at version 1 and that style, which a test checks
+  against Neutral's version 1, kept. Every paragraph that's ever a cell of
+  a table's first row, in a snapshot or a table an operation inserts,
+  names Table Header wherever its style is set to none or to the default
+  style, in snapshots and log entries alike; schema 2's tables keep their
+  shape, rows only ever added after a row, so every snapshot says what
+  replaying the log does. The m2 fixture's expected dump has its header
+  row in Table Header.
+- **Clear Formatting clears everything:** the text's own formatting, its
+  character style and its marks, emphasis, strong, code, strikethrough
+  and links with their titles (`story::styles::CLEARED_FROM_TEXT`), and
+  the paragraph's own paragraph formatting; with nothing selected, the
+  caret's paragraph's, all of it, and the marks pending at the caret. A
+  language isn't formatting and stays; pictures and Markdown kept as
+  written are text and stay. The command is on wherever there's any of
+  that to clear; the "+" after a style's name and Show Direct Formatting
+  still mean the text's own formatting alone, as marks are character
+  styles. A style applied with Shift held takes the same away. In a
+  Markdown file the text is then written plain.
+- **The sheets' versions are kept,** frozen, in `spec/styles/versions/`
+  as `NAME-VERSION.ron`, each with a comment saying so above the file as it
+  was: Neutral 1, recovered from history, and 2, and Book, Literary,
+  Modern, Technical and Manuscript 1. This follow-up's changes made
+  Neutral 3 and the others 2. A test checks every kept version reads and
+  passes the sheet checks, is older than its current file, and that none
+  is missing, and that each updates to the current one. The app reads
+  them as it reads the current ones (`Resources::kept`).
+- **People's own sheets keep their versions too:** keeping a sheet again
+  copies the file it replaces to `versions/` beside it, as
+  `NAME-VERSION.ron`, before writing the new one. A kept version is
+  outside input, read as own sheets are, and one that doesn't read, or
+  isn't the version its name says, is as if it weren't there; the
+  `stylesheet_update` fuzz target takes two sheets as such files and
+  updates documents from one to the other, and runs nightly beside
+  `stylesheet_file`, which CI hadn't run.
+- **Update Stylesheet is three-way** (`story::update`): the version the
+  document copied, its `origin`, is the base; the newer version; and the
+  document's own sheet. Styles and parts are matched between each two by
+  role, then by name, as pasting matches them, and values compared with
+  their references to parts mapped between the three.
+  - A value the newer version changed and the document didn't is taken;
+    one the document changed and the newer version didn't stays; one
+    both changed alike is left; one both changed differently stays as
+    the document has it, and the panel says so. A style's base is
+    compared the same way.
+  - Styles and parts the newer version adds come in, each after the
+    style before it in the newer sheet's order, so Table Header comes
+    after Code. One the document already has, matched by role or name,
+    as a schema 2 document's upgraded Table Header, is compared as if
+    the base had it empty: where they agree, there's nothing to say.
+  - ★ One the newer version removes goes only if nothing uses it (a
+    paragraph, a run, a list, another style's base or value, or the
+    sheet) and the document didn't change it; otherwise it stays, said.
+  - The document then records the newer version as its origin, and the
+    whole update is one step Undo takes back.
+  - The panel lists what the newer version changed that the document
+    takes, then what it keeps as it has it. Where the base can't be had,
+    as for a sheet of one's own whose kept version is gone, it compares
+    the document's sheet with the newer one, as before, the newer one's
+    winning, and the panel says the person's own changes would go too.
+  - ★ A style renamed in the newer version, and not matched by a role, is
+    a style removed and one added, as matching goes by role and name.
 
 **Container: SQLite** (project owner, 2026-10-18). A document is an SQLite
 database with a fixed, versioned schema: objects, the transaction log, embedded
