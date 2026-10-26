@@ -2,6 +2,6 @@
 Golden(
     name: "markdown-draft-dark",
     size: (1280, 800),
-    sha256: "058f5ccf3333b95f519634545b61069be74a9e37a12d3005376625d964a2f419",
+    sha256: "69d0eae876faf80a1e0d423cb24e6d0d548672d12d971656238f3c25043cb034",
     approved_by: "Grim Schjetne",
 )
