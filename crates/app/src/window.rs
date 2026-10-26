@@ -1730,8 +1730,8 @@ impl Window {
             let mut members = Vec::new();
             let mut extent = view.heading(si);
             for (ri, row) in section.rows.iter().enumerate() {
-                // A row whose label is a link, a button in its place, is
-                // labelled by it.
+                // A row whose label is a link, a button in its place before
+                // a value, is labelled by it; a row of buttons isn't.
                 let row_label = match (row.label.as_str(), row.controls.first()) {
                     (
                         "",
@@ -1739,7 +1739,13 @@ impl Window {
                             kind: ControlKind::Button { label, icon: None },
                             ..
                         }),
-                    ) if row.controls.len() > 1 => label.as_str(),
+                    ) if row
+                        .controls
+                        .get(1)
+                        .is_some_and(|c| !matches!(c.kind, ControlKind::Button { .. })) =>
+                    {
+                        label.as_str()
+                    }
                     (label, _) => label,
                 };
                 for (ci, control) in row.controls.iter().enumerate() {

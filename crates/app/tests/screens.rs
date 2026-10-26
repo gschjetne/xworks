@@ -707,6 +707,16 @@ fn the_inspector_scrolls_for_the_wheel_the_bar_the_keyboard_and_screen_readers()
     click(&mut window, 1130.0, 66.0);
     let (_, y, hidden) = field(&window, "First line").expect("First line's field");
     assert!(hidden && y > bottom, "below the panel at first: {y}");
+    // A row of buttons is each button's: New and Delete, not "New:
+    // Delete"; a link in a label's place labels its row's value.
+    let tree = window.access();
+    let labelled = |role: Role, label: &str| {
+        tree.nodes
+            .iter()
+            .any(|(_, n)| n.role() == role && n.label() == Some(label))
+    };
+    assert!(labelled(Role::Button, "New") && labelled(Role::Button, "Delete"));
+    assert!(labelled(Role::ComboBox, "Face"), "the face's value");
     let (_, name_y, _) = field(&window, "Name").expect("the name");
     // The wheel over the inspector scrolls it, not the page; what changes
     // is the inspector's.

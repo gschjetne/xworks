@@ -10,14 +10,14 @@
         // The Style tab, second of three.
         Click(1130, 66),
         // Size, in Body's Text section.
-        Click(1110, 412),
+        Click(1110, 438),
         Type("13 pt"),
         Key("Enter"),
         Expect([("Body", "Restyled")]),
         Key("Primary+Z"),
         Key("Primary+Shift+Z"),
         // Body's name.
-        Click(1160, 270),
+        Click(1160, 296),
         Key("Primary+A"),
         Type("Text Body"),
         Key("Enter"),
