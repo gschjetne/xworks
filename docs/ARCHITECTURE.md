@@ -893,11 +893,19 @@ that need the owner's decision.
     both changed alike is left; one both changed differently stays as
     the document has it, and the panel says so. A style's base is
     compared the same way.
-  - Styles and parts the newer version adds come in, each after the
-    style before it in the newer sheet's order, so Table Header comes
-    after Code. One the document already has, matched by role or name,
-    as a schema 2 document's upgraded Table Header, is compared as if
-    the base had it empty: where they agree, there's nothing to say.
+  - Styles and parts the newer version adds, those the base hadn't, come
+    in, each after the style before it in the newer sheet's order, so
+    Table Header comes after Code. One the document already has, matched
+    by role or name, as a schema 2 document's upgraded Table Header, is
+    compared as if the base had it empty: where they agree, there's
+    nothing to say.
+  - One the base had and the document removed stays removed, the
+    person's own change: nothing is said if the newer version left it as
+    it was, and that it stays removed if it changed it. A style the newer
+    version bases on it is based on the nearest up the newer version's
+    chain that the document has, or on nothing, without the values the
+    removed one set; a value the newer version makes name it stays as the
+    document has it, said.
   - ★ One the newer version removes goes only if nothing uses it (a
     paragraph, a run, a list, another style's base or value, or the
     sheet) and the document didn't change it; otherwise it stays, said.
@@ -908,8 +916,14 @@ that need the owner's decision.
     as for a sheet of one's own whose kept version is gone, it compares
     the document's sheet with the newer one, as before, the newer one's
     winning, and the panel says the person's own changes would go too.
-  - ★ A style renamed in the newer version, and not matched by a role, is
-    a style removed and one added, as matching goes by role and name.
+  - **Every style and part has a role** in the current sheets, one of
+    its kind's own (Heading, the base every heading shares, was the only
+    one without: its role is `heading`), so a style the person renamed is
+    still matched by its role, its new name kept. Kept versions are as
+    they were: a document copied from one has a Heading matched by name
+    until an update gives it its role. ★ A style without a role, as one
+    of the person's own, renamed in the document or in the newer version,
+    is still a style removed and one added.
 
 **Container: SQLite** (project owner, 2026-10-18). A document is an SQLite
 database with a fixed, versioned schema: objects, the transaction log, embedded
