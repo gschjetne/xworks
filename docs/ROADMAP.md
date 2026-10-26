@@ -521,7 +521,10 @@ owner approved in review a23vvez8.
   It awaits the owner's review (jy4a2tx5).
 - **The owner added stage 9,** a document's own styles. Its research came
   back as a design the owner settled and accepted (review 30dmn1js). It's
-  built and awaits the owner's review (sjj5ak5a).
+  built, and its goldens are approved (review sjj5ak5a). A follow-up
+  builds what that review settled: quotes' space, a Table Header style,
+  Clear Formatting clearing marks, three-way stylesheet updates, and the
+  inspector's screens for every kind of style.
 
 ### Exit criteria
 
