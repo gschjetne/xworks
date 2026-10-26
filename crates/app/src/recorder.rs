@@ -306,6 +306,7 @@ impl Recording {
             on: Vec::new(),
             off: Vec::new(),
             props: Vec::new(),
+            styles: Vec::new(),
             open: None,
             copy: Vec::new(),
             files: Vec::new(),

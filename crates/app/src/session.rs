@@ -75,6 +75,12 @@ pub struct Session {
     /// the property, and its value as text, or none for unset.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub props: Vec<(String, String, Option<String>)>,
+    /// Styles' values afterwards, as each style takes them, along its
+    /// chain and through the parts it names: a paragraph or character
+    /// style by name, the property, and its value as text, or none where
+    /// it's not set.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub styles: Vec<(String, String, Option<String>)>,
     /// A file the session opens, written into the documents folder first,
     /// if it doesn't start in a new, empty document: its name and what it
     /// holds, as a Markdown file's text.
@@ -656,6 +662,35 @@ pub fn check(session: &Session, played: &Played) -> Vec<String> {
                 ));
                 break;
             }
+        }
+    }
+    for (name, key, want) in &session.styles {
+        let style = document.styles().iter().copied().find(|&id| {
+            document.style(id).is_some_and(|s| {
+                matches!(
+                    s.kind,
+                    doc::StyleKind::Paragraph | doc::StyleKind::Character
+                ) && s.props.get(story::keys::NAME) == Some(&Value::Text(name.clone()))
+            })
+        });
+        let Some(style) = style else {
+            problems.push(format!("there's no style {name}"));
+            continue;
+        };
+        // As the style takes it: along its chain, through the parts it
+        // names, and, for a paragraph style, from the defaults.
+        let paragraph = document.style(style).map(|s| s.kind) == Some(doc::StyleKind::Paragraph);
+        let valid = story::styles::valid(key);
+        let got = story::styles::find(document, Some(style), key, paragraph, &valid).map(
+            |(v, _)| match v {
+                Value::Text(t) => t,
+                Value::Int(n) => n.to_string(),
+                Value::Bool(b) => b.to_string(),
+                Value::Ref(id) => format!("#{}", id.0),
+            },
+        );
+        if &got != want {
+            problems.push(format!("{name}'s {key} is {got:?}, expected {want:?}"));
         }
     }
     if let Some(want) = &session.clipboard

@@ -1,0 +1,33 @@
+// The Style tab's screens for parts (stage 9's follow-up, review
+// sjj5ak5a), at 1280 by 800: the Colours chosen from the kinds at the
+// tab's head, which shows the first, Ink; its value typed over, and every
+// style that takes Ink, through the defaults or by name, follows. Undo
+// takes it back, and Redo brings it again. A character style that sets no
+// colour of its own, Emphasis, still sets none.
+(
+    size: (1280, 800),
+    events: [
+        Type("Recoloured"),
+        Command("toggle-inspector"),
+        // The Style tab, second of three.
+        Click(1130, 66),
+        // Kind: its list, and Colours, the fourth.
+        Click(1160, 136),
+        Click(1150, 248),
+        // Ink's value, in the Colour section's second row.
+        Click(1160, 304),
+        Key("Primary+A"),
+        Type("#2a4d8f"),
+        Key("Enter"),
+        Key("Primary+Z"),
+        Key("Primary+Shift+Z"),
+    ],
+    expect: [("Body", "Recoloured")],
+    styles: [
+        ("Body", "color", Some("#2a4d8f")),
+        ("Heading 1", "color", Some("#2a4d8f")),
+        ("Heading", "color", Some("#2a4d8f")),
+        ("Link", "color", Some("#1950aa")),
+        ("Emphasis", "color", None),
+    ],
+)
