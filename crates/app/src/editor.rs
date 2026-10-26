@@ -820,7 +820,7 @@ impl Editor {
             let mut blocks = std::mem::take(&mut self.laid.blocks);
             for &k in &todo {
                 let u = units.partition_point(|r| r.end <= k);
-                blocks[u] = canvas::block(&paragraphs, units[u].clone(), look);
+                blocks[u] = canvas::block(&paragraphs, &units, u, look);
             }
             (units, blocks)
         } else {

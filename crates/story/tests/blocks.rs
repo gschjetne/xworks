@@ -135,6 +135,48 @@ fn the_tree_reads_in_order_with_its_places() {
     assert!(at(11).cell.unwrap().last && !at(9).cell.unwrap().last);
 }
 
+/// Where a quote starts and ends, in reading order, so its space goes
+/// above and below it: the paragraph or rule each starts with, and the one
+/// each ends with, once however many start or end there.
+#[test]
+fn a_quotes_first_and_last_blocks_are_marked() {
+    let sheet = sheet();
+    let document = story::build(&neutral(), &every_kind());
+    let flow = story::flow(&document, &sheet, WIDTH).entries;
+    let edges: Vec<(bool, bool)> = flow
+        .iter()
+        .map(|e| (e.place.quote_above, e.place.quote_below))
+        .collect();
+    let mut want = vec![(false, false); flow.len()];
+    // "quoted" starts the outer quote, "deeper" the inner, and both end
+    // with "deeper".
+    want[6] = (true, false);
+    want[7] = (true, true);
+    assert_eq!(edges, want);
+    // Rules are marked as paragraphs are: one that ends a quote, and one
+    // after it that starts one.
+    let document = story::build(
+        &neutral(),
+        &[
+            p("Above"),
+            BlockSpec::Quote(vec![p("Quoted"), BlockSpec::Rule]),
+            BlockSpec::Quote(vec![BlockSpec::Rule, p("Again")]),
+            BlockSpec::Quote(vec![p("Last"), BlockSpec::Rule]),
+        ],
+    );
+    let flow = story::flow(&document, &sheet, WIDTH).entries;
+    let place = |k: usize| &flow[k].place;
+    assert_eq!((place(1).quote_above, place(1).quote_below), (true, false));
+    let rule = &place(2).rules;
+    assert_eq!(rule.len(), 2);
+    assert_eq!((rule[0].quote_above, rule[0].quote_below), (false, true));
+    assert_eq!((rule[1].quote_above, rule[1].quote_below), (true, false));
+    assert_eq!((place(2).quote_above, place(2).quote_below), (false, true));
+    assert_eq!((place(3).quote_above, place(3).quote_below), (true, false));
+    let after = &place(3).rules_after;
+    assert_eq!((after[0].quote_above, after[0].quote_below), (false, true));
+}
+
 #[test]
 fn blocks_lay_out_in_their_places() {
     let sheet = sheet();

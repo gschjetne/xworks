@@ -63,9 +63,10 @@ ends in (`font`, `size`, `color` and the rest), what the document shares
 (`tab-interval`, `document-tabs`, and how quotes, code and tables look:
 `quote-indent`, `quote-bar`, `quote-color`, `code-tint`, `code-padding`,
 `table-space`, `cell-padding`, `rule`, `hairline`, `rule-color`,
-`hairline-color`, `missing-picture`, and `rule-space`, the room around
-a rule across the text, which a sheet from before rules may lack), and
-where it came from (`origin`,
+`hairline-color`, `missing-picture`, `rule-space`, the room around a
+rule across the text, which a sheet from before rules may lack, and
+`quote-space`, the space above and below a quote, which a sheet may
+lack, setting quotes off with none), and where it came from (`origin`,
 the stylesheet's name, and `origin-version`, its version). A document
 may have none, as a new `doc::Document` has none; one xWorks makes always
 has one.

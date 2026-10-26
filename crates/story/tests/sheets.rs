@@ -353,6 +353,33 @@ fn a_stylesheet_written_reads_back_the_same() {
     }
 }
 
+/// A quote's space above and below is its sheet's (review sjj5ak5a), kept
+/// as the document's and written back as the sheet's; a sheet without it
+/// sets quotes off with none, not with the program's.
+#[test]
+fn a_quotes_space_is_its_sheets_or_none() {
+    let mut spec = neutral();
+    assert_eq!(spec.document.quote_space, None, "Neutral has none");
+    assert_eq!(StyleSheet::from_spec(&spec).blocks.quote_space, 0);
+    spec.document.quote_space = Some(text::units::Length::Pt(7.0));
+    let program = StyleSheet::from_spec(&spec);
+    assert_eq!(program.blocks.quote_space, 7 * POINT);
+    let document = story::new_document(&spec);
+    assert_eq!(
+        document.stylesheet().unwrap().props.get(keys::QUOTE_SPACE),
+        Some(&Value::Int(7 * POINT))
+    );
+    let written = SheetSpec::of(&document).expect("it writes");
+    assert_eq!(
+        written.document.quote_space,
+        Some(text::units::Length::Pt(7.0))
+    );
+    assert_eq!(SheetSpec::parse(&written.write()).unwrap(), written);
+    // A document whose sheet lacks it, with a program's that has it.
+    let without = story::new_document(&neutral());
+    assert_eq!(StyleSheet::of(&without, &program).blocks.quote_space, 0);
+}
+
 /// A file from outside is checked: what doesn't hold together, or is past
 /// a limit, is refused, and nothing panics.
 #[test]
@@ -394,6 +421,10 @@ fn a_bad_stylesheet_is_refused() {
         many.paragraph.push(s);
     }
     assert!(many.check().is_err());
+    // A quote's space past an inch.
+    let mut spaced = neutral();
+    spaced.document.quote_space = Some(text::units::Length::Pt(100.0));
+    assert!(spaced.check().is_err());
     // Too large to read.
     assert!(refused(&" ".repeat(story::sheet::MOST_BYTES + 1)));
     // Bytes of any kind give an error or a stylesheet, never a panic.

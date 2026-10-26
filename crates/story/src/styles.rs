@@ -219,6 +219,7 @@ pub fn valid(key: &str) -> fn(&Value) -> bool {
         keys::MARGIN_TOP | keys::MARGIN_BOTTOM | keys::MARGIN_LEFT | keys::MARGIN_RIGHT => margin,
         keys::QUOTE_INDENT
         | keys::QUOTE_BAR
+        | keys::QUOTE_SPACE
         | keys::CODE_PADDING
         | keys::TABLE_SPACE
         | keys::CELL_PADDING
@@ -503,6 +504,9 @@ pub struct Blocks {
     pub quote_bar: i64,
     /// The colour of a quote's bar.
     pub quote_color: Rgb,
+    /// The space above and below a quote, besides its first and last
+    /// blocks' own.
+    pub quote_space: i64,
     /// The tint behind code.
     pub code_tint: Rgb,
     /// How far a code block's tint reaches around its text.
@@ -723,6 +727,9 @@ impl StyleSheet {
             quote_indent: int(keys::QUOTE_INDENT, fb.map_or(0, |b| b.quote_indent)),
             quote_bar: int(keys::QUOTE_BAR, fb.map_or(0, |b| b.quote_bar)),
             quote_color: colour(keys::QUOTE_COLOR, fb.map_or((0, 0, 0), |b| b.quote_color)),
+            // None where the sheet doesn't say, not the program's: sheets
+            // from before it set quotes off with none.
+            quote_space: int(keys::QUOTE_SPACE, 0),
             code_tint: colour(keys::CODE_TINT, fb.map_or((255, 255, 255), |b| b.code_tint)),
             code_padding: int(keys::CODE_PADDING, fb.map_or(0, |b| b.code_padding)),
             table_space: int(keys::TABLE_SPACE, fb.map_or(0, |b| b.table_space)),

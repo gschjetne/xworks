@@ -144,6 +144,9 @@ pub mod keys {
     pub const QUOTE_BAR: &str = "quote-bar";
     /// The colour of a quote's bar (as [`COLOR`]).
     pub const QUOTE_COLOR: &str = "quote-color";
+    /// The space above and below a quote, besides its first and last
+    /// blocks' own (a number); none where it's unset.
+    pub const QUOTE_SPACE: &str = "quote-space";
     /// The tint behind code (as [`COLOR`]).
     pub const CODE_TINT: &str = "code-tint";
     /// How far a code block's tint reaches around its text (a number).

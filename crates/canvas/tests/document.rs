@@ -242,6 +242,74 @@ fn a_tables_row_pours_as_one_block() {
     assert_eq!(units.len(), laid.len() - 5 * 2);
 }
 
+/// A quote has the space its stylesheet gives it above and below
+/// (review sjj5ak5a), as a table has: added to the space its first block
+/// has above it and its last below, outside its bar. A sheet without it,
+/// as Neutral is, sets quotes off with none.
+#[test]
+fn a_quote_has_its_sheets_space_above_and_below() {
+    use story::{BlockSpec, props};
+    let p = |text: &str| BlockSpec::Paragraph("Body".into(), vec![(text.into(), props(&[]))]);
+    let cell = |text: &str| vec![(text.to_string(), props(&[]))];
+    let story = [
+        p("Above"),
+        BlockSpec::Quote(vec![p("One"), p("Two")]),
+        p("Between"),
+        BlockSpec::Quote(vec![BlockSpec::Table(
+            vec![String::new()],
+            vec![vec![cell("Head")], vec![cell("Row")]],
+        )]),
+        p("Below"),
+    ];
+    let mut spaced = neutral();
+    let space = 7 * text::units::POINT;
+    spaced.document.quote_space = Some(text::units::Length::Pt(7.0));
+    let poured = |spec: &story::SheetSpec| {
+        let document = story::build(spec, &story);
+        let sheet = StyleSheet::from_spec(spec);
+        let laid = story::lay_out(&document, &sheet, fonts(), sheet.page.body_width());
+        let blocks = canvas::blocks(&laid, &sheet.blocks);
+        let pages = canvas::automatic(&document, &sheet, &sheet.page, fonts());
+        (blocks, pages)
+    };
+    let (plain, plain_pages) = poured(&neutral());
+    let (with, pages) = poured(&spaced);
+    let spacing = |b: &canvas::Block| (b.space_before, b.space_after);
+    assert_eq!(plain.len(), 7);
+    let more = [
+        (0, 0),
+        (space, 0),
+        (0, space),
+        (0, 0),
+        (space, 0),
+        (0, space),
+        (0, 0),
+    ];
+    for (k, (before, after)) in more.iter().enumerate() {
+        let (a, b) = spacing(&plain[k]);
+        assert_eq!(spacing(&with[k]), (a + before, b + after), "block {k}");
+    }
+    // The table's own space is kept, the quote's added to it.
+    let look = &StyleSheet::from_spec(&neutral()).blocks;
+    assert_eq!(spacing(&plain[4]).0, look.table_space);
+    // The bars are as tall as before, moved down by the space above them.
+    let bar = scene::Color::rgb(look.quote_color.0, look.quote_color.1, look.quote_color.2);
+    let bars = |pages: &canvas::Pages| -> Vec<scene::Rect> {
+        pages.pages[0]
+            .items
+            .iter()
+            .filter_map(|item| match item {
+                Item::Fill { path, color } if *color == bar => Some(bounds(path)),
+                _ => None,
+            })
+            .collect()
+    };
+    let (a, b) = (bars(&plain_pages), bars(&pages));
+    assert_eq!(a.len(), 2);
+    assert_eq!(b[0].height, a[0].height);
+    assert_eq!(b[0].y, a[0].y + space);
+}
+
 /// The rectangle a path of straight lines takes up.
 fn bounds(path: &scene::Path) -> scene::Rect {
     let points: Vec<scene::Point> = path

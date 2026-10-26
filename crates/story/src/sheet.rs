@@ -256,6 +256,11 @@ pub struct DocumentSpec {
     pub quote_bar: Length,
     /// The colour of a quote's bar: a colour by name, or `#rrggbb`.
     pub quote_colour: String,
+    /// The space above and below a quote, as a table has its own: added
+    /// to the space its first block has above it and its last below. None
+    /// where it's left out, as in sheets from before it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quote_space: Option<Length>,
     /// The tint behind code.
     pub code_tint: String,
     /// How far a code block's tint reaches around its text.
@@ -613,6 +618,9 @@ impl SheetSpec {
         }
         if let Some(space) = d.rule_space {
             check_length("a rule's space", space, 0..=INCH)?;
+        }
+        if let Some(space) = d.quote_space {
+            check_length("a quote's space", space, 0..=INCH)?;
         }
         for colour in [
             &d.quote_colour,
@@ -990,6 +998,9 @@ impl SheetSpec {
         if let Some(space) = d.rule_space {
             props.insert(keys::RULE_SPACE.to_string(), Value::Int(space.units()));
         }
+        if let Some(space) = d.quote_space {
+            props.insert(keys::QUOTE_SPACE.to_string(), Value::Int(space.units()));
+        }
         for (key, colour) in [
             (keys::QUOTE_COLOR, &d.quote_colour),
             (keys::CODE_TINT, &d.code_tint),
@@ -1064,6 +1075,7 @@ impl SheetSpec {
             quote_indent: length(keys::QUOTE_INDENT)?,
             quote_bar: length(keys::QUOTE_BAR)?,
             quote_colour: colour(keys::QUOTE_COLOR),
+            quote_space: int(&sheet.props, keys::QUOTE_SPACE).map(length_of),
             code_tint: colour(keys::CODE_TINT),
             code_padding: length(keys::CODE_PADDING)?,
             table_space: length(keys::TABLE_SPACE)?,

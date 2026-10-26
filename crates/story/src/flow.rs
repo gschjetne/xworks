@@ -1,8 +1,8 @@
 //! The story's tree as a reading-order list of paragraphs, each with its
 //! place: how far it's indented, the marker of the list item it starts or
-//! the number of the numbered heading it is, the quotes it's in, the table
-//! cell it is, the containers around it, and the rules across the text
-//! that come before it.
+//! the number of the numbered heading it is, the quotes it's in and
+//! whether it starts or ends one, the table cell it is, the containers
+//! around it, and the rules across the text that come before it.
 
 use doc::{Document, Kind, Object, ObjectId, Value};
 
@@ -53,6 +53,10 @@ pub struct Rule {
     pub width: i64,
     /// The quotes it's in, outermost first, as [`Place::quotes`] has them.
     pub quotes: Vec<(ObjectId, i64)>,
+    /// Whether a quote starts with it, as [`Place::quote_above`] says.
+    pub quote_above: bool,
+    /// Whether a quote ends with it, as [`Place::quote_below`] says.
+    pub quote_below: bool,
 }
 
 /// Where a paragraph sits in the story's tree, as laying it out and drawing
@@ -77,6 +81,13 @@ pub struct Place {
     /// The quotes it's in, outermost first: each one, and where its bar
     /// is, across from the body's start edge.
     pub quotes: Vec<(ObjectId, i64)>,
+    /// Whether a quote starts with it, in reading order: one it's in that
+    /// what comes before it, a paragraph or a rule, isn't. The quote's
+    /// space goes above it, once, however many start there.
+    pub quote_above: bool,
+    /// Whether a quote ends with it: one it's in that what comes after it
+    /// isn't. The quote's space goes below it, once.
+    pub quote_below: bool,
     /// The table cell it is, if it's one.
     pub cell: Option<Cell>,
     /// The containers it's in, outermost first.
@@ -182,6 +193,8 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
                     indent: place.indent,
                     width: place.width,
                     quotes: place.quotes.clone(),
+                    quote_above: false,
+                    quote_below: false,
                 });
                 continue;
             }
@@ -320,8 +333,69 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
     if let Some(last) = out.last_mut() {
         last.place.rules_after = rules;
     }
+    quote_edges(&mut out);
     Flow {
         entries: out,
         containers,
+    }
+}
+
+/// Where in `entries`, in reading order, a paragraph or a rule is: rule
+/// `r` before entry `k`, entry `k` itself, or rule `r` after the last.
+#[derive(Clone, Copy)]
+enum At {
+    Rule(usize, usize),
+    Paragraph(usize),
+    After(usize),
+}
+
+/// Marks where quotes start and end among `entries` and their rules, in
+/// reading order: each paragraph or rule in a quote that what comes
+/// before it isn't in starts it, and each in one that what comes after it
+/// isn't in ends it.
+fn quote_edges(entries: &mut [Entry]) {
+    let mut order: Vec<At> = Vec::with_capacity(entries.len());
+    for (k, e) in entries.iter().enumerate() {
+        order.extend((0..e.place.rules.len()).map(|r| At::Rule(k, r)));
+        order.push(At::Paragraph(k));
+    }
+    if let Some(last) = entries.last() {
+        order.extend((0..last.place.rules_after.len()).map(At::After));
+    }
+    let quotes = |entries: &[Entry], at: At| -> Vec<ObjectId> {
+        let list = match at {
+            At::Rule(k, r) => &entries[k].place.rules[r].quotes,
+            At::Paragraph(k) => &entries[k].place.quotes,
+            At::After(r) => &entries[entries.len() - 1].place.rules_after[r].quotes,
+        };
+        list.iter().map(|q| q.0).collect()
+    };
+    // Whether `a` is in a quote `b` isn't in.
+    let outside = |a: &[ObjectId], b: &[ObjectId]| a.iter().any(|q| !b.contains(q));
+    let mut before: Vec<ObjectId> = Vec::new();
+    let mut here = order
+        .first()
+        .map_or_else(Vec::new, |&at| quotes(entries, at));
+    for i in 0..order.len() {
+        let after = order
+            .get(i + 1)
+            .map_or_else(Vec::new, |&at| quotes(entries, at));
+        let (above, below) = (outside(&here, &before), outside(&here, &after));
+        match order[i] {
+            At::Rule(k, r) => {
+                let rule = &mut entries[k].place.rules[r];
+                (rule.quote_above, rule.quote_below) = (above, below);
+            }
+            At::Paragraph(k) => {
+                let place = &mut entries[k].place;
+                (place.quote_above, place.quote_below) = (above, below);
+            }
+            At::After(r) => {
+                let last = entries.len() - 1;
+                let rule = &mut entries[last].place.rules_after[r];
+                (rule.quote_above, rule.quote_below) = (above, below);
+            }
+        }
+        before = std::mem::replace(&mut here, after);
     }
 }

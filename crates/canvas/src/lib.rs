@@ -229,46 +229,57 @@ pub fn rule_at<'a>(
 /// its [`units`]: a paragraph's lines, or a table row as one line, as
 /// tall as its tallest cell, with room around the cells as `look` says,
 /// or a rule's hairline with room around it. A table's header keeps with
-/// the row after it.
+/// the row after it. A quote has its space above the block it starts
+/// with and below the one it ends with, besides theirs.
 pub fn blocks(paragraphs: &[ParagraphLayout], look: &story::Blocks) -> Vec<Block> {
-    units(paragraphs)
-        .into_iter()
-        .map(|unit| block(paragraphs, unit, look))
+    let units = units(paragraphs);
+    (0..units.len())
+        .map(|u| block(paragraphs, &units, u, look))
         .collect()
 }
 
-/// The block to pour of one of the [`units`] of `paragraphs`, as
-/// [`blocks`] makes it.
-pub fn block(paragraphs: &[ParagraphLayout], unit: Range<usize>, look: &story::Blocks) -> Block {
+/// The block to pour of unit `u` of `units`, the [`units`] of
+/// `paragraphs`, as [`blocks`] makes it.
+pub fn block(
+    paragraphs: &[ParagraphLayout],
+    units: &[Range<usize>],
+    u: usize,
+    look: &story::Blocks,
+) -> Block {
+    let unit = units[u].clone();
+    // A quote's space, where one starts or ends with the unit: as a
+    // table's, it adds to the space its blocks have themselves.
+    let quote = |edge: bool| if edge { look.quote_space } else { 0 };
     if unit.is_empty() {
         // A rule: its hairline, and room around it.
         let space = look.rule_space;
+        let (above, below) = rule_at(paragraphs, units, u)
+            .map_or((false, false), |r| (r.quote_above, r.quote_below));
         return Block {
             lines: vec![look.hairline.max(1)],
-            space_before: space,
-            space_after: space,
+            space_before: space + quote(above),
+            space_after: space + quote(below),
             keep_with_next: false,
         };
     }
+    let cells = &paragraphs[unit.clone()];
+    let above = quote(cells.iter().any(|p| p.place.quote_above));
+    let below = quote(cells.iter().any(|p| p.place.quote_below));
     let p = &paragraphs[unit.start];
     match p.place.cell {
         None => Block {
             lines: p.layout.lines.iter().map(|l| l.height).collect(),
-            space_before: p.space_before,
-            space_after: p.space_after,
+            space_before: p.space_before + above,
+            space_after: p.space_after + below,
             keep_with_next: p.keep_with_next,
         },
         Some(cell) => {
             let space = look.table_space;
-            let tallest = paragraphs[unit]
-                .iter()
-                .map(|c| c.layout.height)
-                .max()
-                .unwrap_or(0);
+            let tallest = cells.iter().map(|c| c.layout.height).max().unwrap_or(0);
             Block {
                 lines: vec![tallest + 2 * look.cell_padding],
-                space_before: if cell.index == 0 { space } else { 0 },
-                space_after: if cell.last { space } else { 0 },
+                space_before: if cell.index == 0 { space } else { 0 } + above,
+                space_after: if cell.last { space } else { 0 } + below,
                 keep_with_next: cell.index == 0 && !cell.last,
             }
         }
