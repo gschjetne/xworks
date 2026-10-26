@@ -2,6 +2,6 @@
 Golden(
     name: "chrome-pages",
     size: (1280, 800),
-    sha256: "d37716a5decf9de3171ea3e4b1d15b641c50f29b979aee2e923acdb3a555303f",
+    sha256: "e67d4e1edfa0c5e83521cf76279cb1fe3aa342e9c8531905c1851ea4c93423a8",
     approved_by: "Grim Schjetne",
 )
