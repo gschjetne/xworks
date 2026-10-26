@@ -176,7 +176,7 @@ impl Editor {
         }
         let int = |i: usize| args.get(i).and_then(Arg::int);
         let text = |i: usize| args.get(i).and_then(Arg::text);
-        if self.style_command(id, args) {
+        if self.screen_command(id, args) || self.style_command(id, args) {
             return Vec::new();
         }
         match id {

@@ -215,6 +215,41 @@
         (id: "style-reset", title: "Let a Style's Value Go", arg: Some(List)),
         (id: "style-base", title: "Base a Style", arg: Some(List)),
         (id: "style-rename", title: "Rename a Style", arg: Some(List)),
+        // The Style tab's screens for every kind of style and part (stage
+        // 9's follow-up, review sjj5ak5a). What it shows: a style or part,
+        // by ID, 0 for the caret's paragraph style; a kind ("paragraph",
+        // "character", "face", "colour", "tabs" or "list"), its first; a
+        // part a value names, followed from the screen shown; and back to
+        // where it was followed from, by ID. A style or part made, of a
+        // kind, after the one of it by ID that a style is based on and a
+        // part copies, 0 for none; and one deleted, where nothing is based
+        // on it.
+        (id: "style-show", title: "Show a Style", arg: Some(Int)),
+        (id: "style-kind", title: "Show a Kind of Style", arg: Some(Text)),
+        (id: "style-follow", title: "Show the Part a Value Names", arg: Some(Int)),
+        (id: "style-back", title: "Go Back to a Style", arg: Some(Int)),
+        (id: "style-new", title: "New Style or Part", arg: Some(List)),
+        (id: "style-delete", title: "Delete a Style or Part", arg: Some(Int)),
+        // A style's on-or-off value, by the style's ID and the key: "on",
+        // "off", or, for a character style, "unset"; ligatures are on or
+        // off whole.
+        (id: "style-option", title: "Set a Style's Option", arg: Some(List)),
+        // A colour's value, by its ID, typed as #rrggbb.
+        (id: "colour-set", title: "Set a Colour", arg: Some(List)),
+        // A tab layout's stops, by its ID, as the Text tab's commands set a
+        // paragraph's: one added after the last; one placed, from where it
+        // is to where it reads on the ruler; one's kind; one's leader, a
+        // character or "" for none; one removed.
+        (id: "layout-stop-add", title: "Add a Tab Layout's Stop", arg: Some(Int)),
+        (id: "layout-stop-place", title: "Place a Tab Layout's Stop", arg: Some(List)),
+        (id: "layout-stop-kind", title: "Set a Tab Layout's Stop's Kind", arg: Some(List)),
+        (id: "layout-stop-leader", title: "Set a Tab Layout's Stop's Leader", arg: Some(List)),
+        (id: "layout-stop-remove", title: "Remove a Tab Layout's Stop", arg: Some(List)),
+        // A list definition's level, by its ID and the level from 1: its
+        // "marker" ("bullet", "1", "a", "A", "i" or "I"), "bullet",
+        // "reads" (with a 1 for the number), "start" (typed), "indent" or
+        // "gap" (lengths).
+        (id: "list-level", title: "Set a List's Level", arg: Some(List)),
     ],
     menus: [
         (title: "&File", items: [

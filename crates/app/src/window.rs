@@ -505,6 +505,16 @@ impl Window {
         })
     }
 
+    /// Whether the inspector is open on its Style tab.
+    fn style_tab_shown(&self) -> bool {
+        self.inspector
+            && self
+                .inspector_model()
+                .tabs
+                .get(self.tab)
+                .is_some_and(|t| t.title == "Style")
+    }
+
     /// Scrolls the inspector's tab to `to`, as far as it goes.
     fn scroll_inspector(&mut self, to: i64) {
         let model = self.inspector_model();
@@ -755,7 +765,12 @@ impl Window {
     /// the paragraph it was in.
     fn give_part(&mut self, input: Input) -> Vec<Effect> {
         let before = self.editor.selection().1.paragraph;
+        let screen = self.editor.style_screen();
         let requests = self.editor.input(input);
+        // Another screen of the Style tab opens at its top.
+        if self.editor.style_screen() != screen && self.style_tab_shown() {
+            self.scrolled = 0;
+        }
         if self.editor.selection().1.paragraph != before && !self.editor.named_by_hand() {
             let from = self.editor.path().to_path_buf();
             self.editor.settle_name();
@@ -1693,6 +1708,18 @@ impl Window {
             let mut members = Vec::new();
             let mut extent = view.heading(si);
             for (ri, row) in section.rows.iter().enumerate() {
+                // A row whose label is a link, a button in its place, is
+                // labelled by it.
+                let row_label = match (row.label.as_str(), row.controls.first()) {
+                    (
+                        "",
+                        Some(Control {
+                            kind: ControlKind::Button { label, icon: None },
+                            ..
+                        }),
+                    ) if row.controls.len() > 1 => label.as_str(),
+                    (label, _) => label,
+                };
                 for (ci, control) in row.controls.iter().enumerate() {
                     let at = ControlRef {
                         section: si,
@@ -1709,8 +1736,9 @@ impl Window {
                             e.bottom().max(r.bottom()) - y,
                         )
                     }));
-                    let label = |own: &str| match (row.label.as_str(), own) {
+                    let label = |own: &str| match (row_label, own) {
                         ("", own) => own.to_string(),
+                        (row, own) if row == own => own.to_string(),
                         (row, "") => row.to_string(),
                         (row, own) => format!("{row}: {own}"),
                     };

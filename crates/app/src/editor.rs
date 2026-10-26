@@ -2218,7 +2218,9 @@ impl Editor {
             "save-stylesheet" => self.document.sheet().is_some() && self.res.own.folder().is_some(),
             "update-stylesheet" => writable && self.newer_stylesheet().is_some(),
             "style-set" | "style-toggle" | "style-reset" | "style-base" | "style-rename"
-            | "page-size" | "page-margin" => writable,
+            | "page-size" | "page-margin" | "style-new" | "style-delete" | "style-option"
+            | "colour-set" | "layout-stop-add" | "layout-stop-place" | "layout-stop-kind"
+            | "layout-stop-leader" | "layout-stop-remove" | "list-level" => writable,
             _ if id.starts_with("language-") || id.starts_with("align-") => writable,
             _ => true,
         };

@@ -420,6 +420,26 @@ impl Resources {
             .unwrap_or(&self.fonts)
     }
 
+    /// Every font family xWorks has (`spec/text/fonts.ron`), by name, in
+    /// order: those loaded, and those kept until a document's stylesheet
+    /// sets text in them.
+    pub fn families(&self) -> Vec<String> {
+        let mut out: Vec<String> = self
+            .fonts()
+            .faces()
+            .map(|(_, face)| face.family().to_string())
+            .chain(
+                self.on_demand
+                    .groups
+                    .iter()
+                    .filter_map(|(family, _)| family.clone()),
+            )
+            .collect();
+        out.sort();
+        out.dedup();
+        out
+    }
+
     /// Loads the fonts kept until text needs a character the others lack,
     /// such as the CJK faces, for every window. True if this call loaded
     /// them; false if they were loaded or tried before, or there are none.
