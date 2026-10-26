@@ -1083,11 +1083,11 @@ that need the owner's decision.
   caret, and InsertStyle for styles that come along; Undo takes it back
   whole, and history and rebasing take it as any edit. No operation was
   added.
-- **Tested** (`crates/app/tests/pasting.rs`) case by case, and over
-  selections from paragraphs' starts, second characters and ends to
-  others' in a document of every kind of block, pasted at nine places of
-  every kind: the document holds together, no text is lost or doubled,
-  and Undo takes the paste back. A document a command opens in a
+- **Tested** (`crates/app/tests/pasting.rs`) case by case, and over a
+  quarter, spread evenly, of the selections from paragraphs' starts,
+  second characters and ends to others' in a document of every kind of
+  block, each pasted at nine places of every kind: the document holds
+  together, no text is lost or doubled, and Undo takes the paste back. A document a command opens in a
   session, as New does, now opens in a window the session goes on in, so
   `spec/sessions/paste-blocks.ron` copies a heading, a quote and a list
   into another document through the commands. A recorded session keeps

@@ -816,6 +816,12 @@ fn a_picture_comes_along_within_a_document_and_into_another() {
     assert_eq!(outline(&to), ["Body: A\u{fffc}B"]);
     assert_eq!(pictures(&to), std::slice::from_ref(&id));
     assert_eq!(drawn(&to), 1);
+    // Undo takes it away, and Redo brings it back, the file keeping it.
+    command(&mut to, "undo");
+    assert_eq!(outline(&to), ["Body: "]);
+    assert_eq!(drawn(&to), 0);
+    command(&mut to, "redo");
+    assert_eq!(drawn(&to), 1);
     let path = to.path().to_path_buf();
     drop(to);
     let to = Editor::open(res.clone(), &path).expect("it opens");
@@ -879,6 +885,30 @@ fn pictures_come_along_between_markdown_and_xw_documents() {
     assert!(!md.is_markdown(), "{}", md.message());
     assert_eq!(pictures(&md), [hash]);
     assert_eq!(drawn(&md), 1);
+    // A picture whose file can't be had, one on the web, stays behind in
+    // an .xw document, and the status bar says so; a Markdown file links
+    // it as it was.
+    let web = docs.join("Web.md");
+    std::fs::write(&web, "Look: ![a fig](https://example.net/fig.png)\n").unwrap();
+    let mut from = Editor::open(res.clone(), &web).expect("it opens");
+    command(&mut from, "select-all");
+    let text = copy(&mut from);
+    let mut xw = Editor::create(res.clone()).expect("a document");
+    xw.update(Event::Pasted(text.clone()));
+    assert_eq!(outline(&xw), ["Body: Look: "]);
+    assert_eq!(
+        xw.message(),
+        "Pasted without a picture whose file can't be had"
+    );
+    let fourth = notes.join("Fourth.md");
+    std::fs::write(&fourth, "").unwrap();
+    let mut md = Editor::open(res.clone(), &fourth).expect("it opens");
+    md.update(Event::Pasted(text));
+    md.flush();
+    assert_eq!(
+        std::fs::read_to_string(&fourth).unwrap(),
+        "Look: ![a fig](https://example.net/fig.png)\n"
+    );
 }
 
 /// Pasting into a Markdown file writes what it holds; a style it can't
