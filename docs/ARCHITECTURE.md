@@ -765,15 +765,18 @@ are the stage's own, open to the owner's review unless marked settled.
 - **The page style is the document's:** the Page tab sets its size and
   margins, refusing margins that leave no room.
 - ★ **Pasting with styles** keeps, in the program, a fragment of what Copy
-  copied, its paragraphs with their runs and own properties and the
-  document it came from, beside the text it puts on the system's
-  clipboard, and uses it while the clipboard still holds that text, in
-  any window: the destination's styles win, matched by role and then
-  name, and those it lacks come with their chains, as `story::merge`
-  brings them; pictures stay behind. Other programs get plain text, as
-  before, and in M2 (settled, below); putting HTML on the clipboard too
-  would let them, and xWorks read theirs, which needs the shells'
-  clipboards to carry it.
+  copied, beside the text it puts on the system's clipboard, and uses it
+  while the clipboard still holds that text, in any window: the
+  destination's styles win, matched by role and then name, and those it
+  lacks come with their chains, as `story::merge` brings them. Built, the
+  fragment held paragraphs alone, and the first took the style of the
+  one at the caret, so a heading and a quote pasted as body text (review
+  sjj5ak5a); since the follow-up it holds the blocks they're in, their
+  pictures come along, and only the styles the pasted text uses come
+  (below, "What stage 9's follow-up built: pasting"). Other programs get
+  plain text, as before, and in M2 (settled, below); putting HTML on the
+  clipboard too would let them, and xWorks read theirs, which needs the
+  shells' clipboards to carry it.
 - **Markdown files** take the program's Neutral when they're read, as
   their paragraphs need styles to name, and a change to the stylesheet in
   one is asked about, as Markdown can't hold it.
@@ -830,11 +833,12 @@ that need the owner's decision.
   `story::base_style` reads the paragraph's style alone.
 - **Where a table is made,** its header row's paragraphs name Table
   Header and its other cells name no style, as before: `story::build`,
-  a Markdown table read in, and Insert, Table. Pasting never makes a
-  table; a copied table's cells paste as paragraphs, and those of its
-  header row take the default style, as Table Header is a header row's.
-  Tagged PDF still marks the first row's cells as headers, by their
-  place, which is structure, not looks.
+  a Markdown table read in, and Insert, Table. Pasting made no table
+  then; a copied table's cells pasted as paragraphs, and those of its
+  header row took the default style, as Table Header is a header row's.
+  Since the follow-up's pasting (below), a table pastes as a table, its
+  first row in Table Header. Tagged PDF still marks the first row's
+  cells as headers, by their place, which is structure, not looks.
 - **Markdown** writes a table's first row as its header by its place,
   never the style. It holds Table Header in a header row and body text in
   the other rows; a header cell in another style, or Table Header
@@ -989,6 +993,106 @@ review; ★ marks those the owner should decide.
   scroll, and the style chosen.
 - ★ **Format, Styles' access key is S;** Align to Start's moves from S to
   A, as every letter of "Styles" was another item's.
+
+**What stage 9's follow-up built: pasting** (from review sjj5ak5a, where
+a heading and a quote pasted into another document arrived as body text).
+The choices below are its own, open to the owner's review; ★ marks those
+that need the owner's decision.
+
+- **What Copy keeps** (`app::editor::clip`) is a slice of the story's
+  tree, as a document of its own: the stretches of the paragraphs copied,
+  with their runs and own properties; the blocks wholly between the first
+  and the last, rules among them; and every container around them up to
+  the story, with its own properties, a list's numbering, an item's task
+  box. It notes whether the first paragraph was copied from its start and
+  the last to its end, and keeps the document's stylesheet and pictures
+  (below). A row copied in part keeps its shape, its cells not copied
+  empty. The text on the system's clipboard, and how a paste is known to
+  be of the fragment, are as before.
+- **A paragraph copied in part is text** (`app::blocks::paste`): copied
+  alone, its runs go in at the caret, and the paragraph there keeps its
+  style, as before. ★ A paragraph is whole when the selection runs from
+  its start to its end, without the break after it, as a paragraph has
+  no mark to select: a heading selected along its line and pasted into a
+  paragraph's middle splits it and goes between the halves. Word and
+  Writer take such a selection as text, in the style of the paragraph it
+  lands in, and bring the heading only with its paragraph mark.
+- **A whole paragraph comes as a paragraph,** in its own style, matched
+  as the destination's: before the caret's paragraph, at its start; after
+  it, at its end; between its halves, in its middle, each half keeping
+  the paragraph's style; and in place of an empty paragraph, ★ whatever
+  that one's style, so a heading pasted on an empty line is a heading,
+  with no empty paragraph left over. The caret goes to the end of what
+  was pasted.
+- **A first or last paragraph copied in part** joins the text before or
+  after the caret, taking that paragraph's style, as text does; a
+  container that held nothing else, as its list item, doesn't come. A
+  selection that ends at a paragraph's start takes only the break before
+  it, so pasted at a paragraph's end it leaves an empty paragraph after
+  what it brought, in that paragraph's style, the caret in it, as text
+  ending in a line break would.
+- **Containers come along:** a quote's paragraphs in a quote; list items
+  in a list of their kind, numbered or bulleted, with their nesting and
+  task boxes; a table as a table, its columns' alignment kept; a rule as
+  a rule; a code block as a code block, with its language. A copy that
+  begins or ends partway into a container brings the containers around
+  what it copied, up to the story: one item pastes as a list of one item,
+  and items copied from deep in a list keep their depth, in an item of
+  their own that has nothing else and shows no marker. ★ Rows pasted
+  outside a table come as a table of those rows, whose first row's cells
+  take the destination's Table Header where they name no style or the
+  default, as Insert, Table makes them, so no row is a header by its
+  place alone, which a Markdown file would ask about.
+- **Pasted inside a container,** blocks nest where the model allows, as
+  blocks of the item or quote the caret is in, with two exceptions where
+  nesting would surprise. ★ List items pasted into a list item join its
+  list at the caret's level, in that list's numbering or bullets: after
+  the caret's item, which keeps what's before the caret, what's after it
+  going to an item of its own after them; before it if the caret is at
+  its start. What the slice holds after them goes on in the last item
+  pasted. ★ A quote pasted into a quote is one quote: its blocks join it
+  at the caret. Where the model can't hold them, a paste is text, as
+  before: code takes lines as its own line breaks, and a table's cell
+  takes them as spaces, so a table or rows pasted into a cell are text.
+  A cell is never joined to text outside its table, and one cell copied
+  alone is text.
+- **Styles:** the destination's win, matched by role and then name; ★
+  only those the pasted text uses come, with the styles up their chains
+  and the parts their values name (`story::merge_used`), not all of the
+  other sheet's that the destination lacks, as stage 9 brought them. A
+  paragraph of Book's body text pasted into a Neutral document, or a
+  Markdown file, brings no style; one in Book's First Paragraph brings
+  that style alone, based on Neutral's Body.
+- **Pictures come along** where they can be had: in the same document,
+  as they are. From an `.xw` file, Copy reads each picture's bytes from
+  its file, and the destination's file keeps them, by their hashes, as
+  Insert Picture does, before the paste is made. From a Markdown file,
+  Copy notes the file each link names: an `.xw` document reads and keeps
+  it, and a Markdown file links it from its own folder, relatively where
+  it can; a link that names no file, as a web address, stays as written
+  in a Markdown file. ★ A Markdown file can't hold a picture an `.xw`
+  file keeps, so it asks before such a paste, as for anything else it
+  can't hold; made an `.xw` file, it keeps the picture, which the
+  question holds until it's answered. A picture whose file can't be had
+  stays behind, its character with it, and the status bar says so.
+- **Markdown files** take what they can hold as it's written; a style of
+  another document's own or a picture an `.xw` file keeps is asked
+  about, and the paste isn't made until the person answers.
+- **One step:** a paste is one transaction, of InsertBlock for what comes
+  whole, SplitParagraph, InsertText, MoveBlock and DeleteBlock around the
+  caret, and InsertStyle for styles that come along; Undo takes it back
+  whole, and history and rebasing take it as any edit. No operation was
+  added.
+- **Tested** (`crates/app/tests/pasting.rs`) case by case, and over
+  selections from paragraphs' starts, second characters and ends to
+  others' in a document of every kind of block, pasted at nine places of
+  every kind: the document holds together, no text is lost or doubled,
+  and Undo takes the paste back. A document a command opens in a
+  session, as New does, now opens in a window the session goes on in, so
+  `spec/sessions/paste-blocks.ron` copies a heading, a quote and a list
+  into another document through the commands. A recorded session keeps
+  text pasted as the clipboard's text, as before, so what was copied
+  before it began pastes as text when it plays back.
 
 **Container: SQLite** (project owner, 2026-10-18). A document is an SQLite
 database with a fixed, versioned schema: objects, the transaction log, embedded
