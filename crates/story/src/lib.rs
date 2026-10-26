@@ -10,7 +10,8 @@
 //!   to, the defaults, the page, its lists and how its blocks look
 //!   ([`Blocks`]); and [`styles::find`], where a value comes from.
 //!   [`merge`] brings another document's styles in, matched by role and
-//!   name, as pasting and replacing a sheet do; [`update`] takes a newer
+//!   name, as replacing a sheet does, and [`merge_used`] those its
+//!   pasted text uses, as pasting does; [`update`] takes a newer
 //!   version of the sheet a document copied, three-way, from the version
 //!   it copied.
 //! - [`flow`]: the story's paragraphs in reading order, each with its
@@ -59,7 +60,7 @@ pub mod styles;
 mod update;
 
 pub use flow::{Ancestor, Cell, DEEPEST, Entry, Flow, Place, Rule, flow};
-pub use merge::{Change, changes, merge};
+pub use merge::{Change, changes, merge, merge_used};
 pub use sheet::{SheetError, SheetSpec};
 pub use styles::{
     Blocks, CharValues, CharacterStyle, DocumentTabs, Level, LevelOwn, ListLevel, ListStyle,

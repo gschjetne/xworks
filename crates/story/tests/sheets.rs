@@ -617,6 +617,86 @@ fn merging_matches_by_role_and_name_and_brings_what_is_missing() {
     assert!(story::changes(&replaced, &theirs).is_empty());
 }
 
+/// Pasting brings only the styles the pasted text uses, with what they
+/// need: their chains, and the parts their values name. Book's First
+/// Paragraph comes along into Neutral, based on Neutral's Body; Book's
+/// other styles match Neutral's, or don't come at all.
+#[test]
+fn pasting_brings_only_the_styles_used() {
+    let sheets = stylesheets();
+    let spec = |name: &str| sheets.iter().find(|(n, _)| n == name).unwrap().1.clone();
+    let book = story::new_document(&spec("book"));
+    let ours = story::new_document(&spec("neutral"));
+    let first = id(&book, "First Paragraph");
+    // A style of Book's own that names a part: a colour of its own.
+    let mut theirs = book.clone();
+    let sheet = theirs.sheet().unwrap();
+    let (colour, caption) = (theirs.new_id(), theirs.new_id());
+    theirs
+        .apply_all(&[
+            Op::InsertStyle {
+                sheet,
+                after: None,
+                id: colour,
+                style: doc::Style {
+                    sheet,
+                    kind: doc::StyleKind::Colour,
+                    base: None,
+                    props: Props::from([
+                        (keys::NAME.to_string(), Value::Text("Rust".into())),
+                        (keys::COLOR.to_string(), Value::Text("#a04020".into())),
+                    ]),
+                },
+            },
+            Op::InsertStyle {
+                sheet,
+                after: None,
+                id: caption,
+                style: doc::Style {
+                    sheet,
+                    kind: doc::StyleKind::Paragraph,
+                    base: Some(first),
+                    props: Props::from([
+                        (keys::NAME.to_string(), Value::Text("Caption".into())),
+                        (keys::COLOR.to_string(), Value::Ref(colour)),
+                    ]),
+                },
+            },
+        ])
+        .unwrap();
+    // Body alone: nothing comes, as Neutral has a Body.
+    let mut pasted = ours.clone();
+    let (ops, map) = story::merge_used(&mut pasted, &theirs, &[id(&book, "Body")].into());
+    assert!(ops.is_empty(), "{ops:?}");
+    assert_eq!(map[&id(&book, "Body")], id(&ours, "Body"));
+    // Caption: it, First Paragraph up its chain, and the colour it names,
+    // and nothing else.
+    let mut pasted = ours.clone();
+    let (ops, map) = story::merge_used(&mut pasted, &theirs, &[caption].into());
+    let added: Vec<ObjectId> = ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::InsertStyle { id, .. } => Some(*id),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(added.len(), 3, "{ops:?}");
+    let style = pasted.style(map[&caption]).unwrap();
+    assert_eq!(style.base, Some(map[&first]));
+    assert_eq!(
+        style.props.get(keys::COLOR),
+        Some(&Value::Ref(map[&colour]))
+    );
+    assert_eq!(
+        pasted.style(map[&first]).unwrap().base,
+        Some(id(&ours, "Body"))
+    );
+    assert_eq!(map.get(&id(&book, "Table Header")), None, "not used");
+    let mut again = ours.clone();
+    again.apply_all(&ops).unwrap();
+    assert_eq!(again, pasted);
+}
+
 /// A technical document's headings are numbered: counted by level, a
 /// heading starting its level's count again under each above it.
 #[test]

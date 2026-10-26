@@ -1,7 +1,8 @@
 //! Bringing one document's styles into another's, matched by role and by
 //! name (docs/ARCHITECTURE.md, section 6): as pasting from another
-//! document does, where the destination's styles win and those it lacks
-//! come along with their chains; and as replacing a document's stylesheet
+//! document does ([`merge_used`]), where the destination's styles win and
+//! those the pasted text uses that it lacks come along with their chains
+//! and parts; and as replacing a document's stylesheet
 //! with another does, or taking a newer version of the one it came from
 //! where the version it copied can't be had (`crate::update`), where the
 //! incoming sheet's win. Nothing is renamed "Body 2": a style that matches
@@ -77,6 +78,54 @@ pub fn merge(
     incoming: &Document,
     theirs: bool,
 ) -> (Vec<Op>, HashMap<ObjectId, ObjectId>) {
+    merge_some(document, incoming, theirs, None)
+}
+
+/// Brings into `document`'s stylesheet, which it changes, only what
+/// `used` names of `incoming`'s styles and parts, as pasting does: each
+/// with the styles up its chain and the parts and styles its values name,
+/// in turn. They're matched as [`merge`] matches them, the document's
+/// winning, and those it lacks are added; the rest of `incoming`'s sheet
+/// doesn't come. Returns what [`merge`] returns, for those it brought.
+pub fn merge_used(
+    document: &mut Document,
+    incoming: &Document,
+    used: &BTreeSet<ObjectId>,
+) -> (Vec<Op>, HashMap<ObjectId, ObjectId>) {
+    let needed = needed(incoming, used);
+    merge_some(document, incoming, false, Some(&needed))
+}
+
+/// The styles and parts of `document` that `used` names, and what they
+/// need: each style's base, and the styles and parts their values name,
+/// in turn. Walked without recursion, each once.
+fn needed(document: &Document, used: &BTreeSet<ObjectId>) -> BTreeSet<ObjectId> {
+    let mut out = BTreeSet::new();
+    let mut stack: Vec<ObjectId> = used.iter().copied().collect();
+    while let Some(id) = stack.pop() {
+        let Some(style) = document.style(id) else {
+            continue;
+        };
+        if !out.insert(id) {
+            continue;
+        }
+        stack.extend(style.base);
+        stack.extend(style.props.values().filter_map(|v| match v {
+            Value::Ref(r) => Some(*r),
+            _ => None,
+        }));
+    }
+    out
+}
+
+/// [`merge`], of only the incoming styles and parts `only` holds, if it's
+/// given.
+fn merge_some(
+    document: &mut Document,
+    incoming: &Document,
+    theirs: bool,
+    only: Option<&BTreeSet<ObjectId>>,
+) -> (Vec<Op>, HashMap<ObjectId, ObjectId>) {
     let mut ops = Vec::new();
     let mut map: HashMap<ObjectId, ObjectId> = HashMap::new();
     let (Some(sheet), Some(their_sheet)) = (document.sheet(), incoming.sheet()) else {
@@ -87,6 +136,9 @@ pub fn merge(
     let mut taken = BTreeSet::new();
     let mut fresh: Vec<ObjectId> = Vec::new();
     for &id in incoming.styles() {
+        if only.is_some_and(|only| !only.contains(&id)) {
+            continue;
+        }
         let Some(style) = incoming.style(id) else {
             continue;
         };
