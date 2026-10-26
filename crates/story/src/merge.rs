@@ -2,9 +2,10 @@
 //! name (docs/ARCHITECTURE.md, section 6): as pasting from another
 //! document does, where the destination's styles win and those it lacks
 //! come along with their chains; and as replacing a document's stylesheet
-//! with another, or taking a newer version of the one it came from, does,
-//! where the incoming sheet's win. Nothing is renamed "Body 2": a style
-//! that matches is the same style.
+//! with another does, or taking a newer version of the one it came from
+//! where the version it copied can't be had (`crate::update`), where the
+//! incoming sheet's win. Nothing is renamed "Body 2": a style that matches
+//! is the same style.
 
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 
@@ -13,7 +14,7 @@ use doc::{Document, ObjectId, Op, Props, Style, StyleKind, Value};
 use crate::keys;
 use crate::sheet::align_name;
 
-fn text<'a>(props: &'a Props, key: &str) -> Option<&'a str> {
+pub(crate) fn text<'a>(props: &'a Props, key: &str) -> Option<&'a str> {
     match props.get(key) {
         Some(Value::Text(t)) => Some(t),
         _ => None,
@@ -22,7 +23,11 @@ fn text<'a>(props: &'a Props, key: &str) -> Option<&'a str> {
 
 /// The style of `document` that incoming `style` matches: one of its kind
 /// with its role, or else with its name, not already `taken`.
-fn matching(document: &Document, style: &Style, taken: &BTreeSet<ObjectId>) -> Option<ObjectId> {
+pub(crate) fn matching(
+    document: &Document,
+    style: &Style,
+    taken: &BTreeSet<ObjectId>,
+) -> Option<ObjectId> {
     let candidates = || {
         document.styles().iter().copied().filter(|id| {
             !taken.contains(id) && document.style(*id).is_some_and(|s| s.kind == style.kind)
@@ -42,7 +47,7 @@ fn matching(document: &Document, style: &Style, taken: &BTreeSet<ObjectId>) -> O
 /// `props` with every reference to an incoming object turned into a
 /// reference to what it became, by `map`; one to anything else is left
 /// out, so it can't name what the destination means otherwise.
-fn mapped(props: &Props, map: &HashMap<ObjectId, ObjectId>) -> Props {
+pub(crate) fn mapped(props: &Props, map: &HashMap<ObjectId, ObjectId>) -> Props {
     props
         .iter()
         .filter_map(|(k, v)| match v {
@@ -53,7 +58,7 @@ fn mapped(props: &Props, map: &HashMap<ObjectId, ObjectId>) -> Props {
 }
 
 /// Applies `op` to `document` and keeps it in `ops` if it applies.
-fn keep(document: &mut Document, ops: &mut Vec<Op>, op: Op) {
+pub(crate) fn keep(document: &mut Document, ops: &mut Vec<Op>, op: Op) {
     if document.apply(&op).is_ok() {
         ops.push(op);
     }
@@ -213,8 +218,18 @@ pub struct Change {
 }
 
 /// A value as a person reads it: lengths in points, references by name.
-fn show(document: &Document, key: &str, value: Option<&Value>) -> String {
+pub(crate) fn show(document: &Document, key: &str, value: Option<&Value>) -> String {
     let lengths = [
+        keys::TAB_INTERVAL,
+        keys::QUOTE_INDENT,
+        keys::QUOTE_BAR,
+        keys::QUOTE_SPACE,
+        keys::CODE_PADDING,
+        keys::TABLE_SPACE,
+        keys::CELL_PADDING,
+        keys::RULE,
+        keys::HAIRLINE,
+        keys::RULE_SPACE,
         keys::SIZE,
         keys::SPACE_BEFORE,
         keys::SPACE_AFTER,

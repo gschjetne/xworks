@@ -59,6 +59,13 @@ doc = false
 bench = false
 
 [[bin]]
+name = "stylesheet_update"
+path = "fuzz_targets/stylesheet_update.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "store_file"
 path = "fuzz_targets/store_file.rs"
 test = false

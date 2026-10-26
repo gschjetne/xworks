@@ -37,6 +37,8 @@ jobs:
           - picture_webp
           - session_file
           - store_file
+          - stylesheet_file
+          - stylesheet_update
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -84,6 +86,7 @@ jobs:
             session_file) seeds=(../spec/sessions) ;;
             picture_jpeg) seeds=(../crates/app/tests/pictures) ;;
             markdown_file) seeds=(../spec/markdown/files) ;;
+            stylesheet_file | stylesheet_update) seeds=(../spec/styles ../spec/styles/versions) ;;
           esac
           cargo +nightly fuzz run "$TARGET" "corpus/$TARGET" "${seeds[@]}" -- \
             -max_total_time="$SECONDS_EACH" -rss_limit_mb=4096

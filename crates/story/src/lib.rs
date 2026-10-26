@@ -10,7 +10,9 @@
 //!   to, the defaults, the page, its lists and how its blocks look
 //!   ([`Blocks`]); and [`styles::find`], where a value comes from.
 //!   [`merge`] brings another document's styles in, matched by role and
-//!   name, as pasting and replacing a sheet do.
+//!   name, as pasting and replacing a sheet do; [`update`] takes a newer
+//!   version of the sheet a document copied, three-way, from the version
+//!   it copied.
 //! - [`flow`]: the story's paragraphs in reading order, each with its
 //!   [`Place`] in the tree: indent, list marker (numbers computed, not
 //!   stored), a numbered heading's number, quotes, table cell, the
@@ -54,6 +56,7 @@ mod flow;
 mod merge;
 pub mod sheet;
 pub mod styles;
+mod update;
 
 pub use flow::{Ancestor, Cell, DEEPEST, Entry, Flow, Place, Rule, flow};
 pub use merge::{Change, changes, merge};
@@ -62,6 +65,7 @@ pub use styles::{
     Blocks, CharValues, CharacterStyle, DocumentTabs, Level, ListStyle, PageStyle, ParagraphStyle,
     Part, Rgb, Source, StyleSheet,
 };
+pub use update::{Update, update};
 
 use std::ops::Range;
 
