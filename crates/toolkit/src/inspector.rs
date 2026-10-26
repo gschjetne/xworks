@@ -1,18 +1,20 @@
 //! The inspector: a side panel of the selection's properties, as the app
 //! describes them ([`chrome::Inspector`]), in tabs of sections of rows of
-//! typed controls.
+//! typed controls. A tab taller than the panel scrolls under its tabs,
+//! which stay put, with a scroll bar at the panel's edge; what's drawn,
+//! and what a point hits, follow the scroll.
 
 use chrome::{ControlKind, Inspector};
-use scene::Item;
+use scene::{Color, Group, Item};
 use text::units::PIXEL;
 
-use crate::kit::{field_box, fill, px, rounded};
+use crate::kit::{field_box, fill, px, rounded, swatch};
 use crate::title::segmented;
 use crate::{Field, Kit, Rect};
 
 /// A control of the inspector, by where it is: its section, row, and
 /// place in the row, in the tab shown.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct ControlRef {
     /// The section.
     pub section: usize,
@@ -29,8 +31,21 @@ pub enum InspectorHit {
     Tab(usize),
     /// A control, and for one of segments, which segment.
     Control(ControlRef, usize),
+    /// The scroll bar, where the tab shown is taller than the panel.
+    Bar(BarHit),
     /// Somewhere else in the panel.
     Panel,
+}
+
+/// What a point on the scroll bar hits.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BarHit {
+    /// The thumb, which a drag moves.
+    Thumb,
+    /// The track above the thumb: a page up.
+    Before,
+    /// The track below it: a page down.
+    After,
 }
 
 /// The inspector laid out.
@@ -39,6 +54,12 @@ pub struct InspectorView {
     rect: Rect,
     tabs: Rect,
     tab_parts: Vec<Rect>,
+    /// Where the tab's sections show, under its tabs: what's scrolled
+    /// past its edges is cut off.
+    body: Rect,
+    /// How far the sections are scrolled, and how far they can be.
+    scroll: i64,
+    most: i64,
     /// Section headings: the title and where it goes.
     headings: Vec<(String, Rect)>,
     /// Row labels and where they go.
@@ -47,18 +68,26 @@ pub struct InspectorView {
     controls: Vec<(ControlRef, Rect, Vec<Rect>)>,
     /// Boxes drawn behind runs of toggles, which share one.
     groups: Vec<Rect>,
+    /// The scroll bar's track and thumb, where it scrolls.
+    bar: Option<(Rect, Rect)>,
 }
+
+/// How wide the strip at the panel's edge is where the scroll bar takes
+/// the pointer, and the bar drawn in it.
+const BAR_REACH: f64 = 14.0;
+const BAR_WIDTH: f64 = 6.0;
 
 impl InspectorView {
     /// `model`'s tab `tab` laid out in a panel from `top` to `bottom`
-    /// along the right of a window `width` wide.
+    /// along the right of a window `width` wide, its sections scrolled
+    /// `scroll` down, as far as they go.
     pub fn new(
         kit: &Kit<'_>,
         model: &Inspector,
         tab: usize,
         width: i64,
-        top: i64,
-        bottom: i64,
+        (top, bottom): (i64, i64),
+        scroll: i64,
     ) -> InspectorView {
         let s = &kit.theme.sizes;
         let panel = s.inspector.units();
@@ -71,8 +100,8 @@ impl InspectorView {
         let fx = x0 + pad + label_w;
         let fw = panel - 2 * pad - label_w;
         let gap = px(8.0);
-        let mut y = top + px(12.0);
-        let tabs = Rect::new(x0 + pad, y, panel - 2 * pad, field_h);
+        let note_ty = kit.ty(s.label, 400);
+        let tabs = Rect::new(x0 + pad, top + px(12.0), panel - 2 * pad, field_h);
         let n = model.tabs.len().max(1) as i64;
         let tab_parts = (0..n)
             .map(|k| {
@@ -84,7 +113,9 @@ impl InspectorView {
                 )
             })
             .collect();
-        y += px(44.0);
+        let body_top = (top + px(44.0)).min(rect.bottom());
+        let body = Rect::new(x0, body_top, panel, rect.bottom() - body_top);
+        let mut y = body.y + px(12.0);
         let mut headings = Vec::new();
         let mut labels = Vec::new();
         let mut controls = Vec::new();
@@ -150,10 +181,35 @@ impl InspectorView {
                         x = x0 + pad;
                         room += label_w;
                     }
+                    // A note beside other controls, such as where a value
+                    // comes from, takes the room its words need, up to
+                    // half the row; the others share the rest alike.
+                    let notes: Vec<Option<i64>> = cells
+                        .iter()
+                        .map(|cell| match &row.controls[cell[0]].kind {
+                            ControlKind::Note { text } if cell.len() == 1 => {
+                                Some(kit.width(text, note_ty).min(room / 2))
+                            }
+                            _ => None,
+                        })
+                        .collect();
                     let n = cells.len().max(1) as i64;
-                    let w = (room - gap * (n - 1)) / n;
-                    for k in 0..n {
-                        cell_rects.push(Rect::new(x + k * (w + gap), y, w, h));
+                    let flexible = notes.iter().filter(|w| w.is_none()).count() as i64;
+                    let fixed: i64 = notes.iter().flatten().sum();
+                    let shared = if flexible == 0 {
+                        None
+                    } else {
+                        Some((room - gap * (n - 1) - fixed) / flexible)
+                    };
+                    let mut at = x;
+                    for note in &notes {
+                        let w = match (shared, *note) {
+                            (Some(shared), Some(note)) => note.max(0).min(room - shared),
+                            (Some(shared), None) => shared,
+                            (None, _) => (room - gap * (n - 1)) / n,
+                        };
+                        cell_rects.push(Rect::new(at, y, w.max(0), h));
+                        at += w.max(0) + gap;
                     }
                 }
                 for (cell, rect) in cells.iter().zip(&cell_rects) {
@@ -212,14 +268,55 @@ impl InspectorView {
             }
             y += s.section_gap.units();
         }
+        // How far the sections reach, with room under the last as above
+        // the first; past the body, they scroll.
+        let end = if sections.is_empty() {
+            body.y
+        } else {
+            y - s.section_gap.units() + px(12.0)
+        };
+        let most = (end - body.bottom()).max(0);
+        let scroll = scroll.clamp(0, most);
+        let up = |r: &mut Rect| r.y -= scroll;
+        headings.iter_mut().for_each(|(_, r)| up(r));
+        labels.iter_mut().for_each(|(_, r)| up(r));
+        groups.iter_mut().for_each(up);
+        for (_, r, parts) in &mut controls {
+            up(r);
+            parts.iter_mut().for_each(up);
+        }
+        // The bar: a thumb as much of the track as the body shows of the
+        // sections, as far down it as they're scrolled.
+        let bar = (most > 0).then(|| {
+            let track = Rect::new(
+                rect.right() - px(BAR_REACH),
+                body.y + px(4.0),
+                px(BAR_REACH),
+                (body.height - px(8.0)).max(0),
+            );
+            let length = (track.height * body.height / (body.height + most))
+                .max(px(28.0))
+                .min(track.height);
+            let thumb = Rect::new(
+                track.x,
+                track.y + (track.height - length) * scroll / most,
+                track.width,
+                length,
+            );
+            (track, thumb)
+        });
         InspectorView {
             rect,
             tabs,
             tab_parts,
+            body,
+            scroll,
+            most,
             headings,
             labels,
             controls,
             groups,
+            bar,
         }
     }
 
@@ -228,12 +325,79 @@ impl InspectorView {
         self.rect
     }
 
-    /// Where control `at` is.
+    /// Where its sections show, under the tabs.
+    pub fn body(&self) -> Rect {
+        self.body
+    }
+
+    /// How far its sections are scrolled down.
+    pub fn scroll(&self) -> i64 {
+        self.scroll
+    }
+
+    /// How far its sections can be scrolled down: 0 where they fit.
+    pub fn most(&self) -> i64 {
+        self.most
+    }
+
+    /// The scroll bar's track and thumb, where its sections don't fit.
+    pub fn bar(&self) -> Option<(Rect, Rect)> {
+        self.bar
+    }
+
+    /// Where control `at` is, as scrolled: perhaps out of the body.
     pub fn control(&self, at: ControlRef) -> Option<Rect> {
         self.controls
             .iter()
             .find(|(c, ..)| *c == at)
             .map(|(_, r, _)| *r)
+    }
+
+    /// Every control and where it is, as scrolled, in the order they're
+    /// laid out.
+    pub fn controls(&self) -> impl Iterator<Item = (ControlRef, Rect)> + '_ {
+        self.controls.iter().map(|(at, r, _)| (*at, *r))
+    }
+
+    /// Where tab `k`'s title is.
+    pub fn tab(&self, k: usize) -> Option<Rect> {
+        self.tab_parts.get(k).copied()
+    }
+
+    /// Where section `k`'s heading is, as scrolled.
+    pub fn heading(&self, k: usize) -> Option<Rect> {
+        self.headings.get(k).map(|(_, r)| *r)
+    }
+
+    /// How far to scroll so that control `at` shows whole in the body,
+    /// with a little room round it: as it is, if it does.
+    pub fn reveal(&self, at: ControlRef) -> i64 {
+        let Some(r) = self.control(at) else {
+            return self.scroll;
+        };
+        let room = px(8.0);
+        let (top, bottom) = (self.body.y + room, self.body.bottom() - room);
+        let by = if r.y < top {
+            r.y - top
+        } else if r.bottom() > bottom {
+            (r.bottom() - bottom).min(r.y - top)
+        } else {
+            0
+        };
+        (self.scroll + by).clamp(0, self.most)
+    }
+
+    /// The scroll the thumb gives, dragged `dy` from where it was when the
+    /// sections were scrolled `from`.
+    pub fn dragged(&self, from: i64, dy: i64) -> i64 {
+        let Some((track, thumb)) = self.bar else {
+            return 0;
+        };
+        let free = track.height - thumb.height;
+        if free <= 0 {
+            return from;
+        }
+        (from + dy * self.most / free).clamp(0, self.most)
     }
 
     /// What (`x`, `y`) hits, if it's in the panel.
@@ -243,6 +407,20 @@ impl InspectorView {
         }
         if let Some(k) = self.tab_parts.iter().position(|r| r.contains(x, y)) {
             return Some(InspectorHit::Tab(k));
+        }
+        if let Some((track, thumb)) = self.bar
+            && track.contains(x, y)
+        {
+            return Some(InspectorHit::Bar(if thumb.contains(x, y) {
+                BarHit::Thumb
+            } else if y < thumb.y {
+                BarHit::Before
+            } else {
+                BarHit::After
+            }));
+        }
+        if !self.body.contains(x, y) {
+            return Some(InspectorHit::Panel);
         }
         for (at, rect, parts) in &self.controls {
             if rect.contains(x, y) {
@@ -254,7 +432,10 @@ impl InspectorView {
     }
 
     /// The panel drawn: tab `tab` of `model`, with `editing` the control
-    /// being typed into and what's typed.
+    /// being typed into and what's typed. What's scrolled out of the body
+    /// isn't drawn, and what's partly out of it is cut at its edge; the
+    /// rest is drawn as it is, so a change to one control changes only
+    /// its own items.
     pub fn draw(
         &self,
         kit: &Kit<'_>,
@@ -263,7 +444,7 @@ impl InspectorView {
         hover: Option<InspectorHit>,
         editing: Option<(ControlRef, &Field)>,
     ) -> Vec<Item> {
-        let (s, c) = (&kit.theme.sizes, &kit.theme.colors);
+        let c = &kit.theme.colors;
         let mut out = Vec::new();
         fill(&mut out, self.rect, c.chrome);
         fill(
@@ -271,6 +452,25 @@ impl InspectorView {
             Rect::new(self.rect.x, self.rect.y, PIXEL, self.rect.height),
             c.line,
         );
+        let mut content = Vec::new();
+        self.draw_sections(kit, model, tab, hover, editing, &mut content);
+        let body = self.body;
+        let clip = scene::Path::rect(body.x, body.y, body.width, body.height);
+        for item in content {
+            let Some(b) = item.bounds() else { continue };
+            if b.y >= body.bottom() || b.bottom() <= body.y {
+                continue;
+            }
+            if b.y >= body.y && b.bottom() <= body.bottom() {
+                out.push(item);
+            } else {
+                out.push(Item::Group(Group {
+                    clip: Some(clip.clone()),
+                    transform: scene::Transform::IDENTITY,
+                    items: vec![item],
+                }));
+            }
+        }
         let titles: Vec<chrome::Segment> = model
             .tabs
             .iter()
@@ -288,21 +488,48 @@ impl InspectorView {
             &titles,
             Some(tab),
         );
+        if let Some((_, thumb)) = self.bar {
+            let lit = matches!(hover, Some(InspectorHit::Bar(_)));
+            let w = px(BAR_WIDTH);
+            let drawn = Rect::new(thumb.x + (thumb.width - w) / 2, thumb.y, w, thumb.height);
+            rounded(
+                &mut out,
+                drawn,
+                w / 2,
+                if lit { c.secondary } else { c.disabled },
+            );
+        }
+        out
+    }
+
+    /// The sections' headings, labels and controls, as scrolled.
+    fn draw_sections(
+        &self,
+        kit: &Kit<'_>,
+        model: &Inspector,
+        tab: usize,
+        hover: Option<InspectorHit>,
+        editing: Option<(ControlRef, &Field)>,
+        out: &mut Vec<Item>,
+    ) {
+        let (s, c) = (&kit.theme.sizes, &kit.theme.colors);
         let heading = kit.ty(s.heading, 600);
         let name = kit.ty(s.label, 400);
         let value = kit.ty(s.value, 400);
-        for (title, r) in &self.headings {
-            kit.text(&mut out, title, r.x, r.y, r.height, heading, c.secondary);
+        let visible = |r: &Rect| r.bottom() > self.body.y && r.y < self.body.bottom();
+        for (title, r) in self.headings.iter().filter(|(_, r)| visible(r)) {
+            kit.text(out, title, r.x, r.y, r.height, heading, c.secondary);
         }
-        for (label, r) in &self.labels {
-            kit.text(&mut out, label, r.x, r.y, r.height, name, c.secondary);
+        for (label, r) in self.labels.iter().filter(|(_, r)| visible(r)) {
+            let shown = kit.fit(label, None, r.width - px(4.0), name);
+            kit.text(out, &shown, r.x, r.y, r.height, name, c.secondary);
         }
         let radius = s.radius.units();
-        for group in &self.groups {
-            rounded(&mut out, *group, radius, c.hover);
+        for group in self.groups.iter().filter(|r| visible(r)) {
+            rounded(out, *group, radius, c.hover);
         }
         let sections = model.tabs.get(tab).map_or(&[][..], |t| &t.sections[..]);
-        for (at, rect, parts) in &self.controls {
+        for (at, rect, parts) in self.controls.iter().filter(|(_, r, _)| visible(r)) {
             let Some(control) = sections
                 .get(at.section)
                 .and_then(|s| s.rows.get(at.row))
@@ -318,30 +545,60 @@ impl InspectorView {
             };
             let (cx, cy) = rect.centre();
             let lit = hover == Some(InspectorHit::Control(*at, 0)) && control.enabled;
+            let typing = editing.filter(|(e, _)| e == at).map(|(_, f)| f);
+            // What's typed, with its caret or selection, from `x`.
+            let typed = |out: &mut Vec<Item>, field: &Field, x: i64| {
+                let layout = kit.layout(field.text(), value);
+                let y = rect.y + (rect.height - layout.height) / 2;
+                field.draw(
+                    out,
+                    &layout,
+                    (x, y),
+                    kit.caret.then_some(c.ink),
+                    c.selection,
+                );
+                kit.text(out, field.text(), x, rect.y, rect.height, value, ink);
+            };
             match &control.kind {
                 ControlKind::Choice {
                     choices,
                     selected,
                     plain,
                 } => {
-                    let label = selected
-                        .and_then(|k| choices.get(k))
-                        .map_or("—", |ch| ch.label.as_str());
+                    let choice = selected.and_then(|k| choices.get(k));
+                    let label = choice.map_or("—", |ch| ch.label.as_str());
+                    let family = choice.and_then(|ch| ch.family.as_deref());
                     if *plain {
-                        kit.text(&mut out, label, rect.x, rect.y, rect.height, name, quiet);
-                    } else {
-                        field_box(&mut out, c, *rect, radius - PIXEL);
-                        kit.text(
-                            &mut out,
-                            label,
-                            rect.x + px(10.0),
+                        let shown = kit.fit(label, family, rect.width, name);
+                        kit.text_in(
+                            out,
+                            &shown,
+                            family,
+                            rect.x,
                             rect.y,
                             rect.height,
-                            value,
-                            ink,
+                            name,
+                            quiet,
                         );
+                    } else {
+                        field_box(out, c, *rect, radius - PIXEL);
+                        let mut x = rect.x + px(10.0);
+                        if let Some([r, g, b]) = choice.and_then(|ch| ch.swatch) {
+                            let side = px(14.0);
+                            swatch(
+                                out,
+                                c,
+                                Rect::new(x, cy - side / 2, side, side),
+                                Color::rgb(r, g, b),
+                            );
+                            x += side + px(7.0);
+                        }
+                        // The label stops short of the arrow.
+                        let room = rect.right() - px(26.0) - x;
+                        let shown = kit.fit(label, family, room, value);
+                        kit.text_in(out, &shown, family, x, rect.y, rect.height, value, ink);
                         kit.icon(
-                            &mut out,
+                            out,
                             "chevron-down",
                             rect.right() - px(14.0),
                             cy,
@@ -356,33 +613,20 @@ impl InspectorView {
                     plain,
                 } => {
                     let shown = length.map_or_else(|| "—".to_string(), |l| l.to_string());
-                    let typing = editing.filter(|(e, _)| e == at).map(|(_, f)| f);
-                    let x = if *plain {
+                    let mut x = if *plain {
                         rect.x
                     } else {
-                        field_box(&mut out, c, *rect, radius - PIXEL);
+                        field_box(out, c, *rect, radius - PIXEL);
                         rect.x + px(10.0)
                     };
-                    let mut x = x;
                     if !prefix.is_empty() {
-                        x += kit.text(&mut out, prefix, x, rect.y, rect.height, value, quiet)
-                            + px(8.0);
+                        x += kit.text(out, prefix, x, rect.y, rect.height, value, quiet) + px(8.0);
                     }
                     match typing {
-                        Some(field) => {
-                            let layout = kit.layout(field.text(), value);
-                            let y = rect.y + (rect.height - layout.height) / 2;
-                            field.draw(
-                                &mut out,
-                                &layout,
-                                (x, y),
-                                kit.caret.then_some(c.ink),
-                                c.selection,
-                            );
-                            kit.text(&mut out, field.text(), x, rect.y, rect.height, value, ink);
-                        }
+                        Some(field) => typed(out, field, x),
                         None => {
-                            kit.text(&mut out, &shown, x, rect.y, rect.height, value, ink);
+                            let shown = kit.fit(&shown, None, rect.right() - px(6.0) - x, value);
+                            kit.text(out, &shown, x, rect.y, rect.height, value, ink);
                         }
                     }
                 }
@@ -394,53 +638,55 @@ impl InspectorView {
                             rect.width - px(4.0),
                             rect.height - px(4.0),
                         );
-                        field_box(&mut out, c, raised, radius - PIXEL);
+                        field_box(out, c, raised, radius - PIXEL);
                     } else if lit {
-                        rounded(&mut out, rect.inset(px(2.0)), radius - PIXEL, c.line);
+                        rounded(out, rect.inset(px(2.0)), radius - PIXEL, c.line);
                     }
-                    kit.icon(&mut out, icon, cx, cy, px(15.0), ink);
+                    kit.icon(out, icon, cx, cy, px(15.0), ink);
                 }
                 ControlKind::Segments { segments, selected } => {
-                    segmented(kit, &mut out, *rect, parts, segments, *selected);
+                    segmented(kit, out, *rect, parts, segments, *selected);
                 }
                 ControlKind::Text { value: text } => {
-                    field_box(&mut out, c, *rect, radius - PIXEL);
+                    field_box(out, c, *rect, radius - PIXEL);
                     let x = rect.x + px(10.0);
-                    match editing.filter(|(e, _)| e == at).map(|(_, f)| f) {
-                        Some(field) => {
-                            let layout = kit.layout(field.text(), value);
-                            let y = rect.y + (rect.height - layout.height) / 2;
-                            field.draw(
-                                &mut out,
-                                &layout,
-                                (x, y),
-                                kit.caret.then_some(c.ink),
-                                c.selection,
-                            );
-                            kit.text(&mut out, field.text(), x, rect.y, rect.height, value, ink);
-                        }
+                    match typing {
+                        Some(field) => typed(out, field, x),
                         None => {
-                            kit.text(&mut out, text, x, rect.y, rect.height, value, ink);
+                            let shown = kit.fit(text, None, rect.right() - px(6.0) - x, value);
+                            kit.text(out, &shown, x, rect.y, rect.height, value, ink);
+                        }
+                    }
+                }
+                ControlKind::Colour { value: colour } => {
+                    field_box(out, c, *rect, radius - PIXEL);
+                    let side = px(16.0);
+                    let at = Rect::new(rect.x + px(7.0), cy - side / 2, side, side);
+                    let hex = match colour {
+                        Some([r, g, b]) => {
+                            swatch(out, c, at, Color::rgb(*r, *g, *b));
+                            format!("#{r:02x}{g:02x}{b:02x}")
+                        }
+                        None => "—".to_string(),
+                    };
+                    let x = at.right() + px(8.0);
+                    match typing {
+                        Some(field) => typed(out, field, x),
+                        None => {
+                            kit.text(out, &hex, x, rect.y, rect.height, value, ink);
                         }
                     }
                 }
                 ControlKind::Note { text } => {
-                    kit.text(
-                        &mut out,
-                        text,
-                        rect.x,
-                        rect.y,
-                        rect.height,
-                        name,
-                        c.secondary,
-                    );
+                    let shown = kit.fit(text, None, rect.width, name);
+                    kit.text(out, &shown, rect.x, rect.y, rect.height, name, c.secondary);
                 }
                 ControlKind::Button { label, icon } => match icon {
                     Some(icon) => {
                         if lit {
-                            rounded(&mut out, *rect, radius, c.hover);
+                            rounded(out, *rect, radius, c.hover);
                         }
-                        kit.icon(&mut out, icon, cx, cy, px(14.0), quiet);
+                        kit.icon(out, icon, cx, cy, px(14.0), quiet);
                     }
                     None => {
                         let link = kit.ty(s.value, 500);
@@ -449,9 +695,10 @@ impl InspectorView {
                         } else {
                             c.disabled
                         };
+                        let shown = kit.fit(label, None, rect.width, link);
                         kit.text(
-                            &mut out,
-                            label,
+                            out,
+                            &shown,
                             rect.x,
                             rect.y + px(2.0),
                             rect.height,
@@ -462,6 +709,5 @@ impl InspectorView {
                 },
             }
         }
-        out
     }
 }

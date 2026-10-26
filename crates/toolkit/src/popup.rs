@@ -2,11 +2,14 @@
 //! submenus, and the choices of an inspector's field.
 
 use chrome::MenuItem;
-use scene::Item;
+use scene::{Color, Item};
 use text::units::PIXEL;
 
-use crate::kit::{fill, px, rounded, shadow};
+use crate::kit::{fill, px, rounded, shadow, swatch};
 use crate::{Kit, Rect};
+
+/// The room a colour's swatch takes before a row's title.
+const SWATCH: i64 = 21 * PIXEL;
 
 /// A row of a popup.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -23,6 +26,11 @@ pub struct PopupRow {
     pub checked: bool,
     /// Whether it opens a submenu.
     pub submenu: bool,
+    /// The font family its title is shown in, for a choice of families;
+    /// the interface's for none.
+    pub family: Option<String>,
+    /// A colour shown before its title, sRGB, for a choice of colours.
+    pub swatch: Option<[u8; 3]>,
 }
 
 impl PopupRow {
@@ -35,6 +43,18 @@ impl PopupRow {
             enabled: true,
             checked,
             submenu: false,
+            family: None,
+            swatch: None,
+        }
+    }
+
+    /// A row for an inspector's `choice`, checked if it's the one set:
+    /// shown in its family, or with its swatch, if it has one.
+    pub fn of_choice(choice: &chrome::Choice, checked: bool) -> PopupRow {
+        PopupRow {
+            family: choice.family.clone(),
+            swatch: choice.swatch,
+            ..PopupRow::choice(&choice.label, checked)
         }
     }
 
@@ -51,32 +71,24 @@ impl PopupRow {
                     checked,
                     ..
                 } => PopupRow {
-                    title: title.clone(),
                     access: *access,
                     shortcut: shortcut.clone(),
                     enabled: *enabled,
-                    checked: *checked,
-                    submenu: false,
+                    ..PopupRow::choice(title, *checked)
                 },
                 MenuItem::Submenu {
                     title,
                     access,
                     items,
                 } => PopupRow {
-                    title: title.clone(),
                     access: *access,
-                    shortcut: None,
                     enabled: !items.is_empty(),
-                    checked: false,
                     submenu: true,
+                    ..PopupRow::choice(title, false)
                 },
                 MenuItem::Separator => PopupRow {
-                    title: String::new(),
-                    access: None,
-                    shortcut: None,
                     enabled: false,
-                    checked: false,
-                    submenu: false,
+                    ..PopupRow::choice("", false)
                 },
             })
             .collect()
@@ -118,7 +130,13 @@ impl Popup {
                     .as_ref()
                     .map_or(0, |k| kit.width(k, label) + px(28.0));
                 let arrow = if row.submenu { px(24.0) } else { 0 };
-                kit.width(&row.title, text) + shortcut + arrow
+                let swatch = if row.swatch.is_some() { SWATCH } else { 0 };
+                let title = kit
+                    .layout_in(&row.title, row.family.as_deref(), text)
+                    .lines
+                    .first()
+                    .map_or(0, |l| l.width);
+                title + shortcut + arrow + swatch
             })
             .max()
             .unwrap_or(0);
@@ -214,8 +232,27 @@ impl Popup {
             if row.checked {
                 kit.icon(&mut out, "check", rect.x + pad + px(7.0), cy, px(14.0), ink);
             }
-            let x = rect.x + pad + check;
-            kit.text(&mut out, &row.title, x, rect.y, rect.height, text, ink);
+            let mut x = rect.x + pad + check;
+            if let Some([r, g, b]) = row.swatch {
+                let side = px(14.0);
+                swatch(
+                    &mut out,
+                    c,
+                    Rect::new(x, cy - side / 2, side, side),
+                    Color::rgb(r, g, b),
+                );
+                x += SWATCH;
+            }
+            kit.text_in(
+                &mut out,
+                &row.title,
+                row.family.as_deref(),
+                x,
+                rect.y,
+                rect.height,
+                text,
+                ink,
+            );
             if access
                 && let Some(key) = row.access
                 && let Some(at) = row

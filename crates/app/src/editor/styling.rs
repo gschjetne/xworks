@@ -909,14 +909,12 @@ impl Editor {
                 s.id.is_some_and(|b| b != id && !self.document.chain(b).contains(&id))
             })
             .collect();
-        let mut base_choices = vec![Choice {
-            value: Arg::Int(0),
-            label: "Nothing".to_string(),
-        }];
-        base_choices.extend(bases.iter().map(|s| Choice {
-            value: Arg::Int(s.id.map_or(0, |b| b.0 as i64)),
-            label: s.name.clone(),
-        }));
+        let mut base_choices = vec![Choice::new(Arg::Int(0), "Nothing".to_string())];
+        base_choices.extend(
+            bases
+                .iter()
+                .map(|s| Choice::new(Arg::Int(s.id.map_or(0, |b| b.0 as i64)), s.name.clone())),
+        );
         let base_selected = match style.base {
             None => Some(0),
             Some(b) => bases.iter().position(|s| s.id == Some(b)).map(|i| i + 1),
@@ -982,36 +980,27 @@ impl Editor {
         let face = own_ref(keys::FONT);
         let mut face_choices: Vec<Choice> = faces
             .iter()
-            .map(|p| Choice {
-                value: Arg::Int(p.id.0 as i64),
-                label: p.name.clone(),
-            })
+            .map(|p| Choice::new(Arg::Int(p.id.0 as i64), p.name.clone()))
             .collect();
         let mut face_selected = face.and_then(|f| faces.iter().position(|p| p.id == f));
         if face_selected.is_none() {
-            face_choices.push(Choice {
-                value: Arg::Text(style.family.clone()),
-                label: style.family.clone(),
-            });
+            face_choices.push(Choice::new(
+                Arg::Text(style.family.clone()),
+                style.family.clone(),
+            ));
             face_selected = Some(face_choices.len() - 1);
         }
         let colours = parts(StyleKind::Colour);
         let colour = own_ref(keys::COLOR);
         let mut colour_choices: Vec<Choice> = colours
             .iter()
-            .map(|p| Choice {
-                value: Arg::Int(p.id.0 as i64),
-                label: p.name.clone(),
-            })
+            .map(|p| Choice::new(Arg::Int(p.id.0 as i64), p.name.clone()))
             .collect();
         let mut colour_selected = colour.and_then(|c| colours.iter().position(|p| p.id == c));
         if colour_selected.is_none() {
             let (r, g, b) = style.color;
             let hex = format!("#{r:02x}{g:02x}{b:02x}");
-            colour_choices.push(Choice {
-                value: Arg::Text(hex.clone()),
-                label: hex,
-            });
+            colour_choices.push(Choice::new(Arg::Text(hex.clone()), hex));
             colour_selected = Some(colour_choices.len() - 1);
         }
         let toggle = |key: &str, icon: &str, label: &str, on: bool| {
@@ -1086,18 +1075,19 @@ impl Editor {
         }
         let layouts = parts(StyleKind::Tabs);
         let layout = own_ref(keys::TABS);
-        let mut tab_choices = vec![Choice {
-            value: Arg::Int(0),
-            label: if style.tabs.is_empty() {
-                "None".to_string()
+        let mut tab_choices = vec![Choice::new(
+            Arg::Int(0),
+            if style.tabs.is_empty() {
+                "None"
             } else {
-                "Its own".to_string()
+                "Its own"
             },
-        }];
-        tab_choices.extend(layouts.iter().map(|p| Choice {
-            value: Arg::Int(p.id.0 as i64),
-            label: p.name.clone(),
-        }));
+        )];
+        tab_choices.extend(
+            layouts
+                .iter()
+                .map(|p| Choice::new(Arg::Int(p.id.0 as i64), p.name.clone())),
+        );
         let tab_selected = match layout {
             Some(l) => layouts.iter().position(|p| p.id == l).map(|i| i + 1),
             None => Some(0),
@@ -1112,9 +1102,8 @@ impl Editor {
                         choices: aligns
                             .iter()
                             .zip(align_labels)
-                            .map(|(a, label)| Choice {
-                                value: Arg::Text(a.to_string()),
-                                label: label.to_string(),
+                            .map(|(a, label)| {
+                                Choice::new(Arg::Text(a.to_string()), label.to_string())
                             })
                             .collect(),
                         selected: aligns
@@ -1140,10 +1129,7 @@ impl Editor {
                         selected: heights.iter().position(|&h| h == line),
                         choices: heights
                             .iter()
-                            .map(|&h| Choice {
-                                value: Arg::Int(h),
-                                label: super::format::line_height_label(h),
-                            })
+                            .map(|&h| Choice::new(Arg::Int(h), super::format::line_height_label(h)))
                             .collect(),
                         plain: false,
                     },

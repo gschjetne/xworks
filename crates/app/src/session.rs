@@ -138,6 +138,18 @@ pub struct Chrome {
     /// to; centimetres if it's left out.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub units: Option<chrome::Unit>,
+    /// How far the inspector's tab was scrolled down, in layout units,
+    /// which where a press in it lands depends on; 0 if it's left out.
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub scroll: i64,
+    /// The style or part the inspector's Style tab showed, by ID, if one
+    /// was chosen, rather than the caret's paragraph style.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub style: Option<u64>,
+}
+
+fn is_zero(n: &i64) -> bool {
+    *n == 0
 }
 
 /// One thing a person does.

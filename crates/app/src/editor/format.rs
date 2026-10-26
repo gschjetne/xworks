@@ -34,8 +34,17 @@ pub(super) fn line_height_label(per_mille: i64) -> String {
     format!("{number} × the font")
 }
 
+/// What a kind of tab stop is called in the inspector: "Decimal (,)" for
+/// one on a comma.
+pub(super) fn stop_label(kind: StopKind) -> String {
+    match kind {
+        StopKind::Decimal(c) if c != '.' => format!("Decimal ({c})"),
+        _ => kind.name().to_string(),
+    }
+}
+
 /// The ruler's kind of tab stop, as text's.
-fn stop_kind(align: TabAlign) -> StopKind {
+pub(super) fn stop_kind(align: TabAlign) -> StopKind {
     match align {
         TabAlign::Start => StopKind::Start,
         TabAlign::Center => StopKind::Center,
@@ -45,7 +54,7 @@ fn stop_kind(align: TabAlign) -> StopKind {
 }
 
 /// Text's kind of tab stop, as the ruler's.
-fn tab_align(kind: StopKind) -> TabAlign {
+pub(super) fn tab_align(kind: StopKind) -> TabAlign {
     match kind {
         StopKind::Start => TabAlign::Start,
         StopKind::Center => TabAlign::Center,
@@ -347,13 +356,15 @@ impl Editor {
         let styles: Vec<Choice> = sheet
             .paragraph
             .iter()
-            .map(|s| Choice {
-                value: Arg::Int(s.id.map_or(0, |id| id.0 as i64)),
-                label: if marked && s.id == style {
-                    format!("{} +", s.name)
-                } else {
-                    s.name.clone()
-                },
+            .map(|s| {
+                Choice::new(
+                    Arg::Int(s.id.map_or(0, |id| id.0 as i64)),
+                    if marked && s.id == style {
+                        format!("{} +", s.name)
+                    } else {
+                        s.name.clone()
+                    },
+                )
             })
             .collect();
         let same_style = self
@@ -443,10 +454,7 @@ impl Editor {
                     selected: heights.iter().position(|&h| h == line),
                     choices: heights
                         .iter()
-                        .map(|&h| Choice {
-                            value: Arg::Int(h),
-                            label: line_height_label(h),
-                        })
+                        .map(|&h| Choice::new(Arg::Int(h), line_height_label(h)))
                         .collect(),
                     plain: false,
                 },
@@ -480,10 +488,7 @@ impl Editor {
                     selected: families.iter().position(|f| *f == family),
                     choices: families
                         .iter()
-                        .map(|f| Choice {
-                            value: Arg::Text(f.clone()),
-                            label: f.clone(),
-                        })
+                        .map(|f| Choice::new(Arg::Text(f.clone()), f.clone()))
                         .collect(),
                     plain: false,
                 },
@@ -547,10 +552,7 @@ impl Editor {
                     }),
                     choices: languages
                         .into_iter()
-                        .map(|(tag, title)| Choice {
-                            value: Arg::Text(tag),
-                            label: title,
-                        })
+                        .map(|(tag, title)| Choice::new(Arg::Text(tag), title))
                         .collect(),
                     plain: false,
                 },
@@ -596,15 +598,7 @@ impl Editor {
                                 selected: options.iter().position(|k| *k == kind),
                                 choices: options
                                     .iter()
-                                    .map(|k| Choice {
-                                        value: Arg::Text(k.id()),
-                                        label: match k {
-                                            StopKind::Decimal(c) if *c != '.' => {
-                                                format!("Decimal ({c})")
-                                            }
-                                            _ => k.name().to_string(),
-                                        },
-                                    })
+                                    .map(|k| Choice::new(Arg::Text(k.id()), stop_label(*k)))
                                     .collect(),
                                 plain: true,
                             },
@@ -670,9 +664,8 @@ impl Editor {
                                 selected: size,
                                 choices: sizes
                                     .iter()
-                                    .map(|(name, ..)| Choice {
-                                        value: Arg::Text(name.to_string()),
-                                        label: name.to_string(),
+                                    .map(|(name, ..)| {
+                                        Choice::new(Arg::Text(name.to_string()), name.to_string())
                                     })
                                     .collect(),
                                 plain: false,

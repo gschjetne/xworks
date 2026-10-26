@@ -28,6 +28,7 @@ mod part;
 mod pictures;
 mod recording;
 mod saver;
+mod screens;
 mod styling;
 mod units;
 mod versions;
@@ -330,6 +331,8 @@ pub struct Editor {
     /// The Markdown file the document is, if it's one rather than an
     /// `.xw` file's.
     markdown: Option<Box<markdown::Markdown>>,
+    /// What the inspector's Style tab shows.
+    showing: screens::Showing,
 }
 
 /// Sizes for Bigger and Smaller, in points.
@@ -510,6 +513,7 @@ impl Editor {
             pictures: canvas::Pictures::new(),
             version: None,
             markdown: None,
+            showing: screens::Showing::default(),
         };
         editor.named = !editor.auto_named();
         editor.relayout(true);

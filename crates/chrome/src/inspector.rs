@@ -2,6 +2,8 @@
 //! describes and the chrome shows (docs/ARCHITECTURE.md, sections 4 and
 //! 8). Each field runs a command with what's chosen or typed in it, so a
 //! port can build its platform's own panels from the same description.
+//! A tab may be taller than the panel; the panel scrolls, which is the
+//! chrome's to do, not the model's.
 
 use crate::{Arg, Length};
 
@@ -111,6 +113,12 @@ pub enum ControlKind {
         /// What it says.
         text: String,
     },
+    /// A colour, shown as a swatch and typed as `#rrggbb`: the command
+    /// runs with what's typed, as text.
+    Colour {
+        /// It as it stands, sRGB; `None` where there's none to show.
+        value: Option<[u8; 3]>,
+    },
 }
 
 /// A choice of a [`ControlKind::Choice`].
@@ -120,6 +128,39 @@ pub struct Choice {
     pub value: Arg,
     /// What it's called.
     pub label: String,
+    /// The font family its name is shown in, where it's a family: a font
+    /// picker shows each family in itself.
+    pub family: Option<String>,
+    /// A colour shown before its name, sRGB, where it's a colour.
+    pub swatch: Option<[u8; 3]>,
+}
+
+impl Choice {
+    /// A choice called `label` that runs its command with `value`.
+    pub fn new(value: Arg, label: impl Into<String>) -> Choice {
+        Choice {
+            value,
+            label: label.into(),
+            family: None,
+            swatch: None,
+        }
+    }
+
+    /// It, its name shown in `family`.
+    pub fn in_family(self, family: impl Into<String>) -> Choice {
+        Choice {
+            family: Some(family.into()),
+            ..self
+        }
+    }
+
+    /// It, with a swatch of `colour` before its name.
+    pub fn with_swatch(self, colour: [u8; 3]) -> Choice {
+        Choice {
+            swatch: Some(colour),
+            ..self
+        }
+    }
 }
 
 /// A segment of a [`ControlKind::Segments`].

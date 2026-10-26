@@ -9,7 +9,8 @@
 //!   choices.
 //! - [`RulerView`]: the ruler over a text column, with indents and tab
 //!   stops.
-//! - [`InspectorView`]: the inspector's tabs of typed controls.
+//! - [`InspectorView`]: the inspector's tabs of typed controls, scrolled
+//!   where a tab is taller than the panel.
 //! - [`PaletteView`]: the command palette.
 //! - [`status_bar`]: the line along a window's foot.
 //! - [`Field`]: a small field of text, edited as documents' text is.
@@ -44,7 +45,7 @@ use text::units::PIXEL;
 
 pub use field::{Field, FieldKey};
 pub use icon::{Icon, IconError};
-pub use inspector::{ControlRef, InspectorHit, InspectorView};
+pub use inspector::{BarHit, ControlRef, InspectorHit, InspectorView};
 pub use kit::{Icons, Kit, Labels, Rect, Type};
 pub use palette::{PaletteHit, PaletteView, SHOWN};
 pub use popup::{Popup, PopupRow};

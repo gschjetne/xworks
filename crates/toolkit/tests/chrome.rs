@@ -12,8 +12,9 @@ use chrome::{
 use text::Fonts;
 use text::units::PIXEL;
 use toolkit::{
-    ControlRef, Field, FieldKey, Icons, InspectorHit, InspectorView, Kit, Labels, PaletteHit,
-    PaletteView, Popup, PopupRow, RulerHit, RulerView, Theme, TitleBar, TitleHit, TitleModel,
+    BarHit, ControlRef, Field, FieldKey, Icons, InspectorHit, InspectorView, Kit, Labels,
+    PaletteHit, PaletteView, Popup, PopupRow, RulerHit, RulerView, Theme, TitleBar, TitleHit,
+    TitleModel,
 };
 
 fn fonts() -> &'static Fonts {
@@ -428,10 +429,7 @@ fn inspector() -> Inspector {
         kind: ControlKind::Choice {
             choices: ["Body", "Heading 1"]
                 .iter()
-                .map(|s| Choice {
-                    value: Arg::Text(s.to_string()),
-                    label: s.to_string(),
-                })
+                .map(|s| Choice::new(Arg::Text(s.to_string()), s.to_string()))
                 .collect(),
             selected: Some(0),
             plain: false,
@@ -504,7 +502,7 @@ fn the_inspector_hits_its_controls() {
         caret: true,
     };
     let model = inspector();
-    let view = InspectorView::new(&kit, &model, 0, px(1280), px(40), px(774));
+    let view = InspectorView::new(&kit, &model, 0, px(1280), (px(40), px(774)), 0);
     assert_eq!(view.rect().x, px(980));
     // The tabs, Text and Page.
     assert_eq!(view.hit(px(1000), px(66)), Some(InspectorHit::Tab(0)));
@@ -548,6 +546,295 @@ fn the_inspector_hits_its_controls() {
     let field = Field::new("12 pt");
     let drawn = view.draw(&kit, &model, 0, None, Some((at(0, 2, 0), &field)));
     assert!(drawn.len() > 20);
+}
+
+/// A tab of `rows` rows, each a length with a note beside it, under one
+/// section: taller than a short panel.
+fn tall(rows: usize) -> Inspector {
+    let row = |k: usize| Row {
+        label: format!("Row {k}"),
+        controls: vec![
+            Control {
+                command: "space-before".to_string(),
+                args: vec![Arg::Int(k as i64)],
+                enabled: true,
+                kind: ControlKind::Length {
+                    value: Some(Length {
+                        value: 12_700 * k as i64,
+                        unit: Unit::Point,
+                    }),
+                    prefix: String::new(),
+                    plain: false,
+                },
+            },
+            Control {
+                command: String::new(),
+                args: Vec::new(),
+                enabled: true,
+                kind: ControlKind::Note {
+                    text: "defaults".to_string(),
+                },
+            },
+        ],
+    };
+    Inspector {
+        tabs: vec![InspectorTab {
+            title: "Style".to_string(),
+            sections: vec![Section {
+                title: "Tall".to_string(),
+                rows: (0..rows).map(row).collect(),
+            }],
+        }],
+    }
+}
+
+/// A tab taller than the panel scrolls under its tabs: what a point hits
+/// follows the scroll, nothing is hit or drawn past the body's edges, the
+/// scroll stops at the ends, a field is scrolled into view, and the bar's
+/// thumb and track are hit where they're drawn.
+#[test]
+fn the_inspector_scrolls_what_doesnt_fit() {
+    let theme = theme("light");
+    let labels = Labels::new();
+    let kit = Kit {
+        fonts: fonts(),
+        theme: &theme,
+        icons: icons(),
+        labels: &labels,
+        caret: true,
+    };
+    let model = tall(40);
+    let at = |row| ControlRef {
+        section: 0,
+        row,
+        control: 0,
+    };
+    let panel = (px(40), px(440));
+    let top = InspectorView::new(&kit, &model, 0, px(1280), panel, 0);
+    assert!(top.most() > 0, "40 rows don't fit in 400 pixels");
+    assert_eq!(top.scroll(), 0);
+    // The tabs stay where they are.
+    assert_eq!(top.hit(px(1100), px(66)), Some(InspectorHit::Tab(0)));
+    let first = top.control(at(0)).unwrap();
+    let (x, y) = first.centre();
+    assert_eq!(top.hit(x, y), Some(InspectorHit::Control(at(0), 0)));
+    // The last row is laid out below the panel, so nothing hits it.
+    let last = top.control(at(39)).unwrap();
+    assert!(last.y > top.body().bottom());
+    // Scrolled to the end: the last row is in the body and hit, the first
+    // above it, where nothing hits it, and the tabs still are.
+    let end = InspectorView::new(&kit, &model, 0, px(1280), panel, i64::MAX);
+    assert_eq!(end.scroll(), end.most(), "the scroll stops at the end");
+    let (x, y) = end.control(at(39)).unwrap().centre();
+    assert!(end.body().contains(x, y));
+    assert_eq!(end.hit(x, y), Some(InspectorHit::Control(at(39), 0)));
+    assert_eq!(end.control(at(39)).unwrap().y, last.y - end.most());
+    let (x, y) = end.control(at(0)).unwrap().centre();
+    assert!(y < end.body().y);
+    assert_ne!(end.hit(x, y), Some(InspectorHit::Control(at(0), 0)));
+    assert_eq!(end.hit(px(1100), px(66)), Some(InspectorHit::Tab(0)));
+    assert_eq!(
+        InspectorView::new(&kit, &model, 0, px(1280), panel, -50).scroll(),
+        0
+    );
+    // A field out of view is scrolled to, and one in view stays.
+    let shown = top.reveal(at(20));
+    let revealed = InspectorView::new(&kit, &model, 0, px(1280), panel, shown);
+    let r = revealed.control(at(20)).unwrap();
+    assert!(r.y >= revealed.body().y && r.bottom() <= revealed.body().bottom());
+    assert_eq!(top.reveal(at(1)), 0);
+    // The bar: its thumb at the top, the track below it; at the end, the
+    // thumb at the bottom. Dragging the thumb its track's free length
+    // scrolls all the way.
+    let (track, thumb) = top.bar().expect("a scroll bar");
+    assert_eq!(thumb.y, track.y);
+    let (tx, ty) = thumb.centre();
+    assert_eq!(top.hit(tx, ty), Some(InspectorHit::Bar(BarHit::Thumb)));
+    assert_eq!(
+        top.hit(tx, track.bottom() - px(2)),
+        Some(InspectorHit::Bar(BarHit::After))
+    );
+    let (_, end_thumb) = end.bar().unwrap();
+    assert_eq!(end_thumb.bottom(), track.bottom());
+    assert_eq!(
+        end.hit(tx, track.y + px(2)),
+        Some(InspectorHit::Bar(BarHit::Before))
+    );
+    assert_eq!(top.dragged(0, track.height - thumb.height), top.most());
+    assert_eq!(top.dragged(0, -px(10)), 0);
+    // Nothing's drawn past the body but the tabs, the panel and the bar,
+    // and what's partly past it is cut at its edge.
+    let drawn = end.draw(&kit, &model, 0, None, None);
+    let body = end.body();
+    for item in &drawn {
+        let Some(b) = item.bounds() else { continue };
+        let clipped = matches!(item, scene::Item::Group(g) if g.clip.is_some());
+        assert!(
+            b.y >= px(40) && b.bottom() <= px(440) + px(1) || clipped,
+            "{b:?} outside the panel"
+        );
+        // The panel's own fill and its edge span it; the rest of what
+        // crosses the body's top is cut there.
+        if b.y < body.y && b.bottom() > body.y && b.x > end.rect().x {
+            assert!(clipped, "{b:?} runs over the body's top unclipped");
+        }
+    }
+    // A tab that fits has no bar and doesn't scroll.
+    let short = InspectorView::new(&kit, &tall(3), 0, px(1280), panel, px(100));
+    assert_eq!((short.most(), short.scroll(), short.bar()), (0, 0, None));
+}
+
+/// A note beside a control takes the room its words need, and the control
+/// the rest; text that doesn't fit its field is cut short with an
+/// ellipsis, so it never runs into the field's arrow (review sjj5ak5a).
+#[test]
+fn notes_take_their_room_and_labels_fit_their_fields() {
+    let theme = theme("light");
+    let labels = Labels::new();
+    let kit = Kit {
+        fonts: fonts(),
+        theme: &theme,
+        icons: icons(),
+        labels: &labels,
+        caret: true,
+    };
+    let model = tall(2);
+    let view = InspectorView::new(&kit, &model, 0, px(1280), (px(40), px(800)), 0);
+    let field = view
+        .control(ControlRef {
+            section: 0,
+            row: 0,
+            control: 0,
+        })
+        .unwrap();
+    let note = view
+        .control(ControlRef {
+            section: 0,
+            row: 0,
+            control: 1,
+        })
+        .unwrap();
+    let ty = kit.ty(theme.sizes.label, 400);
+    assert_eq!(note.width, kit.width("defaults", ty));
+    assert!(field.width > note.width * 2, "{field:?} beside {note:?}");
+    assert_eq!(note.right(), px(1280 - 16));
+    // Fitting.
+    let value = kit.ty(theme.sizes.value, 400);
+    assert_eq!(
+        kit.fit("1.2 × the font", None, px(500), value),
+        "1.2 × the font"
+    );
+    let cut = kit.fit("As its fonts", None, px(40), value);
+    assert!(
+        cut.ends_with('…') && cut.len() < "As its fonts…".len(),
+        "{cut}"
+    );
+    assert!(kit.width(&cut, value) <= px(40));
+    assert_eq!(kit.fit("Wide", None, 0, value), "…");
+}
+
+/// A colour shows as a swatch beside its hex value; a choice of faces
+/// shows each family in itself, and a choice of colours each with its
+/// swatch, in the field and in the list that pops up.
+#[test]
+fn colours_show_their_swatches_and_faces_themselves() {
+    let theme = theme("dark");
+    let labels = Labels::new();
+    let kit = Kit {
+        fonts: fonts(),
+        theme: &theme,
+        icons: icons(),
+        labels: &labels,
+        caret: true,
+    };
+    let control = |kind| Control {
+        command: "style-set".to_string(),
+        args: Vec::new(),
+        enabled: true,
+        kind,
+    };
+    let garamond =
+        Choice::new(Arg::Text("EB Garamond".to_string()), "EB Garamond").in_family("EB Garamond");
+    let link = Choice::new(Arg::Int(7), "Link").with_swatch([25, 80, 170]);
+    let model = Inspector {
+        tabs: vec![InspectorTab {
+            title: "Style".to_string(),
+            sections: vec![Section {
+                title: "Colour".to_string(),
+                rows: vec![
+                    Row {
+                        label: "Colour".to_string(),
+                        controls: vec![control(ControlKind::Colour {
+                            value: Some([200, 30, 40]),
+                        })],
+                    },
+                    Row {
+                        label: "Family".to_string(),
+                        controls: vec![control(ControlKind::Choice {
+                            choices: vec![garamond.clone()],
+                            selected: Some(0),
+                            plain: false,
+                        })],
+                    },
+                    Row {
+                        label: "Link".to_string(),
+                        controls: vec![control(ControlKind::Choice {
+                            choices: vec![link.clone()],
+                            selected: Some(0),
+                            plain: false,
+                        })],
+                    },
+                ],
+            }],
+        }],
+    };
+    let view = InspectorView::new(&kit, &model, 0, px(1280), (px(40), px(800)), 0);
+    let colour = ControlRef {
+        section: 0,
+        row: 0,
+        control: 0,
+    };
+    let (x, y) = view.control(colour).unwrap().centre();
+    assert_eq!(view.hit(x, y), Some(InspectorHit::Control(colour, 0)));
+    let drawn = view.draw(&kit, &model, 0, None, None);
+    let fills = |items: &[scene::Item], c: scene::Color| {
+        items
+            .iter()
+            .any(|i| matches!(i, scene::Item::Fill { color, .. } if *color == c))
+    };
+    assert!(fills(&drawn, scene::Color::rgb(200, 30, 40)), "the swatch");
+    assert!(
+        fills(&drawn, scene::Color::rgb(25, 80, 170)),
+        "the choice's"
+    );
+    let garamond_face = fonts()
+        .faces()
+        .find(|(_, f)| f.family() == "EB Garamond")
+        .map(|(_, f)| f.font())
+        .expect("EB Garamond");
+    let in_garamond = |items: &[scene::Item]| {
+        items
+            .iter()
+            .any(|i| matches!(i, scene::Item::Glyphs(g) if g.font.same(&garamond_face)))
+    };
+    assert!(in_garamond(&drawn), "the family's name in itself");
+    // And in the list.
+    let rows = vec![
+        PopupRow::of_choice(&garamond, true),
+        PopupRow::of_choice(&link, false),
+    ];
+    assert_eq!(rows[0].family.as_deref(), Some("EB Garamond"));
+    assert_eq!(rows[1].swatch, Some([25, 80, 170]));
+    let popup = Popup::new(
+        &kit,
+        &rows,
+        (px(900), px(100)),
+        px(200),
+        (px(1280), px(800)),
+    );
+    let listed = popup.draw(&kit, &rows, None, false);
+    assert!(in_garamond(&listed));
+    assert!(fills(&listed, scene::Color::rgb(25, 80, 170)));
 }
 
 #[test]

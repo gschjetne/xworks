@@ -20,8 +20,8 @@ use part::{Input, Part, Request, Surface};
 use scene::{Page, Point};
 use text::units::PIXEL;
 use toolkit::{
-    ControlRef, Field, FieldKey, InspectorHit, InspectorView, Kit, PaletteHit, PaletteView, Popup,
-    PopupRow, Rect, RulerHit, RulerView, Theme, TitleBar, TitleHit, TitleModel,
+    BarHit, ControlRef, Field, FieldKey, InspectorHit, InspectorView, Kit, PaletteHit, PaletteView,
+    Popup, PopupRow, Rect, RulerHit, RulerView, Theme, TitleBar, TitleHit, TitleModel,
 };
 
 use crate::editor::{Edge, PointerShape, View, WindowAction};
@@ -54,6 +54,9 @@ enum Drag {
     End(i64),
     /// The pointer pressed in the document, which takes the drag.
     Part,
+    /// The inspector's scroll bar's thumb, from where the pointer pressed
+    /// it, down, and the scroll then.
+    Bar { y: i64, from: i64 },
 }
 
 /// What the pointer is over.
@@ -77,6 +80,8 @@ pub struct Window {
     maximized: bool,
     inspector: bool,
     tab: usize,
+    /// How far the inspector's tab is scrolled down, in layout units.
+    scrolled: i64,
     ruler: bool,
     menu: Option<MenuState>,
     /// Whether the menus' access keys are underlined.
@@ -165,6 +170,10 @@ impl Window {
             if let Some(units) = chrome.units {
                 window.res.settings.set_units(units);
             }
+            if let Some(style) = chrome.style {
+                window.editor.choose_style(doc::ObjectId(style));
+            }
+            window.scrolled = chrome.scroll;
         }
         Ok(window)
     }
@@ -197,6 +206,8 @@ impl Window {
             ruler: self.ruler,
             dark: self.dark,
             units: Some(self.res.settings.units()),
+            scroll: self.scrolled,
+            style: self.editor.style_chosen().map(|id| id.0),
         });
         Some(checkpoint)
     }
@@ -230,6 +241,7 @@ impl Window {
             maximized: false,
             inspector: false,
             tab: 0,
+            scrolled: 0,
             ruler: true,
             menu: None,
             access: false,
@@ -469,7 +481,7 @@ impl Window {
                 Drag::First(at) => indents.first = at - indents.start,
                 Drag::Start(at) => indents.start = at,
                 Drag::End(at) => indents.end = model.extent - at,
-                Drag::Part => {}
+                Drag::Part | Drag::Bar { .. } => {}
             }
         }
         Some(RulerView::new(
@@ -487,10 +499,99 @@ impl Window {
                 model,
                 self.tab,
                 self.width,
-                self.title_height(),
-                self.height - self.status_height(),
+                (self.title_height(), self.height - self.status_height()),
+                self.scrolled,
             )
         })
+    }
+
+    /// Scrolls the inspector's tab to `to`, as far as it goes.
+    fn scroll_inspector(&mut self, to: i64) {
+        let model = self.inspector_model();
+        self.scrolled = to;
+        if let Some(view) = self.inspector_view(&model) {
+            self.scrolled = view.scroll();
+        }
+    }
+
+    /// Scrolls the inspector's tab so control `at` shows whole: a field
+    /// that has the keyboard, or a list open under it.
+    fn reveal_control(&mut self, at: ControlRef) {
+        let model = self.inspector_model();
+        if let Some(view) = self.inspector_view(&model) {
+            self.scrolled = view.reveal(at);
+        }
+    }
+
+    /// The fields of the inspector's tab that take the keyboard, typed
+    /// into, in the order they're laid out: lengths, text and colours that
+    /// can be used.
+    fn fields(model: &chrome::Inspector, tab: usize) -> Vec<ControlRef> {
+        let mut out = Vec::new();
+        let Some(tab) = model.tabs.get(tab) else {
+            return out;
+        };
+        for (si, section) in tab.sections.iter().enumerate() {
+            for (ri, row) in section.rows.iter().enumerate() {
+                for (ci, control) in row.controls.iter().enumerate() {
+                    if control.enabled
+                        && matches!(
+                            control.kind,
+                            ControlKind::Length { .. }
+                                | ControlKind::Text { .. }
+                                | ControlKind::Colour { .. }
+                        )
+                    {
+                        out.push(ControlRef {
+                            section: si,
+                            row: ri,
+                            control: ci,
+                        });
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// What a field shows as it's opened to type in: a length as it reads,
+    /// text as it is, a colour as `#rrggbb`.
+    fn field_text(kind: &ControlKind) -> Option<String> {
+        Some(match kind {
+            ControlKind::Length { value, .. } => value.map_or_else(String::new, |v| v.to_string()),
+            ControlKind::Text { value } => value.clone(),
+            ControlKind::Colour { value } => {
+                value.map_or_else(String::new, |[r, g, b]| format!("#{r:02x}{g:02x}{b:02x}"))
+            }
+            _ => return None,
+        })
+    }
+
+    /// Opens field `at` of the inspector's tab to type in, scrolled into
+    /// view.
+    fn edit_field(&mut self, model: &chrome::Inspector, at: ControlRef) {
+        let Some(shown) =
+            Window::control(model, self.tab, at).and_then(|c| Window::field_text(&c.kind))
+        else {
+            return;
+        };
+        self.editing = Some((at, Field::new(&shown)));
+        self.reveal_control(at);
+    }
+
+    /// Moves the keyboard from field `from` to the next field of the
+    /// inspector's tab, or the one before if `back`, if there is one.
+    fn next_field(&mut self, from: ControlRef, back: bool) {
+        let model = self.inspector_model();
+        let fields = Window::fields(&model, self.tab);
+        let next = if back {
+            fields.iter().rev().find(|&&f| f < from)
+        } else {
+            fields.iter().find(|&&f| f > from)
+        };
+        if let Some(&next) = next {
+            self.edit_field(&model, next);
+        }
     }
 
     fn palette_view(&self) -> Option<PaletteView> {
@@ -539,7 +640,7 @@ impl Window {
         let rows: Vec<PopupRow> = choices
             .iter()
             .enumerate()
-            .map(|(i, c)| PopupRow::choice(&c.label, *selected == Some(i)))
+            .map(|(i, c)| PopupRow::of_choice(c, *selected == Some(i)))
             .collect();
         let field = self.inspector_view(model)?.control(at)?;
         let popup = Popup::new(
@@ -785,9 +886,17 @@ impl Window {
         if self.editing.is_some() {
             let ty = self.kit().ty(self.res.sizes.value, 400);
             let layout = self.kit().layout(self.editing.as_ref()?.1.text(), ty);
-            let (_, field) = self.editing.as_mut()?;
+            let (at, field) = self.editing.as_mut()?;
+            let at = *at;
             return Some(match field.key(&layout, key, modifiers, mac) {
-                FieldKey::Enter | FieldKey::Tab { .. } => self.finish_editing(),
+                FieldKey::Enter => self.finish_editing(),
+                // Tab takes what's typed and moves on to the next field,
+                // which scrolls into view.
+                FieldKey::Tab { back } => {
+                    let effects = self.finish_editing();
+                    self.next_field(at, back);
+                    effects
+                }
                 FieldKey::Escape => {
                     self.editing = None;
                     Vec::new()
@@ -823,9 +932,13 @@ impl Window {
         let Some(control) = Window::control(&model, self.tab, at) else {
             return Vec::new();
         };
-        if let ControlKind::Text { value } = &control.kind {
+        if matches!(
+            control.kind,
+            ControlKind::Text { .. } | ControlKind::Colour { .. }
+        ) {
             let typed = field.text().trim();
-            if typed.is_empty() || typed == value {
+            let shown = Window::field_text(&control.kind).unwrap_or_default();
+            if typed.is_empty() || typed == shown {
                 return Vec::new();
             }
             let args = control.with(Arg::Text(typed.to_string()));
@@ -897,11 +1010,15 @@ impl Window {
             Event::Move { x, y } => self.pointer_moved(units(x), units(y)),
             Event::Release => self.release(),
             Event::Scroll(dy) => {
+                // Over the inspector, the wheel scrolls its tab; a list
+                // open from it stays where it opened, so it closes.
                 let (x, y) = self.pointer;
                 if self
                     .inspector_view(&chrome::Inspector::default())
                     .is_some_and(|v| v.rect().contains(x, y))
                 {
+                    self.choosing = None;
+                    self.scroll_inspector(self.scrolled + units(dy));
                     return Vec::new();
                 }
                 self.give_part(Input::Scroll(units(dy)))
@@ -1237,8 +1354,29 @@ impl Window {
         {
             match hit {
                 InspectorHit::Tab(k) => {
+                    // A tab opens at its top; the Style tab on the caret's
+                    // paragraph style.
+                    if self.tab != k || model.tabs.get(k).is_some_and(|t| t.title == "Style") {
+                        self.scrolled = 0;
+                    }
                     self.tab = k;
                     self.editing = None;
+                    if model.tabs.get(k).is_some_and(|t| t.title == "Style") {
+                        self.editor.show_caret_style();
+                    }
+                }
+                InspectorHit::Bar(bar) => {
+                    let page = view.body().height - 2 * self.res.sizes.inspector_row.units();
+                    match bar {
+                        BarHit::Thumb => {
+                            self.drag = Some(Drag::Bar {
+                                y,
+                                from: view.scroll(),
+                            });
+                        }
+                        BarHit::Before => self.scroll_inspector(view.scroll() - page),
+                        BarHit::After => self.scroll_inspector(view.scroll() + page),
+                    }
                 }
                 InspectorHit::Control(at, k) => {
                     if let Some(control) = Window::control(&model, self.tab, at)
@@ -1247,13 +1385,12 @@ impl Window {
                         match &control.kind {
                             ControlKind::Choice { selected, .. } => {
                                 self.choosing = Some((at, *selected));
+                                self.reveal_control(at);
                             }
-                            ControlKind::Length { value, .. } => {
-                                let shown = value.map_or_else(String::new, |v| v.to_string());
-                                self.editing = Some((at, Field::new(&shown)));
-                            }
-                            ControlKind::Text { value } => {
-                                self.editing = Some((at, Field::new(value)));
+                            ControlKind::Length { .. }
+                            | ControlKind::Text { .. }
+                            | ControlKind::Colour { .. } => {
+                                self.edit_field(&model, at);
                             }
                             ControlKind::Note { .. } => {}
                             ControlKind::Segments { segments, .. } => {
@@ -1298,6 +1435,13 @@ impl Window {
                     y: y - area.y,
                 });
             }
+            Some(Drag::Bar { y: from_y, from }) => {
+                let model = self.inspector_model();
+                if let Some(view) = self.inspector_view(&model) {
+                    self.scrolled = view.dragged(from, y - from_y);
+                }
+                return effects;
+            }
             Some(drag) => {
                 if let Some(ruler) = self.ruler_view() {
                     let at = ruler.snapped(x);
@@ -1312,7 +1456,7 @@ impl Window {
                         Drag::First(_) => Drag::First(at),
                         Drag::Start(_) => Drag::Start(at),
                         Drag::End(_) => Drag::End(at),
-                        Drag::Part => Drag::Part,
+                        other => other,
                     });
                 }
                 return effects;
@@ -1374,6 +1518,7 @@ impl Window {
         };
         match drag {
             Drag::Part => self.give_part(Input::Release),
+            Drag::Bar { .. } => Vec::new(),
             Drag::Stop { from, to, off } => {
                 if off {
                     self.run("tab-stop-remove", vec![Arg::Int(from)])
@@ -1480,9 +1625,172 @@ impl Window {
         }
     }
 
+    /// The inspector as screen readers see it, if it's open, its nodes
+    /// added to `nodes`: a pane of its tabs, and the tab shown, a scroll
+    /// view of its sections, each a group of its rows' controls, labelled
+    /// as the rows are. Bounds are in logical pixels, where they're drawn
+    /// as scrolled; what's scrolled out of the panel is hidden.
+    fn inspector_access(
+        &self,
+        nodes: &mut Vec<(part::accesskit::NodeId, part::accesskit::Node)>,
+    ) -> Option<part::accesskit::NodeId> {
+        use part::accesskit::{Node, NodeId, Rect as Bounds, Role, Toggled};
+        let model = self.inspector_model();
+        let view = self.inspector_view(&model)?;
+        // The inspector's nodes are numbered from here, below the
+        // document's, which start at 1 << 20.
+        let mut next = 1u64 << 16;
+        let mut id = || {
+            next += 1;
+            NodeId(next)
+        };
+        let px = |v: i64| v as f64 / PIXEL as f64;
+        let bounds = |r: Rect| Bounds {
+            x0: px(r.x),
+            y0: px(r.y),
+            x1: px(r.right()),
+            y1: px(r.bottom()),
+        };
+        let body = view.body();
+        let shown = |r: Rect| r.bottom() > body.y && r.y < body.bottom();
+        let pane_id = id();
+        let mut pane = Node::new(Role::Pane);
+        pane.set_label("Inspector");
+        pane.set_bounds(bounds(view.rect()));
+        let list_id = id();
+        let mut list = Node::new(Role::TabList);
+        let mut tabs = Vec::new();
+        for (k, tab) in model.tabs.iter().enumerate() {
+            let tab_id = id();
+            let mut node = Node::new(Role::Tab);
+            node.set_label(tab.title.clone());
+            node.set_selected(k == self.tab);
+            if let Some(r) = view.tab(k) {
+                node.set_bounds(bounds(r));
+            }
+            tabs.push(tab_id);
+            nodes.push((tab_id, node));
+        }
+        list.set_children(tabs);
+        nodes.push((list_id, list));
+        // The tab shown: its sections scroll.
+        let panel_id = id();
+        let mut panel = Node::new(Role::ScrollView);
+        panel.set_bounds(bounds(body));
+        panel.set_clips_children();
+        panel.set_scroll_y(px(view.scroll()));
+        panel.set_scroll_y_min(0.0);
+        panel.set_scroll_y_max(px(view.most()));
+        let sections = model
+            .tabs
+            .get(self.tab)
+            .map_or(&[][..], |t| &t.sections[..]);
+        let mut groups = Vec::new();
+        for (si, section) in sections.iter().enumerate() {
+            let group_id = id();
+            let mut group = Node::new(Role::Group);
+            group.set_label(section.title.clone());
+            let mut members = Vec::new();
+            let mut extent = view.heading(si);
+            for (ri, row) in section.rows.iter().enumerate() {
+                for (ci, control) in row.controls.iter().enumerate() {
+                    let at = ControlRef {
+                        section: si,
+                        row: ri,
+                        control: ci,
+                    };
+                    let Some(r) = view.control(at) else { continue };
+                    extent = Some(extent.map_or(r, |e| {
+                        let (x, y) = (e.x.min(r.x), e.y.min(r.y));
+                        Rect::new(
+                            x,
+                            y,
+                            e.right().max(r.right()) - x,
+                            e.bottom().max(r.bottom()) - y,
+                        )
+                    }));
+                    let label = |own: &str| match (row.label.as_str(), own) {
+                        ("", own) => own.to_string(),
+                        (row, "") => row.to_string(),
+                        (row, own) => format!("{row}: {own}"),
+                    };
+                    let mut node = match &control.kind {
+                        ControlKind::Choice {
+                            choices, selected, ..
+                        } => {
+                            let mut n = Node::new(Role::ComboBox);
+                            n.set_label(label(""));
+                            if let Some(c) = selected.and_then(|k| choices.get(k)) {
+                                n.set_value(c.label.clone());
+                            }
+                            n
+                        }
+                        ControlKind::Length { value, prefix, .. } => {
+                            let mut n = Node::new(Role::TextInput);
+                            n.set_label(label(prefix));
+                            n.set_value(value.map_or_else(String::new, |v| v.to_string()));
+                            n
+                        }
+                        ControlKind::Text { .. } | ControlKind::Colour { .. } => {
+                            let mut n = Node::new(Role::TextInput);
+                            n.set_label(label(""));
+                            n.set_value(Window::field_text(&control.kind).unwrap_or_default());
+                            n
+                        }
+                        ControlKind::Toggle { label: own, on, .. } => {
+                            let mut n = Node::new(Role::Switch);
+                            n.set_label(label(own));
+                            n.set_toggled(if *on { Toggled::True } else { Toggled::False });
+                            n
+                        }
+                        ControlKind::Segments { segments, selected } => {
+                            let mut n = Node::new(Role::RadioGroup);
+                            n.set_label(label(""));
+                            if let Some(s) = selected.and_then(|k| segments.get(k)) {
+                                n.set_value(s.label.clone());
+                            }
+                            n
+                        }
+                        ControlKind::Button { label: own, .. } => {
+                            let mut n = Node::new(Role::Button);
+                            n.set_label(label(own));
+                            n
+                        }
+                        ControlKind::Note { text } => {
+                            let mut n = Node::new(Role::Label);
+                            n.set_label(label(text));
+                            n
+                        }
+                    };
+                    node.set_bounds(bounds(r));
+                    if !control.enabled {
+                        node.set_disabled();
+                    }
+                    if !shown(r) {
+                        node.set_hidden();
+                    }
+                    let node_id = id();
+                    members.push(node_id);
+                    nodes.push((node_id, node));
+                }
+            }
+            if let Some(r) = extent {
+                group.set_bounds(bounds(r));
+            }
+            group.set_children(members);
+            groups.push(group_id);
+            nodes.push((group_id, group));
+        }
+        panel.set_children(groups);
+        nodes.push((panel_id, panel));
+        pane.set_children(vec![list_id, panel_id]);
+        nodes.push((pane_id, pane));
+        Some(pane_id)
+    }
+
     /// The window as screen readers see it: the window, its menus, the
-    /// document's text with its lines, words and selection, and the
-    /// status bar. Bounds are in logical pixels.
+    /// document's text with its lines, words and selection, the inspector
+    /// if it's open, and the status bar. Bounds are in logical pixels.
     pub fn access(&self) -> part::accesskit::TreeUpdate {
         use part::accesskit::{Affine, Node, NodeId, Role, TreeInfo, TreeUpdate};
         let root = NodeId(0);
@@ -1519,7 +1827,12 @@ impl Window {
                     * Affine::scale(scale),
             );
         }
-        window.set_children(vec![bar_id, tree.root, status_id]);
+        let mut children = vec![bar_id, tree.root];
+        if let Some(inspector) = self.inspector_access(&mut nodes) {
+            children.push(inspector);
+        }
+        children.push(status_id);
+        window.set_children(children);
         nodes.append(&mut tree.nodes);
         nodes.push((root, window));
         TreeUpdate {

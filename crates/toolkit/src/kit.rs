@@ -171,12 +171,16 @@ impl Icons {
     }
 }
 
-/// Labels laid out, kept by their text, size and weight, so the chrome
-/// isn't shaped again for every frame and every movement of the pointer.
+/// Labels laid out, kept by their text, family, size and weight, so the
+/// chrome isn't shaped again for every frame and every movement of the
+/// pointer.
 #[derive(Debug, Default)]
 pub struct Labels {
-    laid: Mutex<HashMap<(String, i64, u16), Arc<text::Layout>>>,
+    laid: Mutex<HashMap<LabelKey, Arc<text::Layout>>>,
 }
+
+/// What a label is kept by: its text, family, size and weight.
+type LabelKey = (String, String, i64, u16);
 
 /// How many labels are kept before they're all let go.
 const MOST_LABELS: usize = 4096;
@@ -196,7 +200,7 @@ impl Labels {
         size: i64,
         weight: u16,
     ) -> Arc<text::Layout> {
-        let key = (text.to_string(), size, weight);
+        let key = (text.to_string(), family.to_string(), size, weight);
         if let Some(layout) = self
             .laid
             .lock()
@@ -272,9 +276,15 @@ pub(crate) fn px(n: f64) -> i64 {
 impl Kit<'_> {
     /// `text` laid out in `ty`.
     pub fn layout(&self, text: &str, ty: Type) -> Arc<text::Layout> {
+        self.layout_in(text, None, ty)
+    }
+
+    /// `text` laid out in `ty`, in `family`, or the interface's family
+    /// for none: a font family's name shown in itself.
+    pub fn layout_in(&self, text: &str, family: Option<&str>, ty: Type) -> Arc<text::Layout> {
         self.labels.get(
             self.fonts,
-            &self.theme.sizes.family,
+            family.unwrap_or(&self.theme.sizes.family),
             text,
             ty.size,
             ty.weight,
@@ -284,6 +294,39 @@ impl Kit<'_> {
     /// How wide `text` is in `ty`.
     pub fn width(&self, text: &str, ty: Type) -> i64 {
         self.layout(text, ty).lines.first().map_or(0, |l| l.width)
+    }
+
+    /// `text`, or as much of it as fits in `width` in `ty` and `family`
+    /// with an ellipsis after it, cut between characters: so a label
+    /// never runs into what's beside it.
+    pub fn fit(&self, text: &str, family: Option<&str>, width: i64, ty: Type) -> String {
+        let wide = |t: &str| {
+            self.layout_in(t, family, ty)
+                .lines
+                .first()
+                .map_or(0, |l| l.width)
+        };
+        if wide(text) <= width {
+            return text.to_string();
+        }
+        // Where each character starts: a cut before character k leaves k.
+        let cuts: Vec<usize> = text.char_indices().map(|(i, _)| i).collect();
+        // The most characters that fit with the ellipsis, by halves; not
+        // all of them, which don't fit even without it.
+        let (mut lo, mut hi) = (0, cuts.len().saturating_sub(1));
+        while lo < hi {
+            let mid = (lo + hi).div_ceil(2);
+            let shown = format!("{}…", text[..cuts[mid]].trim_end());
+            if wide(&shown) <= width {
+                lo = mid;
+            } else {
+                hi = mid - 1;
+            }
+        }
+        match lo {
+            0 => "…".to_string(),
+            n => format!("{}…", text[..cuts[n]].trim_end()),
+        }
     }
 
     /// The type of `size` at `weight`.
@@ -310,7 +353,27 @@ impl Kit<'_> {
         ty: Type,
         color: Color,
     ) -> i64 {
-        let layout = self.layout(text, ty);
+        self.text_in(out, text, None, x, top, height, ty, color)
+    }
+
+    /// Draws `text` as [`Kit::text`] does, in `family`, or the
+    /// interface's family for none.
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "a label's place, family, type and colour"
+    )]
+    pub fn text_in(
+        &self,
+        out: &mut Vec<Item>,
+        text: &str,
+        family: Option<&str>,
+        x: i64,
+        top: i64,
+        height: i64,
+        ty: Type,
+        color: Color,
+    ) -> i64 {
+        let layout = self.layout_in(text, family, ty);
         let y = top + (height - layout.height) / 2;
         out.extend(layout.paint(self.fonts, Point::new(x, y), None, |_| color));
         layout.lines.first().map_or(0, |l| l.width)
@@ -395,6 +458,14 @@ pub(crate) fn rounded(out: &mut Vec<Item>, rect: Rect, r: i64, color: Color) {
 pub(crate) fn field_box(out: &mut Vec<Item>, colors: &crate::Colors, rect: Rect, r: i64) {
     rounded(out, rect, r, colors.field_line);
     rounded(out, rect.inset(PIXEL), r - PIXEL, colors.field);
+}
+
+/// A swatch of `color` filling `rect`, with a hairline edge in the look's
+/// field line, so a colour near the chrome's still shows its edge.
+pub(crate) fn swatch(out: &mut Vec<Item>, colors: &crate::Colors, rect: Rect, color: Color) {
+    let r = px(3.0);
+    rounded(out, rect, r, colors.field_line);
+    rounded(out, rect.inset(PIXEL), r - PIXEL, color);
 }
 
 /// A small triangle with its point at (`x`, `y`), `size` from its point
