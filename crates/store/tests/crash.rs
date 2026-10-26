@@ -3,8 +3,13 @@
 //! thousand times (XWORKS_CRASH_RUNS to change). Each time, the file either
 //! isn't there yet, because the writer died before creating it, or opens at
 //! a committed transaction, with every transaction the writer saw committed.
+//!
+//! A quarter of the moments are counted from the writer's start, so some
+//! fall before it made the file or while it made it; the rest from its
+//! saying it made the file, so that however slowly a busy machine starts
+//! it, most fall while it appends.
 
-use std::io::Read as _;
+use std::io::{BufRead as _, BufReader, Read as _};
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
@@ -38,16 +43,15 @@ fn a_crash_loses_nothing_committed() {
             .stdout(Stdio::piped())
             .spawn()
             .expect("the writer starts");
+        let mut stdout = BufReader::new(child.stdout.take().expect("its output"));
+        let mut out = String::new();
+        if random(4) != 0 {
+            stdout.read_line(&mut out).expect("its output reads");
+        }
         std::thread::sleep(Duration::from_micros(random(50_000)));
         let _ = child.kill();
         child.wait().expect("the writer stops");
-        let mut out = String::new();
-        child
-            .stdout
-            .take()
-            .expect("its output")
-            .read_to_string(&mut out)
-            .expect("its output reads");
+        stdout.read_to_string(&mut out).expect("its output reads");
         let lines: Vec<&str> = out.lines().collect();
         let created = lines.first() == Some(&"created");
         let seen: i64 = lines.last().and_then(|l| l.parse().ok()).unwrap_or(0);

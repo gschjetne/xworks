@@ -1,9 +1,0 @@
-# How cargo nextest runs the workspace's tests, here and in CI.
-
-# The crash test kills its writer at moments drawn from the first 50 ms of
-# its life, and counts on most of them falling after the writer made its
-# file. With the other tests running beside it, the writer starts too
-# slowly for that, so it runs with the machine to itself.
-[[profile.default.overrides]]
-filter = 'package(store) and binary(crash)'
-threads-required = 'num-test-threads'
