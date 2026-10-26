@@ -108,7 +108,7 @@
         (id: "list-tasks", title: "&Task List"),
         (id: "task-toggle", title: "Check &Off"),
         (id: "quote", title: "&Quote", shortcut: Some("Primary+Shift+9")),
-        (id: "align-start", title: "Align to &Start", kind: Some("Alignment"), shortcut: Some("Primary+L")),
+        (id: "align-start", title: "&Align to Start", kind: Some("Alignment"), shortcut: Some("Primary+L")),
         (id: "align-center", title: "&Centre", kind: Some("Alignment"), shortcut: Some("Primary+E")),
         (id: "align-end", title: "Align to &End", kind: Some("Alignment"), shortcut: Some("Primary+R")),
         (id: "align-justify", title: "&Justify", kind: Some("Alignment"), shortcut: Some("Primary+J")),
@@ -279,8 +279,10 @@
     ],
     submenus: [
         // A style made or remade from the selection, and the stylesheet
-        // kept or updated (M2's stage 9).
-        (id: "styles", title: "Styles", items: [
+        // kept or updated (M2's stage 9). S, the letter its title starts
+        // with, as every other in it is another item's in Format; Align to
+        // Start takes A (review sjj5ak5a).
+        (id: "styles", title: "&Styles", items: [
             "redefine-style", "new-style", "-", "save-stylesheet", "update-stylesheet",
         ]),
         (id: "units", title: "&Units", items: [
