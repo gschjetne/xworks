@@ -686,14 +686,15 @@ are the stage's own, open to the owner's review unless marked settled.
   is strong and Markdown's files and their readers are as they were.
   Direct formatting is then text's own font, size, colour and underline,
   and a paragraph's own alignment, spacing, line height, indents and tab
-  stops; a language isn't formatting. So Clear Formatting doesn't take
-  bold away, as InDesign's Clear Overrides leaves character styles.
+  stops; a language isn't formatting. Built, Clear Formatting left bold,
+  as InDesign's Clear Overrides leaves character styles; the owner had it
+  take marks too (below).
 - **Containers lend geometry:** a table's cells take only their own
   indents and their column's alignment, and a paragraph that starts a
   list item, or a numbered heading, only its own first-line indent, so a
   book's indented, justified body text doesn't reach into cells or after
-  bullets. ★ A table's header row is still bold by its place, as Markdown
-  has it: per the ground rules it could be a header style instead.
+  bullets. Built, a table's header row was still bold by its place, as
+  Markdown has it; the owner gave it a Table Header style (below).
 - **Neutral is M2's look:** its headings are based on a Heading style
   that holds their face, weight and keeping with what follows, listed
   after the styles paragraphs take. Every golden of M2's renders as it
@@ -738,8 +739,8 @@ are the stage's own, open to the owner's review unless marked settled.
   the status bar when it opens; Format, Styles, Update Stylesheet shows
   what would change, style by style, to take in one step or leave. It
   compares the document's styles with the newer sheet's, so a style the
-  person changed would show and be taken back too: a three-way update
-  needs each sheet's older versions kept beside it.
+  person changed would show and be taken back too. The owner had updates
+  made three-way (below), which needs each sheet's older versions kept.
 - **The inspector** marks the style's name with "+" where the selection
   has formatting of its own, as InDesign does. A Style tab, between Text
   and Page, shows the caret's paragraph style: its name, which can be
@@ -747,8 +748,8 @@ are the stage's own, open to the owner's review unless marked settled.
   comes from (this style, the style up its chain that sets it, or the
   defaults; a face, colour or tab layout shown as the part it names), a
   button to let a value the style sets itself go, and what the selection
-  sets itself, to clear. ★ Sources are in the Style tab, not beside the
-  Text tab's values, which show the selection's.
+  sets itself, to clear. Sources are in the Style tab, not beside the
+  Text tab's values, which show the selection's (settled, below).
 - **Direct formatting seen and cleared:** View, Show Direct Formatting
   tints text's own formatting amber and marks a paragraph's with a bar,
   off until turned on; Clear Formatting (Ctrl+\, as Google Docs has it)
@@ -765,11 +766,31 @@ are the stage's own, open to the owner's review unless marked settled.
   any window: the destination's styles win, matched by role and then
   name, and those it lacks come with their chains, as `story::merge`
   brings them; pictures stay behind. Other programs get plain text, as
-  before; putting HTML on the clipboard too would let them, and xWorks
-  read theirs, which needs the shells' clipboards to carry it.
+  before, and in M2 (settled, below); putting HTML on the clipboard too
+  would let them, and xWorks read theirs, which needs the shells'
+  clipboards to carry it.
 - **Markdown files** take the program's Neutral when they're read, as
   their paragraphs need styles to name, and a change to the stylesheet in
   one is asked about, as Markdown can't hold it.
+
+**From stage 9's review** (project owner, 2026-10-26, review sjj5ak5a):
+- **A stylesheet sets space above and below a quote,** as it sets a
+  table's. Book and Manuscript set off their extracts with it.
+- **A Table Header style:** a table's header row's paragraphs take it, as
+  headings take theirs, so nothing looks as it does by where it sits.
+- **Clear Formatting clears everything, marks too,** leaving plain text
+  in its paragraph's style: the text's own formatting, its character
+  style, and its emphasis, strong, code, strikethrough and links.
+- **Taking a newer stylesheet is three-way:** xWorks keeps each version
+  of its sheets, so an update shows only what the new version changed,
+  and keeps the person's own changes.
+- **Where a value comes from shows in the Style tab,** as built; the Text
+  tab's "Body +" says there's direct formatting.
+- **The inspector edits every kind of style before M2's exit:** character
+  styles, faces, colours, tab layouts and list definitions, and it
+  scrolls.
+- **Other programs get plain text in M2;** formatted copying to them
+  (HTML) comes with Write.
 
 **Container: SQLite** (project owner, 2026-10-18). A document is an SQLite
 database with a fixed, versioned schema: objects, the transaction log, embedded
