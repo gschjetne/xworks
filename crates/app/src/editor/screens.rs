@@ -293,8 +293,24 @@ impl Editor {
             .filter(|&&id| self.document.style(id).is_some_and(|s| names(&s.props)))
             .map(|&id| name_of(&self.document, id))
             .collect();
-        if self.document.stylesheet().is_some_and(|s| names(&s.props)) {
+        // The sheet's own: its defaults, the values every chain of styles
+        // ends in, and what the whole document shares, such as how quotes
+        // and code look and its tab stops.
+        let shared = self.document.stylesheet().map_or_else(Vec::new, |s| {
+            s.props
+                .iter()
+                .filter(|(_, v)| **v == Value::Ref(part))
+                .map(|(k, _)| k.as_str())
+                .collect::<Vec<_>>()
+        });
+        if shared.iter().any(|k| [keys::FONT, keys::COLOR].contains(k)) {
             out.push("the defaults".to_string());
+        }
+        if shared
+            .iter()
+            .any(|k| ![keys::FONT, keys::COLOR].contains(k))
+        {
+            out.push("the document's quotes, code, tables or tabs".to_string());
         }
         out
     }
@@ -913,7 +929,8 @@ impl Editor {
             && let Some((Value::Text(family), _)) = found
         {
             choices.push(Choice::new(Arg::Text(family.clone()), family.clone()).in_family(family));
-            return (choices.clone(), Some(choices.len() - 1));
+            let last = choices.len() - 1;
+            return (choices, Some(last));
         }
         (choices, selected)
     }
