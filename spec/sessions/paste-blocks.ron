@@ -1,0 +1,85 @@
+// Copying a heading, a quote and a list from one document to another
+// (stage 9's follow-up, review sjj5ak5a): they arrive as they were, the
+// heading a heading, the quote's paragraph in a quote and the items in a
+// list, not as paragraphs of body text. Pasted into a list, the copied
+// items join it at the caret's level; Undo takes that paste back whole.
+(
+    size: (900, 700),
+    events: [
+        Command("style-heading-1"),
+        Type("Garden notes"),
+        Key("Enter"),
+        Type("Plant early, water late."),
+        Command("quote"),
+        Key("Enter"),
+        Key("Enter"),
+        Command("list-bullets"),
+        Type("Beans"),
+        Key("Enter"),
+        Type("Peas"),
+        Outline([
+            "Heading 1: Garden notes",
+            "quote",
+            "  Body: Plant early, water late.",
+            "list",
+            "  item",
+            "    Body: Beans",
+            "  item",
+            "    Body: Peas",
+        ]),
+        Command("select-all"),
+        Command("copy"),
+        // A new document, in a window of its own.
+        Command("new"),
+        Command("paste"),
+        Outline([
+            "Heading 1: Garden notes",
+            "quote",
+            "  Body: Plant early, water late.",
+            "list",
+            "  item",
+            "    Body: Beans",
+            "  item",
+            "    Body: Peas",
+        ]),
+        // The list's items alone, pasted at the end of its last item: they
+        // join it.
+        Key("Shift+Home"),
+        Key("Shift+Up"),
+        Key("Shift+Home"),
+        Command("copy"),
+        Key("Primary+End"),
+        Command("paste"),
+        Outline([
+            "Heading 1: Garden notes",
+            "quote",
+            "  Body: Plant early, water late.",
+            "list",
+            "  item",
+            "    Body: Beans",
+            "  item",
+            "    Body: Peas",
+            "  item",
+            "    Body: Beans",
+            "  item",
+            "    Body: Peas",
+        ]),
+        Command("undo"),
+    ],
+    expect: [
+        ("Heading 1", "Garden notes"),
+        ("Body", "Plant early, water late."),
+        ("Body", "Beans"),
+        ("Body", "Peas"),
+    ],
+    outline: Some([
+        "Heading 1: Garden notes",
+        "quote",
+        "  Body: Plant early, water late.",
+        "list",
+        "  item",
+        "    Body: Beans",
+        "  item",
+        "    Body: Peas",
+    ]),
+)

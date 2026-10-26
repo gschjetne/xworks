@@ -346,7 +346,9 @@ impl Played {
 /// Plays `session` into a new document in `res`'s documents folder: an
 /// empty one, or the one it starts from. It's played as by a person who
 /// hasn't chosen any settings, such as the ruler's unit, or as the
-/// recorded window had them where it starts.
+/// recorded window had them where it starts. A document a command opens,
+/// as New does, opens in a window of its own, which the session goes on
+/// in, as a person's would, the window before staying open behind it.
 pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorError> {
     let mut res = (*res).clone();
     if let Some(tag) = &session.language {
@@ -383,6 +385,8 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
     let mut clipboard = String::new();
     let mut problems = Vec::new();
     let mut actions = Vec::new();
+    // The windows behind the one the session goes on in.
+    let mut behind: Vec<Window> = Vec::new();
     let mut choosing: Option<Choice> = None;
     let (mut width, mut height) = session.size;
     window.update(Event::Resize { width, height });
@@ -531,8 +535,20 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
                     Effect::Paste => queue.extend(window.update(Event::Pasted(clipboard.clone()))),
                     Effect::Choose(choice) => choosing = Some(choice),
                     Effect::Window(action) => actions.push(action),
-                    Effect::Open(_)
-                    | Effect::OpenVersion(..)
+                    Effect::Open(path) => {
+                        let opened = match path {
+                            Some(path) => Window::open(res.clone(), &path),
+                            None => Window::create(res.clone()),
+                        };
+                        match opened {
+                            Ok(mut opened) => {
+                                opened.update(Event::Resize { width, height });
+                                behind.push(std::mem::replace(&mut window, opened));
+                            }
+                            Err(e) => problems.push(format!("at step {n}, nothing opened: {e}")),
+                        }
+                    }
+                    Effect::OpenVersion(..)
                     | Effect::OpenExternally(_)
                     | Effect::Reveal(_)
                     | Effect::Quit
@@ -542,6 +558,9 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
         }
     }
     // What's waiting to be written, written, as a moment passing would.
+    for other in &mut behind {
+        other.flush();
+    }
     window.flush();
     window.poll();
     Ok(Played {
