@@ -62,8 +62,8 @@ pub use flow::{Ancestor, Cell, DEEPEST, Entry, Flow, Place, Rule, flow};
 pub use merge::{Change, changes, merge};
 pub use sheet::{SheetError, SheetSpec};
 pub use styles::{
-    Blocks, CharValues, CharacterStyle, DocumentTabs, Level, ListLevel, ListStyle, Numbering,
-    PageStyle, ParagraphStyle, Part, Rgb, Source, StyleSheet,
+    Blocks, CharValues, CharacterStyle, DocumentTabs, Level, LevelOwn, ListLevel, ListStyle,
+    Numbering, PageStyle, ParagraphStyle, Part, Rgb, Source, StyleSheet,
 };
 pub use update::{Update, update};
 

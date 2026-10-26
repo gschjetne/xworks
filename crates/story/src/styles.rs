@@ -449,10 +449,35 @@ pub struct ListStyle {
     pub indent: i64,
     /// The room between a marker and its item's text.
     pub gap: i64,
-    /// Its levels, by depth from the outermost list, each as it's set or
-    /// as the values above give it; lists nested deeper go round them
-    /// again. There's always one.
-    pub levels: Vec<ListLevel>,
+    /// What each of its levels sets of its own, from the outermost, as
+    /// many as [`keys::LEVELS`]; what a level doesn't set it takes from
+    /// the values above. Lists nested deeper go round them again.
+    pub own: Vec<LevelOwn>,
+}
+
+/// What a level of a list definition sets of its own: each value, or
+/// nothing where it takes the definition's.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct LevelOwn {
+    /// How its items are numbered, or bulleted.
+    pub numbering: Option<Numbering>,
+    /// Its bullet.
+    pub bullet: Option<String>,
+    /// How its number reads, `1` standing for it.
+    pub reads: Option<String>,
+    /// The number its items start at.
+    pub start: Option<i64>,
+    /// How far it indents its items.
+    pub indent: Option<i64>,
+    /// The room between its markers and its items' text.
+    pub gap: Option<i64>,
+}
+
+impl LevelOwn {
+    /// Whether it sets nothing of its own.
+    pub fn is_empty(&self) -> bool {
+        *self == LevelOwn::default()
+    }
 }
 
 /// How the items of a level of lists are numbered, or bulleted.
@@ -604,10 +629,41 @@ impl ListLevel {
 }
 
 impl ListStyle {
-    /// The level lists nested `depth` lists deep take, from 0: its levels
-    /// in turn, round again past the last.
-    pub fn level(&self, depth: usize) -> &ListLevel {
-        &self.levels[depth % self.levels.len().max(1)]
+    /// The level lists nested `depth` lists deep take, from 0: what that
+    /// level sets of its own, round again past the last level, over the
+    /// definition's own values, its bullets by depth, round again past
+    /// the last.
+    pub fn level(&self, depth: usize) -> ListLevel {
+        let own = self
+            .own
+            .get(depth % keys::LEVELS)
+            .cloned()
+            .unwrap_or_default();
+        ListLevel {
+            numbering: own.numbering,
+            bullet: own
+                .bullet
+                .or_else(|| {
+                    (!self.bullets.is_empty())
+                        .then(|| self.bullets[depth % self.bullets.len()].clone())
+                })
+                .unwrap_or_default(),
+            reads: own.reads.unwrap_or_else(|| self.numbers.clone()),
+            start: own.start.unwrap_or(1),
+            indent: own.indent.unwrap_or(self.indent),
+            gap: own.gap.unwrap_or(self.gap),
+        }
+    }
+
+    /// How many levels it sets apart: as many as its bullets, or to the
+    /// deepest that sets something of its own, and at least one.
+    pub fn levels(&self) -> usize {
+        let set = self
+            .own
+            .iter()
+            .rposition(|o| !o.is_empty())
+            .map_or(0, |k| k + 1);
+        self.bullets.len().max(set).clamp(1, keys::LEVELS)
     }
 
     /// The marker of item number `n` of a list in this style: its number
@@ -878,7 +934,7 @@ impl StyleSheet {
                     numbers: String::new(),
                     indent: 0,
                     gap: 0,
-                    levels: list_levels(&Props::new(), &[], "", 0, 0),
+                    own: levels_own(&Props::new()),
                 })
         };
         let bullets = list_of("bullets", false);
@@ -1186,17 +1242,15 @@ fn list_style(id: ObjectId, name: String, role: Option<String>, props: &Props) -
         .map(str::to_string)
         .collect();
     let numbers = text(keys::NUMBERS);
-    let (indent, gap) = (int(keys::LIST_INDENT), int(keys::MARKER_GAP));
-    let levels = list_levels(props, &bullets, &numbers, indent, gap);
     ListStyle {
         id: Some(id),
         name,
         role,
         bullets,
         numbers,
-        indent,
-        gap,
-        levels,
+        indent: int(keys::LIST_INDENT),
+        gap: int(keys::MARKER_GAP),
+        own: levels_own(props),
     }
 }
 
@@ -1214,64 +1268,31 @@ pub fn valid_bullet(bullet: &str) -> bool {
 /// The most a level's items can start at.
 pub const MOST_START: i64 = 9999;
 
-/// A list definition's levels, as its `props` set them, each taking what
-/// it doesn't set from the definition's bullets by depth, its `numbers`,
-/// `indent` and `gap`: as many as its bullets, or the deepest level it
-/// sets, and at least one. A value of the wrong kind or past its limits
-/// is as if unset.
-pub(crate) fn list_levels(
-    props: &Props,
-    bullets: &[String],
-    numbers: &str,
-    indent: i64,
-    gap: i64,
-) -> Vec<ListLevel> {
-    let get = |k: usize, what: &str| props.get(&keys::level(k, what));
-    let set = (1..=keys::LEVELS)
-        .rev()
-        .find(|&k| {
-            [
-                keys::LEVEL_MARKER,
-                keys::LEVEL_BULLET,
-                keys::LEVEL_READS,
-                keys::LEVEL_START,
-                keys::LEVEL_INDENT,
-                keys::LEVEL_GAP,
-            ]
-            .iter()
-            .any(|what| get(k, what).is_some())
-        })
-        .unwrap_or(0);
-    let count = bullets.len().max(set).clamp(1, keys::LEVELS);
-    (1..=count)
+/// What each level of a list definition with `props` sets of its own,
+/// from the outermost, [`keys::LEVELS`] of them. A value of the wrong
+/// kind or past its limits is as if unset.
+pub(crate) fn levels_own(props: &Props) -> Vec<LevelOwn> {
+    (1..=keys::LEVELS)
         .map(|k| {
-            let text = |what: &str| match get(k, what) {
-                Some(Value::Text(t)) => Some(t.as_str()),
+            let get = |what: &str| props.get(&keys::level(k, what));
+            let text = |what: &str| match get(what) {
+                Some(Value::Text(t)) => Some(t.clone()),
                 _ => None,
             };
-            let length = |what: &str, or: i64| match get(k, what) {
-                Some(Value::Int(n)) if valid(keys::LIST_INDENT)(&Value::Int(*n)) => *n,
-                _ => or,
+            let length = |what: &str| match get(what) {
+                Some(Value::Int(n)) if valid(keys::LIST_INDENT)(&Value::Int(*n)) => Some(*n),
+                _ => None,
             };
-            ListLevel {
-                numbering: text(keys::LEVEL_MARKER).and_then(Numbering::of),
-                bullet: text(keys::LEVEL_BULLET)
-                    .filter(|b| valid_bullet(b))
-                    .map(str::to_string)
-                    .or_else(|| {
-                        (!bullets.is_empty()).then(|| bullets[(k - 1) % bullets.len()].clone())
-                    })
-                    .unwrap_or_default(),
-                reads: text(keys::LEVEL_READS)
-                    .filter(|r| valid_reads(r))
-                    .unwrap_or(numbers)
-                    .to_string(),
-                start: match get(k, keys::LEVEL_START) {
-                    Some(Value::Int(n)) if (0..=MOST_START).contains(n) => *n,
-                    _ => 1,
+            LevelOwn {
+                numbering: text(keys::LEVEL_MARKER).and_then(|m| Numbering::of(&m)),
+                bullet: text(keys::LEVEL_BULLET).filter(|b| valid_bullet(b)),
+                reads: text(keys::LEVEL_READS).filter(|r| valid_reads(r)),
+                start: match get(keys::LEVEL_START) {
+                    Some(Value::Int(n)) if (0..=MOST_START).contains(n) => Some(*n),
+                    _ => None,
                 },
-                indent: length(keys::LEVEL_INDENT, indent),
-                gap: length(keys::LEVEL_GAP, gap),
+                indent: length(keys::LEVEL_INDENT),
+                gap: length(keys::LEVEL_GAP),
             }
         })
         .collect()

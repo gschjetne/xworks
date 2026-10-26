@@ -244,9 +244,9 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
                     _ => level.start,
                 };
                 let bullet = if level.bullet.is_empty() {
-                    &sheet.list(false, None).level(depth).bullet
+                    sheet.list(false, None).level(depth).bullet
                 } else {
-                    &level.bullet
+                    level.bullet.clone()
                 };
                 let numbering = level.numbering(ordered);
                 inner.indent = place.indent + level.indent;
