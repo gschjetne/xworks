@@ -293,6 +293,7 @@ impl Recording {
                 .as_ref()
                 .map(|p| story::outline(&ended, &StyleSheet::of(&ended, p))),
             marks: Vec::new(),
+            unmarked: Vec::new(),
             clipboard: None,
             status: None,
             language: self.language.clone(),

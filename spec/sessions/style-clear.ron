@@ -1,25 +1,28 @@
 // A paragraph style applied from the inspector's list (M2's stage 9), at
 // 1280 by 800: chosen plainly, it replaces the paragraph's own spacing and
-// keeps its text's own size; chosen with Shift held, it takes the text's
-// own size away too, so the text is Heading 2's size.
+// keeps its text's own size and its marks; chosen with Shift held, it
+// takes the text's own size away too, and its marks, as Clear Formatting
+// does (review sjj5ak5a), so the text is Heading 2's size, plain.
 (
     size: (1280, 800),
     events: [
         Type("Restyled"),
         Key("Primary+A"),
         Command("size-18"),
+        Key("Primary+I"),
         CommandWith("space-before", [Int(127000)]),
         Command("toggle-inspector"),
         // Style: Heading 1, from its list: the size stays, the spacing goes.
         Click(1150, 136),
         Click(1100, 196),
         Expect([("Heading 1", "Restyled")]),
-        // Style: Heading 2, with Shift: the size goes too.
+        // Style: Heading 2, with Shift: the size and the italic go too.
         Click(1150, 136),
         ShiftClick(1100, 222),
         Key("End"),
     ],
     expect: [("Heading 2", "Restyled")],
     props: [("Restyled", "space-before", None)],
+    unmarked: [("Restyled", ["italic", "size"])],
     status: Some("Page 1 of 1   ·   Heading 2   ·   15 pt   ·   1 words"),
 )

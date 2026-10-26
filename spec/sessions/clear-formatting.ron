@@ -1,6 +1,8 @@
 // Clear Formatting (M2's stage 9), by its shortcut, Ctrl+\: the text's own
 // size and the paragraph's own space above go, so they look as their
-// style says, and strong, a character style, stays.
+// style says, and so does strong, a mark: Clear Formatting clears
+// everything, marks too, leaving plain text in its paragraph's style
+// (review sjj5ak5a).
 (
     size: (900, 700),
     events: [
@@ -13,7 +15,7 @@
         Key("End"),
     ],
     expect: [("Body", "Sized and spaced")],
-    marks: [("Sized and spaced", ["bold"])],
+    unmarked: [("Sized and spaced", ["bold", "size"])],
     props: [("Sized", "space-before", None)],
     status: Some("Page 1 of 1   ·   Body   ·   11 pt   ·   3 words"),
 )

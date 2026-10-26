@@ -87,26 +87,88 @@ fn id_arg(id: ObjectId) -> Arg {
     Arg::Int(id.0 as i64)
 }
 
+/// Clear Formatting clears everything, marks too, leaving plain text in
+/// its paragraph's style (review sjj5ak5a, which changed stage 9's
+/// "marks stay"): the text's own formatting, its character style, and its
+/// emphasis, strong, code, strikethrough and links, and the paragraph's
+/// own paragraph formatting; not its language. One step Undo takes back.
 #[test]
-fn clear_formatting_takes_away_the_texts_own_formatting_but_not_its_marks() {
-    let mut editor = Editor::create(res("app-styles-clear")).expect("a document");
-    editor.update(Event::Text("Formatted".to_string()));
+fn clear_formatting_takes_away_the_texts_own_formatting_and_its_marks() {
+    let res = res("app-styles-clear");
+    // Text with every mark, a link with its title, a character style, a
+    // size and a language, as a file may hold it.
+    let spec = res.stylesheets[0].clone();
+    let blank = story::new_document(&spec);
+    let emphasis = blank
+        .styles()
+        .iter()
+        .copied()
+        .find(|&s| {
+            let style = blank.style(s).unwrap();
+            style.kind == doc::StyleKind::Character
+                && style.props.get(keys::ROLE) == Some(&Value::Text("emphasis".to_string()))
+        })
+        .expect("Emphasis");
+    let marks = story::props(&[
+        (keys::BOLD, Value::Bool(true)),
+        (keys::ITALIC, Value::Bool(true)),
+        (keys::CODE, Value::Bool(true)),
+        (keys::STRIKETHROUGH, Value::Bool(true)),
+        (keys::LINK, Value::Text("https://example.org".to_string())),
+        (keys::LINK_TITLE, Value::Text("Example".to_string())),
+        (keys::CHAR_STYLE, Value::Ref(emphasis)),
+        (keys::SIZE, Value::Int(16 * POINT)),
+        (keys::LANGUAGE, Value::Text("nb".to_string())),
+    ]);
+    let document = story::document(&spec, &[("Body", vec![("Formatted", marks)])]);
+    let path = res.documents.join("Formatted.xw");
+    drop(store::Store::create(&path, &document, "story").expect("written"));
+    let mut editor = Editor::open(res.clone(), &path).expect("it opens");
     select_all(&mut editor);
-    with(&mut editor, "size", vec![Arg::Int(16 * POINT)]);
     with(&mut editor, "space-before", vec![Arg::Int(12 * POINT)]);
-    command(&mut editor, "bold");
-    assert!(runs_set(&editor, 0, keys::SIZE));
     assert!(editor.state("clear-formatting").enabled);
     command(&mut editor, "clear-formatting");
-    assert!(!runs_set(&editor, 0, keys::SIZE));
-    assert_eq!(own(&editor, 0, keys::SPACE_BEFORE), None);
+    for key in [
+        keys::SIZE,
+        keys::BOLD,
+        keys::ITALIC,
+        keys::CODE,
+        keys::STRIKETHROUGH,
+        keys::LINK,
+        keys::LINK_TITLE,
+        keys::CHAR_STYLE,
+    ] {
+        assert!(!runs_set(&editor, 0, key), "{key} goes");
+    }
     assert!(
-        runs_set(&editor, 0, keys::BOLD),
-        "strong is a character style"
+        runs_set(&editor, 0, keys::LANGUAGE),
+        "a language isn't formatting"
     );
+    assert_eq!(own(&editor, 0, keys::SPACE_BEFORE), None);
     assert!(!editor.state("clear-formatting").enabled);
     command(&mut editor, "undo");
-    assert!(runs_set(&editor, 0, keys::SIZE));
+    for key in [keys::SIZE, keys::BOLD, keys::LINK, keys::CHAR_STYLE] {
+        assert!(runs_set(&editor, 0, key), "{key} is back");
+    }
+}
+
+/// With nothing selected, Clear Formatting takes the caret's paragraph's
+/// formatting and marks away, all of it, and the marks pending at the
+/// caret, so what's typed next is plain.
+#[test]
+fn clear_formatting_at_the_caret_takes_pending_marks_too() {
+    let mut editor = Editor::create(res("app-styles-clear-caret")).expect("a document");
+    command(&mut editor, "bold");
+    editor.update(Event::Text("Bold".to_string()));
+    assert!(runs_set(&editor, 0, keys::BOLD));
+    command(&mut editor, "clear-formatting");
+    assert!(!runs_set(&editor, 0, keys::BOLD), "the paragraph's");
+    command(&mut editor, "italic");
+    assert!(editor.state("clear-formatting").enabled, "one pending");
+    command(&mut editor, "clear-formatting");
+    editor.update(Event::Text(" plain".to_string()));
+    assert!(!runs_set(&editor, 0, keys::ITALIC));
+    assert!(!runs_set(&editor, 0, keys::BOLD));
 }
 
 #[test]
@@ -116,13 +178,17 @@ fn applying_a_style_replaces_paragraph_formatting_and_keeps_the_texts() {
     select_all(&mut editor);
     with(&mut editor, "size", vec![Arg::Int(16 * POINT)]);
     with(&mut editor, "indent-start", vec![Arg::Int(10 * MILLIMETRE)]);
+    command(&mut editor, "italic");
     command(&mut editor, "style-heading-2");
     assert_eq!(own(&editor, 0, keys::INDENT_START), None);
     assert!(
         runs_set(&editor, 0, keys::SIZE),
         "its text's own size stays"
     );
-    // With "clear", the text's own formatting goes too.
+    assert!(runs_set(&editor, 0, keys::ITALIC), "and its marks");
+    // With "clear", as with Shift held, the text's own formatting goes
+    // too, and its marks, as Clear Formatting takes them (review
+    // sjj5ak5a).
     let body = style(&editor, "Body");
     with(
         &mut editor,
@@ -130,6 +196,7 @@ fn applying_a_style_replaces_paragraph_formatting_and_keeps_the_texts() {
         vec![id_arg(body), Arg::Text("clear".to_string())],
     );
     assert!(!runs_set(&editor, 0, keys::SIZE));
+    assert!(!runs_set(&editor, 0, keys::ITALIC));
     assert_eq!(
         editor
             .sheet()

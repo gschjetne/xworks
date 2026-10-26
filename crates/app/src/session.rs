@@ -31,6 +31,9 @@ pub struct Session {
     /// of it.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub marks: Vec<(String, Vec<String>)>,
+    /// Stretches of text, each with properties set on no character of it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub unmarked: Vec<(String, Vec<String>)>,
     /// What the clipboard holds afterwards, if the session copies.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub clipboard: Option<String>,
@@ -581,7 +584,9 @@ pub fn check(session: &Session, played: &Played) -> Vec<String> {
             problems.push(format!("the outline is {outline:#?}, expected {want:#?}"));
         }
     }
-    for (stretch, keys) in &session.marks {
+    let marked = session.marks.iter().map(|m| (m, true));
+    let unmarked = session.unmarked.iter().map(|m| (m, false));
+    for ((stretch, keys), want) in marked.chain(unmarked) {
         let Some((id, start)) = document.paragraphs().iter().find_map(|&id| {
             let text = &document.paragraph(id)?.text;
             text.find(stretch.as_str())
@@ -600,8 +605,10 @@ pub fn check(session: &Session, played: &Played) -> Vec<String> {
                 continue;
             }
             for key in keys {
-                if !run.props.get(key).is_some_and(|v| *v != Value::Bool(false)) {
-                    problems.push(format!("{stretch:?} isn't all {key}"));
+                let set = run.props.get(key).is_some_and(|v| *v != Value::Bool(false));
+                if set != want {
+                    let not = if want { "isn't all" } else { "is partly" };
+                    problems.push(format!("{stretch:?} {not} {key}"));
                 }
             }
         }

@@ -14,7 +14,9 @@
 
 use chrome::{Arg, Choice, Control, ControlKind, InspectorTab, Length, Row, Section, Unit};
 use doc::{Document, ObjectId, Op, Props, StyleKind, Value};
-use story::styles::{CHARACTER_FORMATTING, Level, PARAGRAPH_FORMATTING, find, valid};
+use story::styles::{
+    CHARACTER_FORMATTING, CLEARED_FROM_TEXT, Level, PARAGRAPH_FORMATTING, find, valid,
+};
 use story::{SheetSpec, keys};
 use text::units::MILLIMETRE;
 
@@ -162,6 +164,50 @@ impl Editor {
         })
     }
 
+    /// Whether Clear Formatting has anything to take away: the selected
+    /// paragraphs' own paragraph formatting, or their text's own
+    /// formatting, character styles or marks along the selection; with
+    /// none selected, the caret's paragraph's, all of it, and those
+    /// pending at the caret.
+    pub(crate) fn has_formatting_to_clear(&self) -> bool {
+        let paragraphs = self.selected_paragraphs();
+        if paragraphs.iter().any(|&id| {
+            let p = self.paragraph(id);
+            PARAGRAPH_FORMATTING
+                .iter()
+                .any(|k| p.props.contains_key(*k))
+        }) {
+            return true;
+        }
+        let collapsed = self.collapsed();
+        if collapsed
+            && CLEARED_FROM_TEXT
+                .iter()
+                .any(|k| self.pending.contains_key(*k))
+        {
+            return true;
+        }
+        let (start, end) = self.ordered();
+        let last = paragraphs.len().saturating_sub(1);
+        paragraphs.iter().enumerate().any(|(i, &id)| {
+            let p = self.paragraph(id);
+            let (from, to) = if collapsed {
+                (0, p.len())
+            } else {
+                (
+                    if i == 0 { start.offset } else { 0 },
+                    if i == last { end.offset } else { p.len() },
+                )
+            };
+            let mut pos = 0;
+            p.runs.iter().any(|run| {
+                let (a, b) = (pos, pos + run.len);
+                pos = b;
+                b > from && a < to && CLEARED_FROM_TEXT.iter().any(|k| run.props.contains_key(*k))
+            })
+        })
+    }
+
     /// The values the selection sets itself, over its style, as people
     /// name them: its paragraphs' own and its text's own.
     pub(crate) fn own_formatting(&self) -> Vec<&'static str> {
@@ -220,8 +266,11 @@ impl Editor {
     }
 
     /// Clear Formatting: takes the selection's own formatting away, its
-    /// paragraphs' and its text's, so they look as their styles say; with
-    /// none selected, the caret's paragraph's, all of it.
+    /// paragraphs' and its text's, and its text's character styles and
+    /// marks with it, emphasis, strong, code, strikethrough and links, so
+    /// it's plain text in its paragraph's style (review sjj5ak5a); with
+    /// none selected, the caret's paragraph's, all of it, and the marks
+    /// pending at the caret. A language isn't formatting, and stays.
     pub(super) fn clear_formatting(&mut self) {
         let paragraphs = self.selected_paragraphs();
         let (start, end) = self.ordered();
@@ -246,13 +295,19 @@ impl Editor {
                     .filter(|op| matches!(op, Op::SetCharProp { .. })),
             );
         }
+        let pending = collapsed
+            && CLEARED_FROM_TEXT
+                .iter()
+                .any(|k| self.pending.contains_key(*k));
         if collapsed {
-            for key in CHARACTER_FORMATTING {
+            for key in CLEARED_FROM_TEXT {
                 self.pending.remove(key);
             }
         }
         if ops.is_empty() {
-            self.message = "The selection has no formatting of its own".to_string();
+            if !pending {
+                self.message = "The selection has no formatting of its own".to_string();
+            }
             return;
         }
         self.commit("Clear Formatting", ops, false);

@@ -907,7 +907,8 @@ impl Editor {
     }
 
     /// The operations that take paragraph `id`'s own paragraph formatting
-    /// away, and with `text`, its text's own formatting too: all of it, or
+    /// away, and with `text`, its text's own formatting, character style
+    /// and marks too (`story::styles::CLEARED_FROM_TEXT`): all of it, or
     /// along `range` of it if one is given.
     pub(crate) fn clearing(&self, id: ObjectId, range: Option<(u32, u32)>, text: bool) -> Vec<Op> {
         let p = self.paragraph(id);
@@ -925,7 +926,7 @@ impl Editor {
         }
         if text {
             let (from, to) = range.unwrap_or((0, p.len()));
-            for key in story::styles::CHARACTER_FORMATTING {
+            for key in story::styles::CLEARED_FROM_TEXT {
                 let mut pos = 0;
                 let any = p.runs.iter().any(|run| {
                     let (a, b) = (pos, pos + run.len);
@@ -2044,7 +2045,8 @@ impl Editor {
     /// Applies paragraph style `style` to the paragraphs selected: each
     /// takes it in place of its own paragraph formatting, but keeps its
     /// text's own formatting, unless `clear` says to take that away too
-    /// (project owner, 2026-10-24, review 30dmn1js).
+    /// (project owner, 2026-10-24, review 30dmn1js), with its character
+    /// styles and marks, as Clear Formatting does (review sjj5ak5a).
     pub(crate) fn set_style(&mut self, style: ObjectId, clear: bool) {
         let ids = self.selected_paragraphs();
         let mut ops = Vec::new();
@@ -2205,7 +2207,7 @@ impl Editor {
             | "list-bullets" | "list-numbers" | "list-tasks" | "quote" | "insert-table"
             | "insert-rule" | "insert-picture" => writable,
             "task-toggle" => writable && self.task_at_caret().is_some(),
-            "clear-formatting" => writable && self.has_direct_formatting(),
+            "clear-formatting" => writable && self.has_formatting_to_clear(),
             "redefine-style" | "new-style" | "replace-stylesheet" => {
                 writable && self.document.sheet().is_some()
             }

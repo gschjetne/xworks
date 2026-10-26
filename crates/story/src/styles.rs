@@ -251,6 +251,26 @@ pub const PARAGRAPH_FORMATTING: [&str; 8] = [
 /// styles'. Marks aren't among them; they're character styles.
 pub const CHARACTER_FORMATTING: [&str; 4] = [keys::FONT, keys::SIZE, keys::COLOR, keys::UNDERLINE];
 
+/// The keys Clear Formatting takes from text, leaving it plain in its
+/// paragraph's style (review sjj5ak5a): its own formatting
+/// ([`CHARACTER_FORMATTING`]), its character style, and its marks
+/// ([`MARKS`]), a link's title with its link. Not its language, which
+/// isn't formatting, its pictures, or Markdown kept as it was written,
+/// which is text.
+pub const CLEARED_FROM_TEXT: [&str; 11] = [
+    keys::FONT,
+    keys::SIZE,
+    keys::COLOR,
+    keys::UNDERLINE,
+    keys::CHAR_STYLE,
+    keys::CODE,
+    keys::ITALIC,
+    keys::BOLD,
+    keys::STRIKETHROUGH,
+    keys::LINK,
+    keys::LINK_TITLE,
+];
+
 /// The marks: each a run's key, and the role of the character style it
 /// applies, in the order they apply.
 pub const MARKS: [(&str, &str); 5] = [

@@ -540,3 +540,24 @@ fn a_tasks_box_clicked_ticks_it() {
     editor.flush();
     assert_eq!(read(&path), "- [x] Sow the beans\n- [x] Dig the bed\n");
 }
+
+/// Clear Formatting in a Markdown file leaves its text plain, and it's
+/// written so (review sjj5ak5a): its emphasis, strong, code, struck text
+/// and links go.
+#[test]
+fn clear_formatting_writes_a_markdown_file_plain() {
+    let res = resources("clear");
+    let path = file(
+        &res,
+        "Marked.md",
+        b"Some *emphasis*, **strong**, `code`, ~~struck~~ and [a link](https://example.org).\n",
+    );
+    let mut editor = Editor::open(res.clone(), &path).expect("it opens");
+    command(&mut editor, "select-all");
+    command(&mut editor, "clear-formatting");
+    editor.flush();
+    assert_eq!(
+        read(&path),
+        "Some emphasis, strong, code, struck and a link.\n"
+    );
+}
