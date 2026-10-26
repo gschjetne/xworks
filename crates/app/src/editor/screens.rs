@@ -198,6 +198,28 @@ impl Editor {
         self.show(id);
     }
 
+    /// The kind the Style tab shows, if one was chosen with none of it to
+    /// show.
+    pub fn kind_chosen(&self) -> Option<StyleKind> {
+        self.showing.kind.filter(|_| self.showing.chosen.is_none())
+    }
+
+    /// The Style tab shows kind `kind`: its first style or part, or, for
+    /// paragraph styles, the caret's, as if chosen from its list of kinds.
+    pub fn choose_kind(&mut self, kind: StyleKind) {
+        if kind == StyleKind::Paragraph {
+            self.show_caret_style();
+            return;
+        }
+        self.showing = Showing {
+            kind: Some(kind),
+            ..Showing::default()
+        };
+        if let Some(first) = self.first_of(kind) {
+            self.show(first);
+        }
+    }
+
     /// What the Style tab shows: a kind, and the style or part of it, if
     /// there's one to show.
     pub fn style_screen(&self) -> (StyleKind, Option<ObjectId>) {
@@ -293,19 +315,11 @@ impl Editor {
                 Some(style) => self.choose_style(style),
                 None => self.show_caret_style(),
             },
-            "style-kind" => match text(0).and_then(kind_of) {
-                Some(StyleKind::Paragraph) => self.show_caret_style(),
-                Some(kind) => {
-                    self.showing = Showing {
-                        kind: Some(kind),
-                        ..Showing::default()
-                    };
-                    if let Some(first) = self.first_of(kind) {
-                        self.show(first);
-                    }
+            "style-kind" => {
+                if let Some(kind) = text(0).and_then(kind_of) {
+                    self.choose_kind(kind);
                 }
-                None => {}
-            },
+            }
             "style-follow" => {
                 if let Some(part) = object(0) {
                     if let (_, Some(from)) = self.style_screen() {

@@ -152,6 +152,10 @@ pub struct Chrome {
     /// was chosen, rather than the caret's paragraph style.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub style: Option<u64>,
+    /// The kind the Style tab showed, if one was chosen with none of it
+    /// to show, as a sheet without tab layouts has none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub kind: Option<doc::StyleKind>,
 }
 
 fn is_zero(n: &i64) -> bool {

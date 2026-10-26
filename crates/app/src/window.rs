@@ -170,9 +170,12 @@ impl Window {
             if let Some(units) = chrome.units {
                 window.res.settings.set_units(units);
             }
-            if let Some(style) = chrome.style {
-                window.editor.choose_style(doc::ObjectId(style));
+            match (chrome.style, chrome.kind) {
+                (Some(style), _) => window.editor.choose_style(doc::ObjectId(style)),
+                (None, Some(kind)) => window.editor.choose_kind(kind),
+                (None, None) => {}
             }
+
             window.scrolled = chrome.scroll;
         }
         Ok(window)
@@ -208,6 +211,7 @@ impl Window {
             units: Some(self.res.settings.units()),
             scroll: self.scrolled,
             style: self.editor.style_chosen().map(|id| id.0),
+            kind: self.editor.kind_chosen(),
         });
         Some(checkpoint)
     }
