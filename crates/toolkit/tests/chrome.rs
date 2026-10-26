@@ -698,6 +698,71 @@ fn the_inspector_scrolls_what_doesnt_fit() {
     assert_eq!((short.most(), short.scroll(), short.bar()), (0, 0, None));
 }
 
+/// Drawing only what changed follows the scroll: a field's caret gone, or
+/// the pointer over a control, changes its row and nothing else; a scroll
+/// changes the inspector and nothing else.
+#[test]
+fn a_change_to_a_control_changes_only_its_row() {
+    let theme = theme("light");
+    let labels = Labels::new();
+    let kit = Kit {
+        fonts: fonts(),
+        theme: &theme,
+        icons: icons(),
+        labels: &labels,
+        caret: true,
+    };
+    let model = tall(30);
+    let panel = (px(40), px(600));
+    let view = InspectorView::new(&kit, &model, 0, px(1280), panel, px(90));
+    let page = |items: Vec<scene::Item>| scene::Page {
+        width: px(1280),
+        height: px(640),
+        items,
+    };
+    let at = ControlRef {
+        section: 0,
+        row: 12,
+        control: 0,
+    };
+    let row = view.control(at).unwrap();
+    // Typed over, so its caret shows rather than its selection.
+    let mut field = Field::new("");
+    field.insert("12 pt");
+    let shown = page(view.draw(&kit, &model, 0, None, Some((at, &field))));
+    let blinked = Kit {
+        caret: false,
+        ..kit
+    };
+    let gone = page(view.draw(&blinked, &model, 0, None, Some((at, &field))));
+    let changed = scene::changed(&shown, &gone);
+    assert_eq!(changed.len(), 1, "{changed:?}");
+    let r = changed[0];
+    assert!(
+        r.y >= row.y - px(2) && r.bottom() <= row.bottom() + px(2),
+        "{r:?} beyond its row {row:?}"
+    );
+    // The pointer over a toggle-less control: only its row, if anything.
+    let lit = page(view.draw(
+        &kit,
+        &model,
+        0,
+        Some(InspectorHit::Control(at, 0)),
+        Some((at, &field)),
+    ));
+    for r in scene::changed(&shown, &lit) {
+        assert!(r.y >= row.y - px(2) && r.bottom() <= row.bottom() + px(2));
+    }
+    // Scrolled, everything that changes is in the panel.
+    let scrolled = InspectorView::new(&kit, &model, 0, px(1280), panel, px(140));
+    let moved = page(scrolled.draw(&kit, &model, 0, None, Some((at, &field))));
+    let changed = scene::changed(&shown, &moved);
+    assert!(!changed.is_empty());
+    for r in changed {
+        assert!(r.x >= view.rect().x - px(1), "{r:?} outside the inspector");
+    }
+}
+
 /// A note beside a control takes the room its words need, and the control
 /// the rest; text that doesn't fit its field is cut short with an
 /// ellipsis, so it never runs into the field's arrow (review sjj5ak5a).
