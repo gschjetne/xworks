@@ -416,9 +416,10 @@ pub fn paragraph_tabs(paragraph: &Paragraph, sheet: &StyleSheet) -> Tabs {
 }
 
 /// Tab stops as [`keys::TABS`] holds them: each its kind (`start`, `end`,
-/// `center`, or `decimal:` and the character it lines up on) and its
-/// position in layout units, separated by semicolons, in order of
-/// position: `"start 1260000; decimal:. 4950000"`.
+/// `center`, or `decimal:` and the character it lines up on), its
+/// position in layout units, and its leader's character if it has one,
+/// separated by semicolons, in order of position:
+/// `"start 1260000; decimal:. 4950000 ."`.
 pub fn format_tabs(stops: &[TabStop]) -> String {
     let mut stops = stops.to_vec();
     stops.sort_by_key(|s| s.position);
@@ -431,10 +432,19 @@ pub fn format_tabs(stops: &[TabStop]) -> String {
                 TabAlign::Center => "center".to_string(),
                 TabAlign::Decimal(c) => format!("decimal:{c}"),
             };
-            format!("{kind} {}", s.position)
+            match s.leader.filter(|&c| valid_leader(c)) {
+                Some(c) => format!("{kind} {} {c}", s.position),
+                None => format!("{kind} {}", s.position),
+            }
         })
         .collect::<Vec<_>>()
         .join("; ")
+}
+
+/// Whether `c` can be a tab stop's leader: a character that shows, not a
+/// space, and not the semicolon between stops.
+pub fn valid_leader(c: char) -> bool {
+    !c.is_whitespace() && !c.is_control() && c != ';'
 }
 
 /// The tab stops [`format_tabs`] wrote, in order of position, one at each
@@ -444,6 +454,16 @@ pub fn parse_tabs(text: &str) -> Option<Vec<TabStop>> {
     for entry in text.split(';').map(str::trim).filter(|e| !e.is_empty()) {
         let mut parts = entry.split_whitespace();
         let (kind, position) = (parts.next()?, parts.next()?);
+        let leader = match parts.next() {
+            None => None,
+            Some(leader) => {
+                let mut c = leader.chars();
+                match (c.next(), c.next()) {
+                    (Some(c), None) if valid_leader(c) => Some(c),
+                    _ => return None,
+                }
+            }
+        };
         if parts.next().is_some() {
             return None;
         }
@@ -463,7 +483,11 @@ pub fn parse_tabs(text: &str) -> Option<Vec<TabStop>> {
         if !(0..=MOST_TAB).contains(&position) {
             return None;
         }
-        stops.push(TabStop { position, align });
+        stops.push(TabStop {
+            position,
+            align,
+            leader,
+        });
     }
     stops.sort_by_key(|s| s.position);
     stops.dedup_by_key(|s| s.position);
@@ -539,6 +563,9 @@ pub struct TabStopSpec {
     pub at: Length,
     /// How the text after a tab sits at it.
     pub align: TabAlign,
+    /// What fills the room before it, repeated: '.' for dots.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub leader: Option<char>,
 }
 
 /// A paragraph of a story, laid out.

@@ -120,10 +120,12 @@ fn lay_out_set(
             TabStop {
                 position: points(40.0),
                 align: TabAlign::End,
+                leader: None,
             },
             TabStop {
                 position: points(90.0),
                 align: TabAlign::Decimal('.'),
+                leader: None,
             },
         ],
         interval: points(30.0),

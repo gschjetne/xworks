@@ -74,7 +74,9 @@ has one.
 - A **style** (`doc::Style`) is of a kind (`doc::StyleKind`): a paragraph
   style, a character style or a page style, or a **named part** styles
   refer to: a face (`family`), a colour (`color`, `#rrggbb`), a layout of
-  tab stops (`tabs`) or a list definition (`bullets`, `numbers`,
+  tab stops (`tabs`: each stop its kind, its position and, if it has
+  one, its leader's character, `"start 1260000; end 4950000 ."`, as a
+  paragraph's own stops are) or a list definition (`bullets`, `numbers`,
   `list-indent`, `marker-gap`, and for each level `k` it sets apart,
   from 1, `level-k-marker`, "bullet" or a numbering, "1", "a", "A", "i"
   or "I", `level-k-bullet`, `level-k-reads`, its number with `1` for it,

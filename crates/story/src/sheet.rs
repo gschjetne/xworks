@@ -721,6 +721,9 @@ fn check_stops(stops: &[TabStopSpec]) -> Result<(), SheetError> {
         {
             return invalid("a decimal tab stop on a control character");
         }
+        if stop.leader.is_some_and(|c| !crate::valid_leader(c)) {
+            return invalid("a tab stop's leader must be a character that shows");
+        }
     }
     Ok(())
 }
@@ -912,6 +915,7 @@ fn stops_of(stops: &[TabStopSpec]) -> Vec<TabStop> {
         .map(|s| TabStop {
             position: s.at.units(),
             align: s.align,
+            leader: s.leader,
         })
         .collect()
 }
@@ -1237,6 +1241,7 @@ impl SheetSpec {
                         .map(|s| TabStopSpec {
                             at: length_of(s.position),
                             align: s.align,
+                            leader: s.leader,
                         })
                         .collect(),
                 }),
@@ -1357,6 +1362,7 @@ fn spec_values(document: &Document, props: &Props) -> StyleSpec {
                     .map(|st| TabStopSpec {
                         at: length_of(st.position),
                         align: st.align,
+                        leader: st.leader,
                     })
                     .collect()
             });

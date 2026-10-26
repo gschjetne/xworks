@@ -246,6 +246,7 @@ fn tab_stops_are_the_styles_and_the_documents() {
     let stop = |pt: i64, align| text::TabStop {
         position: pt * POINT,
         align,
+        leader: None,
     };
     sheet.tabs.stops = vec![
         stop(100, text::TabAlign::Start),
@@ -351,6 +352,15 @@ fn paragraphs_set_their_own_spacing_indents_line_height_and_tabs() {
         story::format_tabs(&tabs.stops),
         "decimal:, 1800000; end 3600000"
     );
+    // A stop's leader is its character after it; one that doesn't show,
+    // or more than one, isn't a stop.
+    let mut led = tabs.stops.clone();
+    led[1].leader = Some('.');
+    let written = story::format_tabs(&led);
+    assert_eq!(written, "decimal:, 1800000; end 3600000 .");
+    assert_eq!(story::parse_tabs(&written), Some(led));
+    assert_eq!(story::parse_tabs("end 3600000 .."), None);
+    assert_eq!(story::parse_tabs("end 3600000 \u{7}"), None);
     assert_eq!(
         story::indents(paragraph, &sheet()),
         story::Indents {

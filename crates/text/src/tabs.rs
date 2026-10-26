@@ -22,6 +22,10 @@ pub struct TabStop {
     pub position: i64,
     /// How the text after a tab sits at it.
     pub align: TabAlign,
+    /// What fills the room a tab to it opens, repeated, as a table of
+    /// contents has dots before a page's number; nothing for none.
+    #[serde(default)]
+    pub leader: Option<char>,
 }
 
 /// A paragraph's tab stops: those set, and default ones at a regular
@@ -57,6 +61,7 @@ impl Tabs {
         Some(TabStop {
             position,
             align: TabAlign::Start,
+            leader: None,
         })
     }
 }
@@ -73,15 +78,16 @@ pub(crate) struct After {
 
 /// How far a tab moves the pen, from `pen`, with `natural` its width as a
 /// space: to the stop `tabs` gives, placing the text `after` it as the
-/// stop asks, but never back.
+/// stop asks, but never back; and the leader that fills the room, if the
+/// stop has one.
 pub(crate) fn advance(
     tabs: &Tabs,
     pen: i64,
     natural: i64,
     after: impl Fn(Option<char>) -> After,
-) -> i64 {
+) -> (i64, Option<char>) {
     let Some(stop) = tabs.next(pen) else {
-        return natural;
+        return (natural, None);
     };
     let to = stop.position - pen;
     let advance = match stop.align {
@@ -93,7 +99,7 @@ pub(crate) fn advance(
             to - after.before_decimal.unwrap_or(after.width)
         }
     };
-    advance.max(0)
+    (advance.max(0), stop.leader)
 }
 
 #[cfg(test)]
@@ -101,7 +107,11 @@ mod tests {
     use super::*;
 
     fn stop(position: i64, align: TabAlign) -> TabStop {
-        TabStop { position, align }
+        TabStop {
+            position,
+            align,
+            leader: None,
+        }
     }
 
     #[test]
@@ -129,6 +139,7 @@ mod tests {
             stops: vec![stop(100, align)],
             interval: 0,
         };
+        let advance = |tabs: &Tabs, pen, natural, after| advance(tabs, pen, natural, after).0;
         assert_eq!(advance(&at(TabAlign::Start), 30, 5, after(40, None)), 70);
         assert_eq!(advance(&at(TabAlign::End), 30, 5, after(40, None)), 30);
         assert_eq!(advance(&at(TabAlign::Center), 30, 5, after(40, None)), 50);
@@ -144,5 +155,23 @@ mod tests {
         assert_eq!(advance(&at(TabAlign::End), 30, 5, after(90, None)), 0);
         // Past every stop, a tab is a space.
         assert_eq!(advance(&at(TabAlign::Start), 120, 5, after(40, None)), 5);
+    }
+
+    #[test]
+    fn a_tab_takes_its_stops_leader() {
+        let tabs = Tabs {
+            stops: vec![TabStop {
+                leader: Some('.'),
+                ..stop(100, TabAlign::End)
+            }],
+            interval: 50,
+        };
+        let after = |_: Option<char>| After {
+            width: 10,
+            before_decimal: None,
+        };
+        assert_eq!(super::advance(&tabs, 30, 5, after), (60, Some('.')));
+        // Default stops have none.
+        assert_eq!(super::advance(&tabs, 120, 5, after), (30, None));
     }
 }

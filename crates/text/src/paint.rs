@@ -133,6 +133,29 @@ impl Layout {
                     glyphs,
                 }));
             }
+            // Leaders after the line's text, in its colour, but no part of
+            // it: no text, and nowhere in the structure.
+            for run in &line.leaders {
+                items.push(Item::Glyphs(Glyphs {
+                    font: fonts.face(run.face).font(),
+                    size: run.size,
+                    color: color(run.span),
+                    oblique: run.oblique,
+                    baseline: origin.y + line.baseline,
+                    language: None,
+                    source: None,
+                    text: String::new(),
+                    glyphs: run
+                        .glyphs
+                        .iter()
+                        .map(|g| Glyph {
+                            id: g.id,
+                            at: Point::new(origin.x + g.x, origin.y + line.baseline + g.y),
+                            text: 0..0,
+                        })
+                        .collect(),
+                }));
+            }
         }
         items
     }

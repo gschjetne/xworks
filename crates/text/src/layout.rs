@@ -271,6 +271,10 @@ pub struct Line {
     pub hyphen: bool,
     /// Its glyphs, in runs from left to right.
     pub runs: Vec<GlyphRun>,
+    /// The leaders filling its tabs to stops that have them, a run of
+    /// glyphs each, drawn with the text but no part of it: each glyph's
+    /// cluster is its tab's.
+    pub leaders: Vec<GlyphRun>,
     /// Its inline objects, from left to right, for the caller to draw.
     pub objects: Vec<Placed>,
     /// Its graphemes from left to right, where the caret can stand.
@@ -692,7 +696,7 @@ impl Shaping<'_> {
         let tabs: i64 = self
             .tab_advances(range.start, end, |o| advances[o - range.start])
             .into_iter()
-            .map(|(t, a)| a - advances[t - range.start])
+            .map(|(t, a, _)| a - advances[t - range.start])
             .sum();
         width + tabs + hyphen
     }
@@ -706,14 +710,14 @@ impl Shaping<'_> {
 
     /// How far each tab on a line from `start`, whose text ends at `end`,
     /// moves the pen, where the cluster at each offset is `advance` wide:
-    /// each tab's offset and advance, in order. Tabs are measured from
-    /// the line's start edge.
+    /// each tab's offset, advance and the leader that fills it, in order.
+    /// Tabs are measured from the line's start edge.
     fn tab_advances(
         &self,
         start: usize,
         end: usize,
         advance: impl Fn(usize) -> i64,
-    ) -> Vec<(usize, i64)> {
+    ) -> Vec<(usize, i64, Option<char>)> {
         let text = self.paragraph.text;
         let tabbed = self.tabs_in(start, end);
         let width = |a: usize, b: usize| (a..b).map(&advance).sum::<i64>();
@@ -723,7 +727,7 @@ impl Shaping<'_> {
         for (k, &t) in tabbed.iter().enumerate() {
             pen += width(from, t);
             let next = tabbed.get(k + 1).copied().unwrap_or(end);
-            let a = tabs::advance(self.tabs, pen, advance(t), |decimal| {
+            let (a, leader) = tabs::advance(self.tabs, pen, advance(t), |decimal| {
                 let segment = &text[t + 1..next];
                 After {
                     width: width(t + 1, next),
@@ -732,7 +736,7 @@ impl Shaping<'_> {
                         .map(|d| width(t + 1, t + 1 + d)),
                 }
             });
-            out.push((t, a));
+            out.push((t, a, leader));
             pen += a;
             from = t + 1;
         }
@@ -885,7 +889,8 @@ fn build_line(
             .is_some_and(|glyph| add_hyphen(&mut pieces, range.end, kind, glyph));
 
     let end = trim(text, range.clone());
-    // Tabs at their stops.
+    // Tabs at their stops, and the leaders of those that have them.
+    let mut leaders: Vec<(usize, char)> = Vec::new();
     if !shaping.tabs_in(range.start, end).is_empty() {
         let mut advances = vec![0; range.len()];
         for g in pieces
@@ -895,8 +900,12 @@ fn build_line(
         {
             advances[g.cluster - range.start] += g.advance;
         }
-        for (t, a) in shaping.tab_advances(range.start, end, |o| advances[o - range.start]) {
+        for (t, a, leader) in shaping.tab_advances(range.start, end, |o| advances[o - range.start])
+        {
             set_advance(&mut pieces, t, a);
+            if let Some(c) = leader {
+                leaders.push((t, c));
+            }
         }
     }
 
@@ -935,12 +944,21 @@ fn build_line(
     let mut runs = Vec::new();
     let mut cells = Vec::new();
     let mut objects = Vec::new();
+    // The room each leader fills: its tab's item, offset and character,
+    // and where the tab starts and how wide it is.
+    let mut fills: Vec<(usize, u8, usize, char, i64, i64)> = Vec::new();
     for &i in &order {
         let piece = &pieces[i];
         let item = &shaping.items[piece.item];
         let x = pen;
         let mut glyphs = Vec::with_capacity(piece.glyphs.len());
         for g in &piece.glyphs {
+            if g.advance > 0
+                && !g.inserted
+                && let Some(&(_, c)) = leaders.iter().find(|(t, _)| *t == g.cluster)
+            {
+                fills.push((piece.item, piece.level, g.cluster, c, pen, g.advance));
+            }
             if g.object {
                 // No font draws it: its caller does, here.
                 let height = shape::object_at(&shaping.objects, g.cluster).map_or(0, |o| o.height);
@@ -998,6 +1016,12 @@ fn build_line(
     for object in &objects {
         ascent = ascent.max(object.height);
     }
+    let leaders = fills
+        .into_iter()
+        .filter_map(|(item, level, offset, c, x, width)| {
+            leader(shaping, item, level, offset, c, x, width)
+        })
+        .collect();
     Line {
         range,
         top,
@@ -1009,9 +1033,77 @@ fn build_line(
         width,
         hyphen,
         runs,
+        leaders,
         objects,
         cells,
     }
+}
+
+/// The leader `c` filling a tab at `offset`, of item `item` at bidi
+/// `level`, from `x` `width` wide: the character in the tab's face and
+/// size, repeated, each on a grid of its own width from the paragraph's
+/// left edge, so leaders on lines one under another line up, and half a
+/// character clear of the text either side. None where not one fits, or
+/// the face can't show it.
+#[allow(
+    clippy::too_many_arguments,
+    reason = "the tab, where it is, and what fills it"
+)]
+fn leader(
+    shaping: &Shaping<'_>,
+    item: usize,
+    level: u8,
+    offset: usize,
+    c: char,
+    x: i64,
+    width: i64,
+) -> Option<GlyphRun> {
+    let it = &shaping.items[item];
+    let text = c.to_string();
+    let span = &shaping.paragraph.spans[it.span];
+    let shaped = shape::shape(
+        shaping.fonts,
+        &text,
+        0..text.len(),
+        span,
+        it.face,
+        level,
+        it.script,
+        &[],
+    );
+    let glyph = shaped.first().filter(|g| g.id != 0)?;
+    let pitch = shaped.iter().map(|g| g.advance).sum::<i64>();
+    if pitch <= 0 {
+        return None;
+    }
+    let (from, to) = (x + pitch / 2, x + width - pitch / 2);
+    let first = (from + pitch - 1).div_euclid(pitch) * pitch;
+    let glyphs: Vec<Glyph> = (0..)
+        .map(|k| first + k * pitch)
+        .take_while(|&at| at + pitch <= to)
+        .map(|at| Glyph {
+            id: glyph.id,
+            x: at + glyph.x_offset,
+            y: -glyph.y_offset,
+            advance: pitch,
+            cluster: offset,
+            hyphen: false,
+        })
+        .collect();
+    if glyphs.is_empty() {
+        return None;
+    }
+    Some(GlyphRun {
+        face: it.face,
+        size: span.style.size,
+        span: it.span,
+        range: offset..offset + 1,
+        level,
+        oblique: span.style.italic && !shaping.fonts.face(it.face).italic(),
+        x: first,
+        width: glyphs.len() as i64 * pitch,
+        glyphs,
+    })
 }
 
 /// Puts `hyphen` at the end of the line ending at `end`: in place of the

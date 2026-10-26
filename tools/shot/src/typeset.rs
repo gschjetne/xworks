@@ -248,10 +248,12 @@ pub fn typeset_page() -> Page {
             TabStop {
                 position: 150 * POINT,
                 align: TabAlign::End,
+                leader: None,
             },
             TabStop {
                 position: 230 * POINT,
                 align: TabAlign::Decimal('.'),
+                leader: None,
             },
         ],
         interval: 36 * POINT,

@@ -177,6 +177,7 @@ fn lay_out(case: &Case) -> Layout {
             .map(|&(at, align)| TabStop {
                 position: points(at),
                 align,
+                leader: None,
             })
             .collect(),
         interval: points(t.interval),

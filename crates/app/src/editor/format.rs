@@ -64,7 +64,42 @@ pub(super) fn tab_align(kind: StopKind) -> TabAlign {
 }
 
 /// The most a length typed into the inspector may be: a metre.
-const MOST: i64 = 1000 * MILLIMETRE;
+pub(super) const MOST: i64 = 1000 * MILLIMETRE;
+
+/// Adds a stop of `kind` to `stops` at `at`, or after the last at the next
+/// multiple of `interval`, in place of one already there.
+pub(super) fn add_stop(stops: &mut Vec<TabStop>, at: Option<i64>, kind: StopKind, interval: i64) {
+    let position = at.unwrap_or_else(|| {
+        let last = stops.iter().map(|s| s.position).max().unwrap_or(0);
+        (last / interval + 1) * interval
+    });
+    stops.retain(|s| s.position != position);
+    stops.push(TabStop {
+        position,
+        align: tab_align(kind),
+        leader: None,
+    });
+}
+
+/// Moves the stop of `stops` at `from` to `to`, in place of one there,
+/// keeping its kind and leader.
+pub(super) fn move_stop(stops: &mut Vec<TabStop>, from: i64, to: i64) {
+    if let Some(i) = stops.iter().position(|s| s.position == from) {
+        let stop = stops.remove(i);
+        stops.retain(|s| s.position != to);
+        stops.push(TabStop {
+            position: to,
+            ..stop
+        });
+    }
+}
+
+/// Makes the stop of `stops` at `at` of `kind`.
+pub(super) fn set_stop_kind(stops: &mut [TabStop], at: i64, kind: StopKind) {
+    for stop in stops.iter_mut().filter(|s| s.position == at) {
+        stop.align = tab_align(kind);
+    }
+}
 
 fn control(command: &str, args: Vec<Arg>, enabled: bool, kind: ControlKind) -> Control {
     Control {
@@ -227,36 +262,22 @@ impl Editor {
                     .unwrap_or(StopKind::Start);
                 let interval = self.sheet.tabs.interval.max(MILLIMETRE);
                 let at = int(0);
-                self.change_tabs("Tab Stop", |stops| {
-                    let position = at.unwrap_or_else(|| {
-                        let last = stops.iter().map(|s| s.position).max().unwrap_or(0);
-                        (last / interval + 1) * interval
-                    });
-                    stops.retain(|s| s.position != position);
-                    stops.push(TabStop {
-                        position,
-                        align: tab_align(kind),
-                    });
-                });
+                self.change_tabs("Tab Stop", |stops| add_stop(stops, at, kind, interval));
             }
             "tab-stop-move" => {
                 if let (Some(from), Some(to)) = (int(0), int(1)) {
-                    self.move_stop(from, to);
+                    self.change_tabs("Tab Stop", |stops| move_stop(stops, from, to));
                 }
             }
             "tab-stop-place" => {
                 if let (Some(from), Some(at)) = (int(0), int(1)) {
-                    let to = at - self.stops_shift();
-                    self.move_stop(from, to.max(0));
+                    let to = (at - self.stops_shift()).max(0);
+                    self.change_tabs("Tab Stop", |stops| move_stop(stops, from, to));
                 }
             }
             "tab-stop-kind" => {
                 if let (Some(at), Some(kind)) = (int(0), text(1).and_then(StopKind::from_id)) {
-                    self.change_tabs("Tab Stop", |stops| {
-                        for stop in stops.iter_mut().filter(|s| s.position == at) {
-                            stop.align = tab_align(kind);
-                        }
-                    });
+                    self.change_tabs("Tab Stop", |stops| set_stop_kind(stops, at, kind));
                 }
             }
             "tab-stop-remove" => {
@@ -267,23 +288,6 @@ impl Editor {
             _ => {}
         }
         Vec::new()
-    }
-
-    /// Moves the caret's paragraph's tab stop at `from` to `to`, both from
-    /// its place's start.
-    fn move_stop(&mut self, from: i64, to: i64) {
-        self.change_tabs("Tab Stop", |stops| {
-            let moved = stops.iter().position(|s| s.position == from);
-            if let Some(i) = moved {
-                let align = stops[i].align;
-                stops.remove(i);
-                stops.retain(|s| s.position != to);
-                stops.push(TabStop {
-                    position: to,
-                    align,
-                });
-            }
-        });
     }
 
     /// How much further along the ruler the caret's paragraph's tab stops
