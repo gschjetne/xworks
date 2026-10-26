@@ -698,6 +698,8 @@ impl Editor {
                 },
             ],
         };
+        let mut paragraph_rows = vec![style_row, align_row, spacing_row, line_row];
+        paragraph_rows.extend(self.list_row());
         Inspector {
             tabs: vec![
                 InspectorTab {
@@ -705,7 +707,7 @@ impl Editor {
                     sections: vec![
                         Section {
                             title: "Paragraph".to_string(),
-                            rows: vec![style_row, align_row, spacing_row, line_row],
+                            rows: paragraph_rows,
                         },
                         Section {
                             title: "Character".to_string(),

@@ -749,7 +749,25 @@ impl Window {
                 } else {
                     Input::CommandWith(id.to_string(), args)
                 };
-                return self.give_part(input);
+                let effects = self.give_part(input);
+                // What the Style tab is to show shows there, as when a
+                // list followed from the Text tab shows its definition.
+                if self.inspector
+                    && matches!(
+                        id,
+                        "style-show" | "style-kind" | "style-follow" | "style-back"
+                    )
+                    && let Some(k) = self
+                        .inspector_model()
+                        .tabs
+                        .iter()
+                        .position(|t| t.title == "Style")
+                    && k != self.tab
+                {
+                    self.tab = k;
+                    self.scrolled = 0;
+                }
+                return effects;
             }
         }
         self.resize_part();

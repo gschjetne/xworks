@@ -631,6 +631,37 @@ impl Editor {
 
     // ---- the screens
 
+    /// The Text tab's row for the list the caret's paragraph is in, if
+    /// it's in one: its label a link to the list definition it takes, in
+    /// the Style tab, and the definition's name.
+    pub(super) fn list_row(&self) -> Option<Row> {
+        let k = self.index_of(self.focus.paragraph);
+        let entry = self.laid.entries.get(k)?;
+        let list = entry
+            .place
+            .path
+            .iter()
+            .rev()
+            .find(|a| a.kind == doc::Kind::List)?;
+        let own = match self
+            .document
+            .block(list.id)
+            .and_then(|b| b.props.get(keys::LIST))
+        {
+            Some(Value::Ref(id)) => Some(*id),
+            _ => None,
+        };
+        let definition = self.sheet.list(list.ordered, own);
+        let id = definition.id?;
+        Some(row(
+            "",
+            vec![
+                button("style-follow", vec![id_arg(id)], true, "List", None),
+                note(&definition.name),
+            ],
+        ))
+    }
+
     /// The inspector's Style tab: what to show, and the screen of the
     /// style or part shown.
     pub(super) fn style_tab(&self) -> InspectorTab {

@@ -327,7 +327,34 @@ fn a_lists_numbering_changed_renumbers_its_items() {
     let m = |s: &str| Some(s.to_string());
     assert_eq!(markers(&window), [m("1."), m("2.")]);
     let numbers = named(&window, StyleKind::List, "Numbers");
-    with(&mut window, "style-show", vec![id(numbers)]);
+    // The Text tab says which list definition the caret's list takes, its
+    // label a link to the definition's screen in the Style tab.
+    command(&mut window, "toggle-inspector");
+    let text_tab = window.editor().inspector().tabs[0].clone();
+    let list = text_tab.sections[0]
+        .rows
+        .iter()
+        .find(|r| labelled(r, "List"))
+        .expect("the list's row");
+    assert_eq!(
+        list.controls[1].kind,
+        ControlKind::Note {
+            text: "Numbers".to_string()
+        }
+    );
+    let link = list.controls[0].clone();
+    window.update(Event::CommandWith(link.command, link.args));
+    assert_eq!(
+        window.editor().style_screen(),
+        (StyleKind::List, Some(numbers))
+    );
+    let tabs = window.access();
+    assert!(
+        tabs.nodes.iter().any(|(_, n)| n.role() == Role::Tab
+            && n.label() == Some("Style")
+            && n.is_selected() == Some(true)),
+        "the Style tab shows it"
+    );
     let level = |what: &str, value: Arg| vec![id(numbers), Arg::Int(1), text(what), value];
     with(
         &mut window,
@@ -768,6 +795,107 @@ fn the_inspector_scrolls_for_the_wheel_the_bar_the_keyboard_and_screen_readers()
     assert_eq!(
         paragraph_style(&window, "Body").indents.first,
         20 * MILLIMETRE
+    );
+}
+
+/// A recorded session that starts with the Style tab showing a style
+/// chosen, scrolled, plays back as it was done: where a click lands in the
+/// inspector depends on both, so the session's start keeps them.
+#[test]
+fn a_recorded_session_takes_up_the_style_tab_as_it_was() {
+    use app::recorder::{Recorder, Spec};
+    use std::time::Duration;
+    let recorded = res("app-screens-recorded");
+    let recorder = Recorder::told(&Spec {
+        minutes: 1,
+        checkpoint_seconds: 1,
+    });
+    let mut window = Window::create(recorded).expect("a document");
+    window.record(recorder.clone());
+    let tick = Duration::from_secs(7);
+    let step = |window: &mut Window, event: Event| {
+        recorder.tick(tick);
+        window.update(event);
+    };
+    step(
+        &mut window,
+        Event::Resize {
+            width: 1280.0,
+            height: 600.0,
+        },
+    );
+    step(&mut window, Event::Text("Recorded".into()));
+    step(&mut window, Event::Command("toggle-inspector".into()));
+    for event in [
+        Event::Press {
+            x: 1130.0,
+            y: 66.0,
+            shift: false,
+            count: 1,
+        },
+        Event::Release,
+    ] {
+        step(&mut window, event);
+    }
+    let h1 = named(&window, StyleKind::Paragraph, "Heading 1");
+    step(
+        &mut window,
+        Event::CommandWith("style-show".into(), vec![id(h1)]),
+    );
+    step(
+        &mut window,
+        Event::Move {
+            x: 1100.0,
+            y: 300.0,
+        },
+    );
+    step(&mut window, Event::Scroll(200.0));
+    // A minute and more of the pointer moving about, so the session kept
+    // starts after all that.
+    for k in 0..12 {
+        step(
+            &mut window,
+            Event::Move {
+                x: 1100.0 + f64::from(k),
+                y: 300.0,
+            },
+        );
+    }
+    // Heading 1's first-line indent, where it is now.
+    let (x, y, hidden) = field(&window, "First line").expect("its field");
+    assert!(!hidden);
+    for event in [
+        Event::Press {
+            x: x + 20.0,
+            y: y + 10.0,
+            shift: false,
+            count: 1,
+        },
+        Event::Release,
+        Event::Text("1 cm".into()),
+        Event::Key {
+            key: Key::Enter,
+            modifiers: Modifiers::default(),
+        },
+    ] {
+        step(&mut window, event);
+    }
+    assert_eq!(
+        paragraph_style(&window, "Heading 1").indents.first,
+        10 * MILLIMETRE
+    );
+    let session = recorder.session().expect("a session");
+    let start = session.start.as_ref().expect("a start");
+    let chrome = start.chrome.expect("the chrome as it was");
+    assert_eq!(chrome.style, Some(h1.0));
+    assert!(chrome.scroll > 0);
+    let written = app::session::write(&session).expect("it writes");
+    let read = app::session::read(&written).expect("it reads back");
+    assert!(read.events.len() < 20, "{} steps kept", read.events.len());
+    let played = app::session::play(res("app-screens-recorded-played"), &read).expect("it plays");
+    assert_eq!(
+        played.editor().document().dump(),
+        window.editor().document().dump()
     );
 }
 
