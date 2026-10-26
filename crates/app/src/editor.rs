@@ -333,6 +333,10 @@ pub struct Editor {
     markdown: Option<Box<markdown::Markdown>>,
     /// What the inspector's Style tab shows.
     showing: screens::Showing,
+    /// Pictures from an `.xw` file a paste into a Markdown file brings,
+    /// while it's made: the file can't keep them, so they wait with the
+    /// question whether it becomes an `.xw` file, which then keeps them.
+    pasted_pictures: Vec<store::Image>,
 }
 
 /// Sizes for Bigger and Smaller, in points.
@@ -514,6 +518,7 @@ impl Editor {
             version: None,
             markdown: None,
             showing: screens::Showing::default(),
+            pasted_pictures: Vec::new(),
         };
         editor.named = !editor.auto_named();
         editor.relayout(true);

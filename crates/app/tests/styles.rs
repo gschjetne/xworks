@@ -780,6 +780,16 @@ fn pasting_from_another_document_brings_its_styles_matched() {
     to.update(Event::Text("Before. ".to_string()));
     to.update(Event::Pasted(text.clone()));
     let caption = style(&to, "Caption");
+    // The paragraph, copied whole, comes as a paragraph, in Caption, after
+    // the one the caret was at the end of, which keeps its style.
+    assert_eq!(to.document().paragraphs().len(), 2);
+    assert_eq!(
+        own(&to, 0, keys::STYLE),
+        Some(Value::Ref(style(&to, "Body")))
+    );
+    assert_eq!(own(&to, 1, keys::STYLE), Some(Value::Ref(caption)));
+    let pasted = to.document().paragraphs()[1];
+    assert_eq!(to.document().paragraph(pasted).unwrap().text, "Captioned");
     let made = to.sheet().paragraph_style(Some(caption)).clone();
     assert!(made.italic);
     assert_eq!(
@@ -809,8 +819,9 @@ fn pasting_from_another_document_brings_its_styles_matched() {
 
 /// Insert, Table makes a table whose header row's cells are in Table
 /// Header, as headings are in theirs (review sjj5ak5a), and whose other
-/// cells name no style; a copied table's cells paste as paragraphs, those
-/// of its header in the default style, as Table Header is a header row's.
+/// cells name no style; a copied table pastes as a table, its header row
+/// still in Table Header (stage 9's follow-up, which had its cells paste
+/// as paragraphs before).
 #[test]
 fn a_tables_header_row_is_in_table_header() {
     let res = res("app-styles-table");
@@ -835,17 +846,20 @@ fn a_tables_header_row_is_in_table_header() {
     let mut to = Editor::create(res.clone()).expect("another document");
     to.update(Event::Text("Here: ".to_string()));
     to.update(Event::Pasted(text.clone()));
-    let document = to.document();
-    let names: Vec<(String, String)> = document
-        .paragraphs()
-        .iter()
-        .map(|&id| {
-            let p = document.paragraph(id).unwrap();
-            (to.sheet().style_of(p).name.clone(), p.text.clone())
-        })
-        .collect();
-    assert!(names.iter().any(|(_, text)| text == "Name"), "{names:?}");
-    assert!(names.iter().all(|(style, _)| style == "Body"), "{names:?}");
+    assert_eq!(
+        story::outline(to.document(), to.sheet()),
+        [
+            "Body: Here: ",
+            "Body: Before",
+            "table",
+            "  row",
+            "    Table Header: Name",
+            "    Table Header: Size",
+            "  row",
+            "    Body: Pear",
+            "    Body: ",
+        ]
+    );
 }
 
 #[test]

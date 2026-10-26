@@ -52,6 +52,9 @@ pub(super) struct Pending {
     name: String,
     ops: Vec<Op>,
     what: markdown::What,
+    /// Pictures the edit brings that an `.xw` file keeps, as a paste
+    /// from one does.
+    pictures: Vec<store::Image>,
 }
 
 /// A Markdown document's file, open.
@@ -673,6 +676,7 @@ impl Editor {
             name: name.to_string(),
             ops,
             what: unheld.what.clone(),
+            pictures: std::mem::take(&mut self.pasted_pictures),
         });
         let folder = self
             .path
@@ -816,6 +820,9 @@ impl Editor {
         let mut store = Store::create(&to, &opened, "story")?;
         for (_, format, bytes) in &kept {
             store.add_image(format, bytes)?;
+        }
+        for image in &pending.pictures {
+            store.add_image(&image.format, &image.data)?;
         }
         // The log replayed, each entry after the story it made.
         let versions: Vec<(store::Version, Document)> = self

@@ -1,8 +1,8 @@
 //! Editing the story's tree: what Enter, Backspace, Delete and Tab do at
 //! the edges of lists, quotes, code and tables, deleting a selection that
-//! runs across blocks, and the commands that make lists, quotes and
-//! tables. Each works out the operations on the document as it stands;
-//! the editor commits them.
+//! runs across blocks, the commands that make lists, quotes and tables,
+//! and pasting the blocks Copy kept ([`paste`]). Each works out the
+//! operations on the document as it stands; the editor commits them.
 //!
 //! The keys, as M2 has them:
 //!
@@ -20,6 +20,8 @@
 //! - **Tab** in a list item nests it in the item before; **Shift+Tab**
 //!   takes it out a level, out of the list at the top. In a table they go
 //!   to the next and the previous cell, Tab making a row after the last.
+
+use std::collections::{BTreeSet, HashMap};
 
 use doc::{Block, Document, Kind, Object, ObjectId, Op, Paragraph, Props, Value};
 use story::{StyleSheet, keys};
@@ -608,7 +610,7 @@ pub(crate) fn deletion(
 
 /// The blocks wholly between paragraphs `s` and `e`, `s` before `e` in
 /// reading order, as few as hold them all.
-fn between(doc: &Document, s: ObjectId, e: ObjectId) -> Vec<ObjectId> {
+pub(crate) fn between(doc: &Document, s: ObjectId, e: ObjectId) -> Vec<ObjectId> {
     let path = |id: ObjectId| {
         let mut out = vec![id];
         let mut at = id;
@@ -881,6 +883,307 @@ pub(crate) fn insert_rule(doc: &Document, sheet: &StyleSheet, at: Position) -> O
         objects: vec![(rule, rule_in(parent))],
     })?;
     Some(b.edit("Rule", start(new)))
+}
+
+/// What a paste puts in, as Copy kept it (`editor::clip`): the blocks
+/// copied, as the story of a document of their own, their styles already
+/// the destination's; its first and last paragraphs; and whether each of
+/// those was copied in part, so joins the text it lands beside.
+pub(crate) struct Slice<'a> {
+    /// The blocks, in its story, inside the containers around them.
+    pub(crate) blocks: &'a Document,
+    /// The first paragraph copied.
+    pub(crate) first: ObjectId,
+    /// The last paragraph copied.
+    pub(crate) last: ObjectId,
+    /// Whether the first paragraph's text joins the text before the caret.
+    pub(crate) open_start: bool,
+    /// Whether the last paragraph's text joins the text after the caret.
+    pub(crate) open_end: bool,
+}
+
+/// Where blocks go: in a container, after a child of it, or first.
+#[derive(Clone, Copy)]
+struct Point {
+    parent: ObjectId,
+    after: Option<ObjectId>,
+}
+
+/// Leaves `paragraph` out of what a paste puts in, with the containers
+/// around it that it leaves with nothing to put in.
+fn leave_out(from: &Document, paragraph: ObjectId, out: &mut BTreeSet<ObjectId>) {
+    out.insert(paragraph);
+    let mut at = from.parent(paragraph);
+    while let Some(x) = at
+        && x != from.root()
+        && from.children(x).iter().all(|c| out.contains(c))
+    {
+        out.insert(x);
+        at = from.parent(x);
+    }
+}
+
+/// `block` of `from` and everything in it but what's `left` out, as
+/// objects of `b`'s document by IDs fresh there, in reading order, the
+/// block first, its parent `parent`: as Insert Block takes them. `last`
+/// becomes the last paragraph among them, if there's one.
+fn copy_of(
+    b: &mut Ops,
+    from: &Document,
+    block: ObjectId,
+    parent: ObjectId,
+    left: &BTreeSet<ObjectId>,
+    last: &mut Option<ObjectId>,
+) -> Vec<(ObjectId, Object)> {
+    let mut objects: Vec<(ObjectId, Object)> = Vec::new();
+    let mut index: HashMap<ObjectId, usize> = HashMap::new();
+    let mut stack = vec![(block, parent)];
+    while let Some((id, parent)) = stack.pop() {
+        let mut object = match from.object(id) {
+            Some(o @ (Object::Paragraph(_) | Object::Block(_))) => o.clone(),
+            _ => continue,
+        };
+        let new = b.fresh();
+        match &mut object {
+            Object::Paragraph(p) => {
+                p.parent = parent;
+                *last = Some(new);
+            }
+            Object::Block(block) => {
+                block.parent = parent;
+                block.children = Vec::new();
+            }
+            _ => {}
+        }
+        if let Some(&at) = index.get(&parent)
+            && let Object::Block(holder) = &mut objects[at].1
+        {
+            holder.children.push(new);
+        }
+        index.insert(new, objects.len());
+        objects.push((new, object));
+        stack.extend(
+            from.children(id)
+                .iter()
+                .rev()
+                .filter(|c| !left.contains(c))
+                .map(|&c| (c, new)),
+        );
+    }
+    objects
+}
+
+/// Puts a copy of `block` of `from` in at `point`, which moves on past it.
+fn put(
+    b: &mut Ops,
+    point: &mut Point,
+    from: &Document,
+    block: ObjectId,
+    left: &BTreeSet<ObjectId>,
+    last: &mut Option<ObjectId>,
+) -> Option<()> {
+    let objects = copy_of(b, from, block, point.parent, left, last);
+    let id = objects.first()?.0;
+    b.push(Op::InsertBlock {
+        parent: point.parent,
+        after: point.after,
+        objects,
+    })?;
+    point.after = Some(id);
+    Some(())
+}
+
+/// Puts the items of `list`, a list of `from`, in the list around the
+/// item `point` is in, at its level: after that item, which keeps what's
+/// before the point and gives what's after it to an item of its own after
+/// them, or before it if nothing is before the point. The point moves to
+/// the end of the last item put in.
+fn join_items(
+    b: &mut Ops,
+    point: &mut Point,
+    from: &Document,
+    list: ObjectId,
+    left: &BTreeSet<ObjectId>,
+    last: &mut Option<ObjectId>,
+) -> Option<()> {
+    let item = point.parent;
+    let into = b.doc.parent(item)?;
+    let children = b.doc.children(item).to_vec();
+    let (mut after, rest) = match point.after {
+        Some(a) => {
+            let at = children.iter().position(|&c| c == a)?;
+            (Some(item), children[at + 1..].to_vec())
+        }
+        // An empty item, as one just put in can be: after it.
+        None if children.is_empty() => (Some(item), Vec::new()),
+        None => (b.doc.previous(item), Vec::new()),
+    };
+    let mut put_last = None;
+    for &it in from.children(list).iter().filter(|c| !left.contains(c)) {
+        let objects = copy_of(b, from, it, into, left, last);
+        let id = objects.first()?.0;
+        b.push(Op::InsertBlock {
+            parent: into,
+            after,
+            objects,
+        })?;
+        after = Some(id);
+        put_last = Some(id);
+    }
+    let Some(last_item) = put_last else {
+        return Some(());
+    };
+    if !rest.is_empty() {
+        // What was after the point, in an item of its own, as Enter makes
+        // one: after a task, a task, its box unticked.
+        let new = b.fresh();
+        let mut props = Props::new();
+        if b.doc.block(item)?.props.contains_key(keys::TASK) {
+            props.insert(keys::TASK.to_string(), Value::Bool(false));
+        }
+        b.push(Op::InsertBlock {
+            parent: into,
+            after: Some(last_item),
+            objects: vec![(new, container(Kind::Item, into, props))],
+        })?;
+        move_all(b, &rest, new, None)?;
+    }
+    *point = Point {
+        parent: last_item,
+        after: b.doc.children(last_item).last().copied(),
+    };
+    Some(())
+}
+
+/// Pastes `slice` at the caret `at`, in a paragraph that isn't code or a
+/// table's cell, the selection already gone: the operations, and where
+/// the caret goes after, at the end of what was pasted.
+///
+/// - A paragraph copied in part is text: its runs go in at the caret, and
+///   the paragraph keeps its style.
+/// - Otherwise the first paragraph, if it was copied in part, joins the
+///   text before the caret, and the last the text after it, each taking
+///   that paragraph's style; the blocks between come as they were, with
+///   their containers: before the caret's paragraph at its start, after
+///   it at its end, and between its halves in its middle. An empty
+///   paragraph is replaced by them.
+/// - Blocks nest where the caret is, but a list in a list item: its items
+///   join the item's list at its level. A quote in a quote is one quote.
+pub(crate) fn paste(
+    doc: &Document,
+    at: Position,
+    slice: &Slice<'_>,
+) -> Option<(Vec<Op>, Position)> {
+    let from = slice.blocks;
+    let x = at.paragraph;
+    let c = at.offset;
+    if is_cell(doc, x) {
+        return None;
+    }
+    let mut b = Ops::new(doc);
+    let text_of = |id: ObjectId| from.paragraph(id).map(|p| (p.text.clone(), p.runs.clone()));
+    let insert =
+        |b: &mut Ops, paragraph: ObjectId, offset: u32, (text, runs): (String, Vec<doc::Run>)| {
+            let len = text.chars().count() as u32;
+            if len > 0 {
+                b.push(Op::InsertText {
+                    paragraph,
+                    offset,
+                    text,
+                    runs,
+                })?;
+            }
+            Some(len)
+        };
+    if slice.first == slice.last && (slice.open_start || slice.open_end) {
+        let len = insert(&mut b, x, c, text_of(slice.first)?)?;
+        let caret = Position {
+            paragraph: x,
+            offset: c + len,
+            upstream: c + len > 0,
+        };
+        return Some((b.ops, caret));
+    }
+    let mut left = BTreeSet::new();
+    let head = if slice.open_start {
+        leave_out(from, slice.first, &mut left);
+        Some(text_of(slice.first)?)
+    } else {
+        None
+    };
+    let tail = if slice.open_end {
+        leave_out(from, slice.last, &mut left);
+        Some(text_of(slice.last)?)
+    } else {
+        None
+    };
+    let paragraph = doc.paragraph(x)?;
+    let has_head = c > 0 || head.is_some();
+    let has_tail = c < paragraph.len() || tail.is_some();
+    let mut point = Point {
+        parent: doc.parent(x)?,
+        after: if has_head { Some(x) } else { doc.previous(x) },
+    };
+    // The caret's paragraph split, its second half after the first.
+    let after_caret = if has_head && has_tail {
+        let new = b.fresh();
+        b.push(Op::SplitParagraph {
+            paragraph: x,
+            offset: c,
+            new,
+            new_props: paragraph.props.clone(),
+        })?;
+        Some(new)
+    } else {
+        has_tail.then_some(x)
+    };
+    let mut caret = Position {
+        paragraph: x,
+        offset: c,
+        upstream: c > 0,
+    };
+    if let Some(head) = head {
+        caret.offset += insert(&mut b, x, c, head)?;
+        caret.upstream = caret.offset > 0;
+    }
+    let mut last = None;
+    for &block in from.children(from.root()) {
+        if left.contains(&block) {
+            continue;
+        }
+        let into = kind(&b.doc, point.parent);
+        match (kind(from, block), into) {
+            (Some(Kind::List), Some(Kind::Item)) => {
+                join_items(&mut b, &mut point, from, block, &left, &mut last)?;
+            }
+            (Some(Kind::Quote), Some(Kind::Quote)) => {
+                for &child in from.children(block) {
+                    if !left.contains(&child) {
+                        put(&mut b, &mut point, from, child, &left, &mut last)?;
+                    }
+                }
+            }
+            _ => put(&mut b, &mut point, from, block, &left, &mut last)?,
+        }
+    }
+    if let Some(p) = last {
+        caret = end(&b.doc, p);
+    }
+    if let (Some(tail), Some(t)) = (tail, after_caret) {
+        let len = insert(&mut b, t, 0, tail)?;
+        caret = Position {
+            paragraph: t,
+            offset: len,
+            upstream: len > 0,
+        };
+    }
+    if !has_head && !has_tail {
+        // An empty paragraph, replaced.
+        let home = b.doc.parent(x)?;
+        b.push(Op::DeleteBlock { block: x })?;
+        b.tidy(home)?;
+    }
+    Some((b.ops, caret))
 }
 
 /// A table of two columns, a header and one row, after the caret's
