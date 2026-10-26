@@ -660,6 +660,207 @@ fn numbered_headings_are_counted_by_level() {
     );
 }
 
+/// The markers and places of a document's story's paragraphs, in `spec`:
+/// each one's marker, indent and gap.
+fn markers(document: &Document, spec: &SheetSpec) -> Vec<(Option<String>, i64, i64)> {
+    let sheet = StyleSheet::of(document, &StyleSheet::from_spec(spec));
+    story::flow(document, &sheet, 100 * MILLIMETRE)
+        .entries
+        .iter()
+        .map(|e| (e.place.marker.clone(), e.place.indent, e.place.gap))
+        .collect()
+}
+
+/// Sets `list`'s level `k`'s `what` to `value`.
+fn set_level(document: &mut Document, list: ObjectId, k: usize, what: &str, value: Value) {
+    document
+        .apply(&Op::SetStyleProp {
+            style: list,
+            key: keys::level(k, what),
+            value: Some(value),
+        })
+        .unwrap();
+}
+
+/// A list definition's levels (project owner, 2026-10-26, review
+/// sjj5ak5a): each level's marker, a bullet or numbering (1, a, A, i, I)
+/// with the text around the number, the number it starts at, its indent
+/// and the room after its marker. A definition that sets none numbers
+/// every level alike and bullets them by depth, as before; and the levels
+/// are kept when the sheet is written as a file.
+#[test]
+fn a_list_definitions_levels_mark_and_place_their_items() {
+    use story::BlockSpec;
+    let spec = neutral();
+    let p = |t: &str| BlockSpec::Paragraph("Body".into(), vec![(t.into(), props(&[]))]);
+    let blocks = [BlockSpec::List(
+        true,
+        vec![
+            vec![
+                p("one"),
+                BlockSpec::List(
+                    true,
+                    vec![
+                        vec![p("one.a")],
+                        vec![p("one.b"), BlockSpec::List(true, vec![vec![p("deep")]])],
+                    ],
+                ),
+            ],
+            vec![p("two")],
+        ],
+    )];
+    let mut document = story::build(&spec, &blocks);
+    let (indent, gap) = (18 * POINT, 6 * POINT);
+    let m = |s: &str| Some(s.to_string());
+    assert_eq!(
+        markers(&document, &spec),
+        [
+            (m("1."), indent, gap),
+            (m("1."), 2 * indent, gap),
+            (m("2."), 2 * indent, gap),
+            (m("1."), 3 * indent, gap),
+            (m("2."), indent, gap),
+        ]
+    );
+    // Level 2 lettered in brackets from c; level 3 in small roman,
+    // indented less, its marker closer.
+    let numbers = named(&document, doc::StyleKind::List, "Numbers");
+    set_level(
+        &mut document,
+        numbers,
+        2,
+        keys::LEVEL_MARKER,
+        Value::Text("a".into()),
+    );
+    set_level(
+        &mut document,
+        numbers,
+        2,
+        keys::LEVEL_READS,
+        Value::Text("(1)".into()),
+    );
+    set_level(&mut document, numbers, 2, keys::LEVEL_START, Value::Int(3));
+    set_level(
+        &mut document,
+        numbers,
+        3,
+        keys::LEVEL_MARKER,
+        Value::Text("i".into()),
+    );
+    set_level(
+        &mut document,
+        numbers,
+        3,
+        keys::LEVEL_INDENT,
+        Value::Int(9 * POINT),
+    );
+    set_level(
+        &mut document,
+        numbers,
+        3,
+        keys::LEVEL_GAP,
+        Value::Int(3 * POINT),
+    );
+    assert_eq!(
+        markers(&document, &spec),
+        [
+            (m("1."), indent, gap),
+            (m("(c)"), 2 * indent, gap),
+            (m("(d)"), 2 * indent, gap),
+            (m("i."), 2 * indent + 9 * POINT, 3 * POINT),
+            (m("2."), indent, gap),
+        ]
+    );
+    // A bulleted level of a numbered list, and a bullet of its own.
+    set_level(
+        &mut document,
+        numbers,
+        1,
+        keys::LEVEL_MARKER,
+        Value::Text("bullet".into()),
+    );
+    set_level(
+        &mut document,
+        numbers,
+        1,
+        keys::LEVEL_BULLET,
+        Value::Text("▸".into()),
+    );
+    assert_eq!(markers(&document, &spec)[0].0, m("▸"));
+    // Kept as a file, and read back.
+    let written = SheetSpec::of(&document).expect("it writes").write();
+    let again = SheetSpec::parse(&written).unwrap_or_else(|e| panic!("{e}\n{written}"));
+    let mine = StyleSheet::of(&document, &StyleSheet::from_spec(&spec));
+    let read = StyleSheet::from_spec(&again);
+    assert_eq!(read.lists, mine.lists);
+}
+
+/// Numbers in each numbering, as lists and headings write them: letters
+/// on past z as spreadsheets' columns go, and Roman numerals up to 3999,
+/// past which, as for nought, they're written in figures.
+#[test]
+fn numbers_are_written_in_each_numbering() {
+    use story::Numbering;
+    let n = |numbering: Numbering, n: i64| numbering.number(n);
+    assert_eq!(n(Numbering::Decimal, 12), "12");
+    assert_eq!(n(Numbering::LowerAlpha, 1), "a");
+    assert_eq!(n(Numbering::LowerAlpha, 26), "z");
+    assert_eq!(n(Numbering::LowerAlpha, 27), "aa");
+    assert_eq!(n(Numbering::UpperAlpha, 28), "AB");
+    assert_eq!(n(Numbering::LowerRoman, 1994), "mcmxciv");
+    assert_eq!(n(Numbering::UpperRoman, 4), "IV");
+    assert_eq!(n(Numbering::UpperRoman, 4000), "4000");
+    assert_eq!(n(Numbering::LowerAlpha, 0), "0");
+    for code in ["1", "a", "A", "i", "I", "bullet"] {
+        assert_eq!(Numbering::of(code).map(Numbering::code), Some(code));
+    }
+    assert_eq!(Numbering::of("x"), None);
+}
+
+/// Technical's headings are numbered as its Headings list definition
+/// says: its first level made Roman numerals renumbers them (review
+/// sjj5ak5a).
+#[test]
+fn heading_numbers_follow_their_list_definition() {
+    let spec = stylesheets()
+        .into_iter()
+        .find(|(n, _)| n == "technical")
+        .expect("Technical")
+        .1;
+    let mut document = story::document(
+        &spec,
+        &[
+            ("Heading 1", vec![("One", props(&[]))]),
+            ("Heading 2", vec![("One one", props(&[]))]),
+            ("Heading 1", vec![("Two", props(&[]))]),
+        ],
+    );
+    let numbers = |document: &Document| -> Vec<Option<String>> {
+        markers(document, &spec).into_iter().map(|m| m.0).collect()
+    };
+    let m = |s: &str| Some(s.to_string());
+    assert_eq!(numbers(&document), [m("1"), m("1.1"), m("2")]);
+    let headings = named(&document, doc::StyleKind::List, "Headings");
+    set_level(
+        &mut document,
+        headings,
+        1,
+        keys::LEVEL_MARKER,
+        Value::Text("I".into()),
+    );
+    set_level(
+        &mut document,
+        headings,
+        2,
+        keys::LEVEL_MARKER,
+        Value::Text("a".into()),
+    );
+    assert_eq!(numbers(&document), [m("I"), m("I.a"), m("II")]);
+    // Counted from where a level starts.
+    set_level(&mut document, headings, 1, keys::LEVEL_START, Value::Int(0));
+    assert_eq!(numbers(&document), [m("0"), m("0.a"), m("I")]);
+}
+
 /// Containers lend geometry: in a sheet whose body text is justified and
 /// indented, as Book's is, a table's cells sit at the start of their
 /// columns without the indent, and an item's first line starts at its

@@ -62,8 +62,8 @@ pub use flow::{Ancestor, Cell, DEEPEST, Entry, Flow, Place, Rule, flow};
 pub use merge::{Change, changes, merge};
 pub use sheet::{SheetError, SheetSpec};
 pub use styles::{
-    Blocks, CharValues, CharacterStyle, DocumentTabs, Level, ListStyle, PageStyle, ParagraphStyle,
-    Part, Rgb, Source, StyleSheet,
+    Blocks, CharValues, CharacterStyle, DocumentTabs, Level, ListLevel, ListStyle, Numbering,
+    PageStyle, ParagraphStyle, Part, Rgb, Source, StyleSheet,
 };
 pub use update::{Update, update};
 
@@ -118,6 +118,31 @@ pub mod keys {
     pub const LIST_INDENT: &str = "list-indent";
     /// The room between a list item's marker and its text (a number).
     pub const MARKER_GAP: &str = "marker-gap";
+    /// A list definition's level's own marker, under [`level`]'s key:
+    /// "bullet", or how its items are numbered, "1", "a", "A", "i" or "I"
+    /// (text). Unset, numbered lists are numbered and others bulleted.
+    pub const LEVEL_MARKER: &str = "marker";
+    /// A level's bullet, over [`BULLETS`]' (text).
+    pub const LEVEL_BULLET: &str = "bullet";
+    /// How a level's number reads, `1` standing for it, over
+    /// [`NUMBERS`] (text).
+    pub const LEVEL_READS: &str = "reads";
+    /// The number a level's items start at (a number), unless a list says
+    /// its own, as Markdown's "3." does.
+    pub const LEVEL_START: &str = "start";
+    /// How far a level indents its items, over [`LIST_INDENT`] (a number).
+    pub const LEVEL_INDENT: &str = "indent";
+    /// The room between a level's markers and its items' text, over
+    /// [`MARKER_GAP`] (a number).
+    pub const LEVEL_GAP: &str = "gap";
+    /// How many levels a list definition can set apart; lists nested
+    /// deeper go round them again.
+    pub const LEVELS: usize = 9;
+    /// The key of a list definition's level `k`'s `what`, from 1:
+    /// `level(2, LEVEL_MARKER)` is "level-2-marker".
+    pub fn level(k: usize, what: &str) -> String {
+        format!("level-{k}-{what}")
+    }
     /// The list definition a list takes, if not its sheet's for lists
     /// numbered or not (a reference).
     pub const LIST: &str = "list";

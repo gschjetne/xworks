@@ -449,9 +449,167 @@ pub struct ListStyle {
     pub indent: i64,
     /// The room between a marker and its item's text.
     pub gap: i64,
+    /// Its levels, by depth from the outermost list, each as it's set or
+    /// as the values above give it; lists nested deeper go round them
+    /// again. There's always one.
+    pub levels: Vec<ListLevel>,
+}
+
+/// How the items of a level of lists are numbered, or bulleted.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Numbering {
+    /// A bullet, not a number.
+    Bullet,
+    /// 1, 2, 3.
+    Decimal,
+    /// a, b, c, … z, aa, ab.
+    LowerAlpha,
+    /// A, B, C.
+    UpperAlpha,
+    /// i, ii, iii.
+    LowerRoman,
+    /// I, II, III.
+    UpperRoman,
+}
+
+impl Numbering {
+    /// Every numbering, the bullet first, as the inspector offers them.
+    pub const ALL: [Numbering; 6] = [
+        Numbering::Bullet,
+        Numbering::Decimal,
+        Numbering::LowerAlpha,
+        Numbering::UpperAlpha,
+        Numbering::LowerRoman,
+        Numbering::UpperRoman,
+    ];
+
+    /// The numbering a level's marker names: "bullet", "1", "a", "A", "i"
+    /// or "I".
+    pub fn of(code: &str) -> Option<Numbering> {
+        Numbering::ALL.into_iter().find(|n| n.code() == code)
+    }
+
+    /// Its name as a level's marker holds it.
+    pub fn code(self) -> &'static str {
+        match self {
+            Numbering::Bullet => "bullet",
+            Numbering::Decimal => "1",
+            Numbering::LowerAlpha => "a",
+            Numbering::UpperAlpha => "A",
+            Numbering::LowerRoman => "i",
+            Numbering::UpperRoman => "I",
+        }
+    }
+
+    /// `n` written in it: letters go on past z as "aa", "ab"; Roman
+    /// numerals stop at 3999. A number it can't write, nought or less, or
+    /// past those, is written in figures, as for a bullet.
+    pub fn number(self, n: i64) -> String {
+        let letters = |upper: bool| {
+            let mut out = Vec::new();
+            let mut n = n;
+            while n > 0 {
+                let d = ((n - 1) % 26) as u8;
+                out.push(if upper { b'A' + d } else { b'a' + d } as char);
+                n = (n - 1) / 26;
+            }
+            out.iter().rev().collect::<String>()
+        };
+        let roman = |upper: bool| {
+            const NUMERALS: [(i64, &str); 13] = [
+                (1000, "m"),
+                (900, "cm"),
+                (500, "d"),
+                (400, "cd"),
+                (100, "c"),
+                (90, "xc"),
+                (50, "l"),
+                (40, "xl"),
+                (10, "x"),
+                (9, "ix"),
+                (5, "v"),
+                (4, "iv"),
+                (1, "i"),
+            ];
+            let mut out = String::new();
+            let mut n = n;
+            for (value, numeral) in NUMERALS {
+                while n >= value {
+                    out.push_str(numeral);
+                    n -= value;
+                }
+            }
+            if upper { out.to_uppercase() } else { out }
+        };
+        match self {
+            Numbering::LowerAlpha | Numbering::UpperAlpha if n > 0 => {
+                letters(self == Numbering::UpperAlpha)
+            }
+            Numbering::LowerRoman | Numbering::UpperRoman if (1..4000).contains(&n) => {
+                roman(self == Numbering::UpperRoman)
+            }
+            _ => n.to_string(),
+        }
+    }
+}
+
+/// A level of a list definition, resolved: how its items are marked, and
+/// where they sit.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ListLevel {
+    /// How its items are numbered, or bulleted, if the level says; if not,
+    /// numbered lists are numbered and others bulleted.
+    pub numbering: Option<Numbering>,
+    /// Its bullet.
+    pub bullet: String,
+    /// How its number reads, `1` standing for it; empty for "1.".
+    pub reads: String,
+    /// The number its items start at, unless a list says its own.
+    pub start: i64,
+    /// How far it indents its items from the level outside it.
+    pub indent: i64,
+    /// The room between its markers and its items' text.
+    pub gap: i64,
+}
+
+impl ListLevel {
+    /// How it numbers a list's items: as it says, or, where it doesn't,
+    /// in figures if the list is numbered and with bullets if not.
+    pub fn numbering(&self, ordered: bool) -> Numbering {
+        self.numbering.unwrap_or(if ordered {
+            Numbering::Decimal
+        } else {
+            Numbering::Bullet
+        })
+    }
+
+    /// `number`, already written in its numbering, as the level reads it:
+    /// "1.2" as "1.2." where it reads "1.".
+    pub fn reads(&self, number: &str) -> String {
+        if self.reads.is_empty() {
+            format!("{number}.")
+        } else {
+            self.reads.replacen('1', number, 1)
+        }
+    }
+
+    /// The marker of item number `n` of a list at this level, numbered or
+    /// not: its number as the level writes and reads it, or its bullet.
+    pub fn marker(&self, ordered: bool, n: i64) -> String {
+        match self.numbering(ordered) {
+            Numbering::Bullet => self.bullet.clone(),
+            numbering => self.reads(&numbering.number(n)),
+        }
+    }
 }
 
 impl ListStyle {
+    /// The level lists nested `depth` lists deep take, from 0: its levels
+    /// in turn, round again past the last.
+    pub fn level(&self, depth: usize) -> &ListLevel {
+        &self.levels[depth % self.levels.len().max(1)]
+    }
+
     /// The marker of item number `n` of a list in this style: its number
     /// as the style writes numbers, or "1." if it writes none.
     pub fn number(&self, n: i64) -> String {
@@ -712,7 +870,7 @@ impl StyleSheet {
                         }
                     })
                 })
-                .unwrap_or(ListStyle {
+                .unwrap_or_else(|| ListStyle {
                     id: None,
                     name: String::new(),
                     role: None,
@@ -720,6 +878,7 @@ impl StyleSheet {
                     numbers: String::new(),
                     indent: 0,
                     gap: 0,
+                    levels: list_levels(&Props::new(), &[], "", 0, 0),
                 })
         };
         let bullets = list_of("bullets", false);
@@ -1021,19 +1180,101 @@ fn list_style(id: ObjectId, name: String, role: Option<String>, props: &Props) -
         Some(Value::Text(t)) if t.chars().count() <= 64 => t.clone(),
         _ => String::new(),
     };
+    let bullets: Vec<String> = text(keys::BULLETS)
+        .split_whitespace()
+        .take(8)
+        .map(str::to_string)
+        .collect();
+    let numbers = text(keys::NUMBERS);
+    let (indent, gap) = (int(keys::LIST_INDENT), int(keys::MARKER_GAP));
+    let levels = list_levels(props, &bullets, &numbers, indent, gap);
     ListStyle {
         id: Some(id),
         name,
         role,
-        bullets: text(keys::BULLETS)
-            .split_whitespace()
-            .take(8)
-            .map(str::to_string)
-            .collect(),
-        numbers: text(keys::NUMBERS),
-        indent: int(keys::LIST_INDENT),
-        gap: int(keys::MARKER_GAP),
+        bullets,
+        numbers,
+        indent,
+        gap,
+        levels,
     }
+}
+
+/// Whether `reads` can be how a level's number reads: a few characters,
+/// with a 1 for the number.
+pub fn valid_reads(reads: &str) -> bool {
+    reads.contains('1') && reads.chars().count() <= 16
+}
+
+/// Whether `bullet` can be a level's bullet: a few characters, no space.
+pub fn valid_bullet(bullet: &str) -> bool {
+    !bullet.is_empty() && bullet.chars().count() <= 8 && !bullet.chars().any(char::is_whitespace)
+}
+
+/// The most a level's items can start at.
+pub const MOST_START: i64 = 9999;
+
+/// A list definition's levels, as its `props` set them, each taking what
+/// it doesn't set from the definition's bullets by depth, its `numbers`,
+/// `indent` and `gap`: as many as its bullets, or the deepest level it
+/// sets, and at least one. A value of the wrong kind or past its limits
+/// is as if unset.
+pub(crate) fn list_levels(
+    props: &Props,
+    bullets: &[String],
+    numbers: &str,
+    indent: i64,
+    gap: i64,
+) -> Vec<ListLevel> {
+    let get = |k: usize, what: &str| props.get(&keys::level(k, what));
+    let set = (1..=keys::LEVELS)
+        .rev()
+        .find(|&k| {
+            [
+                keys::LEVEL_MARKER,
+                keys::LEVEL_BULLET,
+                keys::LEVEL_READS,
+                keys::LEVEL_START,
+                keys::LEVEL_INDENT,
+                keys::LEVEL_GAP,
+            ]
+            .iter()
+            .any(|what| get(k, what).is_some())
+        })
+        .unwrap_or(0);
+    let count = bullets.len().max(set).clamp(1, keys::LEVELS);
+    (1..=count)
+        .map(|k| {
+            let text = |what: &str| match get(k, what) {
+                Some(Value::Text(t)) => Some(t.as_str()),
+                _ => None,
+            };
+            let length = |what: &str, or: i64| match get(k, what) {
+                Some(Value::Int(n)) if valid(keys::LIST_INDENT)(&Value::Int(*n)) => *n,
+                _ => or,
+            };
+            ListLevel {
+                numbering: text(keys::LEVEL_MARKER).and_then(Numbering::of),
+                bullet: text(keys::LEVEL_BULLET)
+                    .filter(|b| valid_bullet(b))
+                    .map(str::to_string)
+                    .or_else(|| {
+                        (!bullets.is_empty()).then(|| bullets[(k - 1) % bullets.len()].clone())
+                    })
+                    .unwrap_or_default(),
+                reads: text(keys::LEVEL_READS)
+                    .filter(|r| valid_reads(r))
+                    .unwrap_or(numbers)
+                    .to_string(),
+                start: match get(k, keys::LEVEL_START) {
+                    Some(Value::Int(n)) if (0..=MOST_START).contains(n) => *n,
+                    _ => 1,
+                },
+                indent: length(keys::LEVEL_INDENT, indent),
+                gap: length(keys::LEVEL_GAP, gap),
+            }
+        })
+        .collect()
 }
 
 /// Page style `id`'s size and margins, if it gives them all, and they

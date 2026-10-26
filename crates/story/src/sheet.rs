@@ -122,6 +122,37 @@ pub struct ListSpec {
     pub indent: Length,
     /// The room between a marker and its item's text.
     pub gap: Length,
+    /// Levels set apart from the rest, each with what it sets of its own.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub levels: Vec<LevelSpec>,
+}
+
+/// A level of a list definition, set apart: what it sets of its own, over
+/// what the definition gives every level.
+#[derive(Clone, Debug, Default, PartialEq, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+pub struct LevelSpec {
+    /// Which level, from 1 for the outermost lists.
+    pub level: usize,
+    /// "bullet", or how its items are numbered: "1", "a", "A", "i" or
+    /// "I".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub marker: Option<String>,
+    /// Its bullet.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bullet: Option<String>,
+    /// How its number reads, `1` standing for it: "(1)".
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub reads: Option<String>,
+    /// The number its items start at.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub start: Option<i64>,
+    /// How far it indents its items.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub indent: Option<Length>,
+    /// The room between its markers and its items' text.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gap: Option<Length>,
 }
 
 /// A page style: a page's size and margins.
@@ -532,6 +563,49 @@ impl SheetSpec {
             }
             check_length("a list's indent", list.indent, 0..=INCH * 4)?;
             check_length("a list's gap", list.gap, 0..=INCH * 2)?;
+            let mut seen = BTreeSet::new();
+            for level in &list.levels {
+                if !(1..=keys::LEVELS).contains(&level.level) || !seen.insert(level.level) {
+                    return invalid(format!(
+                        "{:?}'s levels must be 1 to {}, each once",
+                        list.name,
+                        keys::LEVELS
+                    ));
+                }
+                if level
+                    .marker
+                    .as_deref()
+                    .is_some_and(|m| crate::Numbering::of(m).is_none())
+                {
+                    return invalid(format!(
+                        "{:?}'s level {} marker must be \"bullet\", \"1\", \"a\", \"A\", \"i\" or \"I\"",
+                        list.name, level.level
+                    ));
+                }
+                if level
+                    .bullet
+                    .as_deref()
+                    .is_some_and(|b| !crate::styles::valid_bullet(b))
+                    || level
+                        .reads
+                        .as_deref()
+                        .is_some_and(|r| !crate::styles::valid_reads(r))
+                    || level
+                        .start
+                        .is_some_and(|s| !(0..=crate::styles::MOST_START).contains(&s))
+                {
+                    return invalid(format!(
+                        "{:?}'s level {} must have a bullet of a few characters, a number \
+                         that reads with a 1 for it, and a start from 0 to {}",
+                        list.name,
+                        level.level,
+                        crate::styles::MOST_START
+                    ));
+                }
+                for length in [level.indent, level.gap].into_iter().flatten() {
+                    check_length("a list level's indent or gap", length, 0..=INCH)?;
+                }
+            }
         }
         check_name("the page's name", &self.page.name)?;
         let page = &self.page;
@@ -919,6 +993,23 @@ impl SheetSpec {
                 Value::Int(list.indent.units()),
             );
             props.insert(keys::MARKER_GAP.to_string(), Value::Int(list.gap.units()));
+            for level in &list.levels {
+                let k = level.level;
+                let mut put = |what: &str, value: Option<Value>| {
+                    if let Some(value) = value {
+                        props.insert(keys::level(k, what), value);
+                    }
+                };
+                put(keys::LEVEL_MARKER, level.marker.clone().map(Value::Text));
+                put(keys::LEVEL_BULLET, level.bullet.clone().map(Value::Text));
+                put(keys::LEVEL_READS, level.reads.clone().map(Value::Text));
+                put(keys::LEVEL_START, level.start.map(Value::Int));
+                put(
+                    keys::LEVEL_INDENT,
+                    level.indent.map(|l| Value::Int(l.units())),
+                );
+                put(keys::LEVEL_GAP, level.gap.map(|l| Value::Int(l.units())));
+            }
             part(StyleKind::List, props, id());
         }
         let page = &self.page;
@@ -1160,6 +1251,36 @@ impl SheetSpec {
                     numbers: text(props, keys::NUMBERS).unwrap_or_default(),
                     indent: length_of(int(props, keys::LIST_INDENT).unwrap_or(0)),
                     gap: length_of(int(props, keys::MARKER_GAP).unwrap_or(0)),
+                    // What each level sets of its own, where it holds: so
+                    // the file reads back.
+                    levels: (1..=keys::LEVELS)
+                        .map(|k| {
+                            let text = |what: &str| text(props, &keys::level(k, what));
+                            let int = |what: &str| int(props, &keys::level(k, what));
+                            let length = |what: &str| {
+                                int(what).filter(|n| (0..=INCH).contains(n)).map(length_of)
+                            };
+                            LevelSpec {
+                                level: k,
+                                marker: text(keys::LEVEL_MARKER)
+                                    .filter(|m| crate::Numbering::of(m).is_some()),
+                                bullet: text(keys::LEVEL_BULLET)
+                                    .filter(|b| crate::styles::valid_bullet(b)),
+                                reads: text(keys::LEVEL_READS)
+                                    .filter(|r| crate::styles::valid_reads(r)),
+                                start: int(keys::LEVEL_START)
+                                    .filter(|s| (0..=crate::styles::MOST_START).contains(s)),
+                                indent: length(keys::LEVEL_INDENT),
+                                gap: length(keys::LEVEL_GAP),
+                            }
+                        })
+                        .filter(|l| {
+                            *l != LevelSpec {
+                                level: l.level,
+                                ..LevelSpec::default()
+                            }
+                        })
+                        .collect(),
                 }),
                 StyleKind::Page => {}
                 StyleKind::Paragraph | StyleKind::Character => {

@@ -6,7 +6,7 @@
 
 use doc::{Document, Kind, Object, ObjectId, Value};
 
-use crate::{StyleSheet, keys};
+use crate::{Numbering, StyleSheet, keys};
 
 /// A container around a paragraph, for the document's structure.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -151,8 +151,10 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
         .find(|l| l.role.as_deref() == Some("headings"))
         .unwrap_or_else(|| sheet.list(true, None));
     // How many numbered headings of each level there have been since the
-    // last of a level above it.
-    let mut counters = [0i64; 6];
+    // last of a level above it, counted from the number before the one
+    // its level of the definition starts at.
+    let first = |k: usize| headings.level(k).start.saturating_sub(1);
+    let mut counters: [i64; 6] = std::array::from_fn(first);
     let mut out: Vec<Entry> = Vec::new();
     let mut containers = Vec::new();
     // The rules met since the last paragraph, which go with the next.
@@ -174,13 +176,21 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
                     let level = usize::from(level);
                     if style.numbered {
                         counters[level - 1] = counters[level - 1].saturating_add(1);
-                        counters[level..].fill(0);
-                        let number: Vec<String> =
-                            counters[..level].iter().map(|n| n.to_string()).collect();
+                        for (k, counter) in counters.iter_mut().enumerate().skip(level) {
+                            *counter = first(k);
+                        }
+                        // Each level's count in its level's numbering,
+                        // read as the heading's level reads numbers.
+                        let number: Vec<String> = counters[..level]
+                            .iter()
+                            .enumerate()
+                            .map(|(k, n)| headings.level(k).numbering(true).number(*n))
+                            .collect();
+                        let own = headings.level(level - 1);
                         if place.marker.is_none() {
-                            place.marker = Some(headings.format(&number.join(".")));
+                            place.marker = Some(own.reads(&number.join(".")));
                             place.gutter = place.indent;
-                            place.gap = headings.gap;
+                            place.gap = own.gap;
                         }
                     }
                 }
@@ -222,24 +232,27 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
         match block.kind {
             Kind::List => {
                 let depth = place.path.iter().filter(|a| a.kind == Kind::List).count();
-                let start = match block.props.get(keys::START) {
-                    Some(Value::Int(n)) => *n,
-                    _ => 1,
-                };
                 let own = match block.props.get(keys::LIST) {
                     Some(Value::Ref(id)) => Some(*id),
                     _ => None,
                 };
-                let look = sheet.list(ordered, own);
-                let bullets = if look.bullets.is_empty() {
-                    &sheet.list(false, None).bullets
-                } else {
-                    &look.bullets
+                // The level of its definition its depth takes: its marker,
+                // where it starts counting, and where it sits.
+                let level = sheet.list(ordered, own).level(depth);
+                let start = match block.props.get(keys::START) {
+                    Some(Value::Int(n)) => *n,
+                    _ => level.start,
                 };
-                inner.indent = place.indent + look.indent;
+                let bullet = if level.bullet.is_empty() {
+                    &sheet.list(false, None).level(depth).bullet
+                } else {
+                    &level.bullet
+                };
+                let numbering = level.numbering(ordered);
+                inner.indent = place.indent + level.indent;
                 inner.gutter = inner.indent;
-                inner.gap = look.gap;
-                inner.width = place.width - look.indent;
+                inner.gap = level.gap;
+                inner.width = place.width - level.indent;
                 for (i, &item) in block.children.iter().enumerate() {
                     let mut p = inner.clone();
                     // A task's box takes a bullet's place, but not a
@@ -249,17 +262,12 @@ pub fn flow(document: &Document, sheet: &StyleSheet, width: i64) -> Flow {
                         _ => None,
                     };
                     p.task = task;
-                    p.marker = if ordered {
-                        Some(look.number(start.saturating_add(i as i64)))
+                    p.marker = if numbering != Numbering::Bullet {
+                        Some(level.marker(ordered, start.saturating_add(i as i64)))
                     } else if task.is_some() {
                         None
                     } else {
-                        Some(
-                            bullets
-                                .get(depth % bullets.len().max(1))
-                                .cloned()
-                                .unwrap_or_default(),
-                        )
+                        Some(bullet.clone())
                     };
                     children.push((item, p));
                 }

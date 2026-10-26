@@ -75,7 +75,11 @@ has one.
   style, a character style or a page style, or a **named part** styles
   refer to: a face (`family`), a colour (`color`, `#rrggbb`), a layout of
   tab stops (`tabs`) or a list definition (`bullets`, `numbers`,
-  `list-indent`, `marker-gap`). A style may be based on another of its
+  `list-indent`, `marker-gap`, and for each level `k` it sets apart,
+  from 1, `level-k-marker`, "bullet" or a numbering, "1", "a", "A", "i"
+  or "I", `level-k-bullet`, `level-k-reads`, its number with `1` for it,
+  `level-k-start`, `level-k-indent` and `level-k-gap`, each optional,
+  over the definition's own). A style may be based on another of its
   kind, and sets only what differs from it; parts are based on nothing.
   No chain of bases comes back to where it started. Its `name` and `role`
   are among its properties: its name is what people see and is unique to
