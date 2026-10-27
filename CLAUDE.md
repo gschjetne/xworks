@@ -48,7 +48,8 @@ the tests on Linux, Windows and macOS.
 
 - `cargo run -p shot -- [SCENE...]` renders scenes to `target/shot/`;
   `--list` lists them, and `--pdf` writes them as pages of one PDF. Look
-  at what you render.
+  at what you render. `--xw DIR` writes the sample documents the scenes
+  draw (`spec/documents/`) as `.xw` files, to open and edit in xWorks.
 - Golden records and how they're approved: [spec/golden/README.md](spec/golden/README.md).
 - `fuzz/` holds the fuzz targets (rule 8), in a workspace of their own;
   run one with `cargo +nightly fuzz run TARGET` from there.

@@ -11,6 +11,9 @@
 //!                                     pixels, and target/shot/diff-SCENE-OTHER.png
 //!                                     showing them in red over a faded SCENE
 //! shot --list                         list the scenes
+//! shot --xw DIR                       write the sample documents the scenes draw
+//!                                     as .xw files in DIR, to open in xWorks,
+//!                                     leaving any already there
 //! ```
 //!
 //! With no scenes named, it renders every scene. Only a person may approve.
@@ -39,6 +42,17 @@ fn main() -> anyhow::Result<()> {
                 }
                 approver = Some(name);
             }
+            "--xw" => {
+                let dir = args.next().context("--xw needs a folder")?;
+                let (written, left) = shot::write_samples(std::path::Path::new(&dir))?;
+                for path in written {
+                    println!("{}", path.display());
+                }
+                for path in left {
+                    println!("{} (already there, left as it is)", path.display());
+                }
+                return Ok(());
+            }
             "--pdf" => pdf = true,
             "--hashes" => hashes = true,
             "--diff" => {
@@ -48,7 +62,7 @@ fn main() -> anyhow::Result<()> {
             }
             "-h" | "--help" => {
                 println!(
-                    "usage: shot [--list] [--pdf | --hashes] [--approve NAME] [SCENE...]\n       shot --diff SCENE OTHER"
+                    "usage: shot [--list] [--pdf | --hashes] [--approve NAME] [SCENE...]\n       shot --diff SCENE OTHER\n       shot --xw DIR"
                 );
                 return Ok(());
             }

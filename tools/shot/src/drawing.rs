@@ -50,21 +50,31 @@ fn landscape(width: u32, height: u32) -> Vec<u8> {
     rgba
 }
 
+/// `rgba`, `width` by `height`, as a PNG file.
+fn png_file(width: u32, height: u32, rgba: &[u8]) -> Vec<u8> {
+    let mut file = Vec::new();
+    {
+        let mut encoder = png::Encoder::new(&mut file, width, height);
+        encoder.set_color(png::ColorType::Rgba);
+        encoder.set_depth(png::BitDepth::Eight);
+        let mut writer = encoder.write_header().expect("a PNG header");
+        writer.write_image_data(rgba).expect("the PNG's pixels");
+    }
+    file
+}
+
+/// The landscape as a PNG file, as the photograph is made from and the
+/// pictures' sample document keeps it.
+pub(crate) fn photograph_file() -> Vec<u8> {
+    let (width, height) = (1024, 640);
+    png_file(width, height, &landscape(width, height))
+}
+
 /// The landscape as a PNG file, read by the app's decoder.
 pub(crate) fn photograph() -> &'static Image {
     static PHOTO: OnceLock<Image> = OnceLock::new();
     PHOTO.get_or_init(|| {
-        let (width, height) = (1024, 640);
-        let mut file = Vec::new();
-        {
-            let mut encoder = png::Encoder::new(&mut file, width, height);
-            encoder.set_color(png::ColorType::Rgba);
-            encoder.set_depth(png::BitDepth::Eight);
-            let mut writer = encoder.write_header().expect("a PNG header");
-            writer
-                .write_image_data(&landscape(width, height))
-                .expect("the PNG's pixels");
-        }
+        let file = photograph_file();
         let limits: app::picture::Limits = ron::from_str(
             &std::fs::read_to_string(testkit::workspace_root().join("spec/pictures.ron"))
                 .expect("spec/pictures.ron"),
@@ -79,6 +89,16 @@ pub(crate) fn photograph() -> &'static Image {
 /// A heart, 9 by 8 pixels, its edge half transparent: drawn large, its
 /// pixels blend into each other, and its edges hold.
 pub(crate) fn icon() -> Image {
+    Image::new(9, 8, heart()).expect("an icon")
+}
+
+/// The heart as a PNG file, as the pictures' sample document keeps it.
+pub(crate) fn icon_file() -> Vec<u8> {
+    png_file(9, 8, &heart())
+}
+
+/// The heart's pixels, 9 by 8, in RGBA.
+fn heart() -> Vec<u8> {
     const ROWS: [&str; 8] = [
         ".##...##.",
         "#oo#.#oo#",
@@ -89,16 +109,14 @@ pub(crate) fn icon() -> Image {
         "...#o#...",
         "....#....",
     ];
-    let rgba = ROWS
-        .iter()
+    ROWS.iter()
         .flat_map(|row| row.chars())
         .flat_map(|c| match c {
             '#' => [150, 20, 40, 160],
             'o' => [230, 50, 70, 255],
             _ => [0, 0, 0, 0],
         })
-        .collect();
-    Image::new(9, 8, rgba).expect("an icon")
+        .collect()
 }
 
 /// A ramp from nearly opaque to clear, left to right, in one colour.

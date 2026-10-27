@@ -15,11 +15,13 @@ mod chrome;
 mod drawing;
 mod mockups;
 mod pages;
+mod samples;
 mod stylesheets;
 mod typeset;
 
 use testkit::Image;
 
+pub use samples::write_samples;
 pub use typeset::typeset_page;
 
 pub use pages::{
