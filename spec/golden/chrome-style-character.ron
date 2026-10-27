@@ -1,0 +1,7 @@
+// An approved golden image (spec/golden/README.md), written by `shot --approve`.
+Golden(
+    name: "chrome-style-character",
+    size: (1280, 800),
+    sha256: "15789eb133af14db8ca6a7e6d9548fa7dfee65542c8b8152f39f7ea667640a8b",
+    approved_by: "Grim Schjetne",
+)

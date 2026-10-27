@@ -2,6 +2,6 @@
 Golden(
     name: "stylesheet-book",
     size: (1191, 842),
-    sha256: "949036a8d2c9811681c9715885b8afc9db19748e67301cac5c426b3929c880dc",
+    sha256: "8520812c71e2ab7aadada5198b06c2330dc4dedb1e4fe05f0aa2931adfc2c669",
     approved_by: "Grim Schjetne",
 )

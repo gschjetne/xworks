@@ -2,6 +2,6 @@
 Golden(
     name: "stylesheet-manuscript",
     size: (1660, 1171),
-    sha256: "ec3b2f018db2230a0bc63955ad88eccf1499933e5efec2e8d0ce2fe5791dd09d",
+    sha256: "b04e3932fe07bb7261b311e4d4daa5ea60bb28d04d4ee1d242c0962d2b41b7e9",
     approved_by: "Grim Schjetne",
 )

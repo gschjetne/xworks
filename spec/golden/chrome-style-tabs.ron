@@ -1,0 +1,7 @@
+// An approved golden image (spec/golden/README.md), written by `shot --approve`.
+Golden(
+    name: "chrome-style-tabs",
+    size: (1280, 800),
+    sha256: "8b31a82df635ff7b794fd9a9903c8e8b69246f15a52cc326f58f742a728f0d44",
+    approved_by: "Grim Schjetne",
+)

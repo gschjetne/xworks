@@ -2,6 +2,6 @@
 Golden(
     name: "chrome-style",
     size: (1280, 800),
-    sha256: "3154049b4a31547418446424887445da9dfcf3ee9b420a24003b9113793c13af",
+    sha256: "b99800f99b326acb01178f168a4a52d286c25a00782fdc863c18461464c0b461",
     approved_by: "Grim Schjetne",
 )

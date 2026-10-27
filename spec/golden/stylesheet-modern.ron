@@ -2,6 +2,6 @@
 Golden(
     name: "stylesheet-modern",
     size: (1660, 1171),
-    sha256: "100e8096602e74d1835da75aaae229a9cc5cadc58f3ba8f0ff15d1272a255937",
+    sha256: "2131c417246e15476a2ec5bfc5c87849b9d886d240bd89e4305b13b3c8c8b8c3",
     approved_by: "Grim Schjetne",
 )
