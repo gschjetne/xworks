@@ -936,8 +936,8 @@ review; ★ marks those the owner should decide.
   At its head are two lists, a kind (Paragraph styles, Character styles,
   Faces, Colours, Tab layouts, Lists) and one of that kind, with New and
   Delete under them: one list grouped by kind would be thirty rows and
-  more, taller than a window. ★ The tab opens on the caret's paragraph
-  style and follows the caret until the person chooses another style or
+  more, taller than a window. The tab opens on the caret's paragraph
+  style and follows the caret (settled, below) until the person chooses another style or
   part, which it then keeps however the caret moves; opening the tab
   again follows the caret once more.
 - ★ **Following a part.** Where a value names a part, a style's face,
@@ -991,8 +991,8 @@ review; ★ marks those the owner should decide.
   pane of tabs and a scroll view, each control where it's drawn and
   hidden when it's scrolled away. A recorded session's start keeps the
   scroll, and the style chosen.
-- ★ **Format, Styles' access key is S;** Align to Start's moves from S to
-  A, as every letter of "Styles" was another item's.
+- **Format, Styles' access key is S;** Align to Start's moves from S to
+  A, as every letter of "Styles" was another item's (settled, below).
 
 **What stage 9's follow-up built: pasting** (from review sjj5ak5a, where
 a heading and a quote pasted into another document arrived as body text).
@@ -1011,7 +1011,7 @@ that need the owner's decision.
   be of the fragment, are as before.
 - **A paragraph copied in part is text** (`app::blocks::paste`): copied
   alone, its runs go in at the caret, and the paragraph there keeps its
-  style, as before. ★ A paragraph is whole when the selection runs from
+  style, as before. A paragraph is whole (settled, below) when the selection runs from
   its start to its end, without the break after it, as a paragraph has
   no mark to select: a heading selected along its line and pasted into a
   paragraph's middle splits it and goes between the halves. Word and
@@ -1056,8 +1056,8 @@ that need the owner's decision.
   takes them as spaces, so a table or rows pasted into a cell are text.
   A cell is never joined to text outside its table, and one cell copied
   alone is text.
-- **Styles:** the destination's win, matched by role and then name; ★
-  only those the pasted text uses come, with the styles up their chains
+- **Styles:** the destination's win, matched by role and then name;
+  only those the pasted text uses come (settled, below), with the styles up their chains
   and the parts their values name (`story::merge_used`), not all of the
   other sheet's that the destination lacks, as stage 9 brought them. A
   paragraph of Book's body text pasted into a Neutral document, or a
@@ -1093,6 +1093,17 @@ that need the owner's decision.
   into another document through the commands. A recorded session keeps
   text pasted as the clipboard's text, as before, so what was copied
   before it began pastes as text when it plays back.
+
+**From the follow-up's review** (project owner, 2026-10-27, review
+sjj5ak5a):
+- **A paragraph copied from its start to its end is whole,** without the
+  break after it, which xWorks doesn't show: a heading selected along its
+  line pastes as a heading, wherever it goes.
+- **Pasting brings only the styles the pasted text uses,** with their
+  chains and the parts they name, as Word does.
+- **The Style tab follows the caret** until a style or part is chosen,
+  then keeps it; choosing the tab again follows the caret.
+- **Format, Styles' access key is S,** and Align to Start's is A.
 
 **Container: SQLite** (project owner, 2026-10-18). A document is an SQLite
 database with a fixed, versioned schema: objects, the transaction log, embedded
