@@ -1,22 +1,22 @@
 //! Markdown files as themselves (docs/ARCHITECTURE.md, section 6; review
 //! ys9vyag1): a `.md` file read into a structure-only story, and the story
-//! written back as Markdown.
+//! written back as Markdown, so a file opened, edited and saved is still
+//! its author's where it wasn't edited.
 //!
 //! - [`read`]: CommonMark with GitHub's tables, strikethrough and task
 //!   lists, read with pulldown-cmark into a [`Document`]: headings are the
 //!   Heading styles; paragraphs, lists, quotes, code blocks and tables are
 //!   stage 2's blocks, a table's header row's cells in the sheet's Table
 //!   Header and written as the header by their place, never by the style
-//!   (`story::TABLE_HEADER`), and thematic breaks are rules; emphasis, strong,
-//!   code, links and lines through text are marks, and GitHub's autolinks,
-//!   bare web and e-mail addresses, are links ([`autolinks`]); images are
-//!   pictures in the text, linked by their paths
-//!   (`story::keys::PICTURE_SRC`). What a
-//!   story doesn't hold, such as HTML, link reference definitions,
-//!   footnotes and the `[!NOTE]` of GitHub's alerts, which are quotes, is
-//!   kept as it was written (`story::keys::SOURCE`). YAML or TOML front
-//!   matter is kept as it was, outside the story, and its `lang` is the
-//!   paragraphs' language.
+//!   (`story::TABLE_HEADER`), and thematic breaks are rules; emphasis,
+//!   strong, code, links and lines through text are marks, and GitHub's
+//!   autolinks, bare web and e-mail addresses, are links ([`autolinks`]);
+//!   images are pictures in the text, linked by their paths
+//!   (`story::keys::PICTURE_SRC`). What a story doesn't hold, such as
+//!   HTML, link reference definitions, footnotes and the `[!NOTE]` of
+//!   GitHub's alerts, which are quotes, is kept as it was written
+//!   (`story::keys::SOURCE`). YAML or TOML front matter is kept as it was,
+//!   outside the story, and its `lang` is the paragraphs' language.
 //! - [`File`]: what the file said, kept for writing it back:
 //!   [`File::write`] writes each block the story still holds as it was
 //!   read byte for byte as its author wrote it, and those edited or new in
@@ -36,16 +36,57 @@
 //! - [`shape`]: a story as Markdown holds it, for comparing what's written
 //!   with what's read back.
 //!
-//! Invariants:
+//! # What a caller may rely on
 //!
-//! - Reading never fails on UTF-8 and never panics; a file that isn't
-//!   UTF-8 is an error.
-//! - A file read and written back without edits is the same bytes.
-//! - What's written reads back as the same story, as [`shape`] sees it:
-//!   each edited block is read back as it's written, and written more
-//!   plainly, with more escapes, if it doesn't read back the same.
-//! - Nothing walks the story by recursion, so no file can exhaust the
-//!   stack.
+//! - **Pure.** No I/O, threads, clocks or environment (Clippy's
+//!   `crates/clippy.toml`), and it builds for WebAssembly (CI): it reads
+//!   bytes and returns bytes, and the app writes them.
+//! - **Reading never fails on UTF-8 and never panics;** a file that isn't
+//!   UTF-8 is a [`ReadError`] saying where (`tests/outside.rs`,
+//!   `a_file_that_isnt_utf8_is_an_error`; the `markdown_file` fuzz target).
+//! - **Untouched is byte for byte:** a file read and written back without
+//!   edits is the same bytes, for every CommonMark example and our own
+//!   files (`tests/commonmark.rs`,
+//!   `every_example_is_written_back_untouched_byte_for_byte`;
+//!   `tests/files.rs`, `untouched_files_are_written_back_byte_for_byte`).
+//! - **An edit changes only what it edited:** a word edited changes its
+//!   line alone, a task toggled its box alone, and what's written afresh
+//!   follows the file's habits, its width, line endings and byte order
+//!   mark (`tests/files.rs`, `a_one_word_edit_changes_one_line`,
+//!   `a_task_toggled_changes_its_box_alone`,
+//!   `new_items_follow_the_files_habits` and
+//!   `edits_keep_the_files_width_line_endings_and_mark`).
+//! - **What's written reads back as the same story,** as [`shape`] sees
+//!   it: each edited block is read back as it's written, and written more
+//!   plainly, with more escapes, if it doesn't read back the same
+//!   (`tests/roundtrip.rs`, `a_story_written_reads_back_the_same` and
+//!   `a_file_edited_reads_back_as_edited`; `tests/commonmark.rs`,
+//!   `every_example_written_afresh_reads_back_as_the_same_story` and
+//!   `every_example_edited_reads_back_as_edited`).
+//! - **Autolinks** are GitHub's, read and written back
+//!   (`tests/autolinks.rs`).
+//! - **What Markdown can't hold is refused, not lost:** [`File::write`]
+//!   returns [`Unheld`], saying what and where, rather than write a file
+//!   without it (`tests/outside.rs`, `what_markdown_cant_hold_is_refused`;
+//!   `tests/files.rs`, `the_language_of_all_the_text_is_the_front_matters`).
+//! - **Nothing walks the story by recursion,** so no file can exhaust the
+//!   stack: quotes and lists nested far deeper than a small stack could
+//!   recurse through read, write back and edit (`tests/outside.rs`,
+//!   `nesting_never_exhausts_the_stack`).
+//!
+//! # What it doesn't promise
+//!
+//! - Reading in time proportional to the file: reading takes time in the
+//!   square of how deep quotes nest and in the cube of how deep lists do,
+//!   so a few kilobytes of `- - - …` take a minute and more
+//!   (`tests/outside.rs`, `reading_takes_time_in_the_size_not_the_depth`,
+//!   ignored as failing).
+//! - Extensions beyond GitHub's tables, strikethrough, task lists,
+//!   autolinks and alerts: others are kept as they were written, as
+//!   source, not understood.
+//! - That a block written afresh looks as its author would have written
+//!   it: it follows the file's habits where they're clear, and the
+//!   standard style elsewhere.
 
 mod autolink;
 mod inline;
