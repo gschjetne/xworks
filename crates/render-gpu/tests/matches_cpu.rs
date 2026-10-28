@@ -435,3 +435,32 @@ fn an_image_put_where_another_just_left_shows() {
         assert!(near(colour, Cells::colour(i)), "cell {i}: {colour:?}");
     }
 }
+
+/// Images coming into view, frame after frame, as images unseen for a
+/// while leave the atlas, show as they are: a row of pictures scrolled a
+/// cell a frame, four in view, so from the 34th frame on one leaves the
+/// atlas in each frame a new one comes into it, never more than it holds.
+/// It doesn't, as above: from that frame, the one coming in draws as
+/// nothing.
+#[test]
+#[ignore = "fails, and needs a GPU: M2 stage 8 part A's report, render-gpu"]
+fn images_coming_into_view_as_unseen_ones_leave_show() {
+    let instance =
+        wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    let device = render_gpu::open(&instance, None).expect("a GPU");
+    let mut renderer = render_gpu::Renderer::new(&device.device, wgpu::TextureFormat::Rgba8Unorm);
+    let row = Cells::new(0, 80);
+    for first in 0..row.images.len() - 4 {
+        let view = Cells {
+            images: row.images[first..first + 4].to_vec(),
+        };
+        let drawn = Cells::drawn(&mut renderer, &device, &view.page(4), 4);
+        for (i, &colour) in drawn.iter().enumerate() {
+            let want = Cells::colour(first + i);
+            assert!(
+                near(colour, want),
+                "frame {first}, cell {i}: {colour:?} for {want:?}"
+            );
+        }
+    }
+}
