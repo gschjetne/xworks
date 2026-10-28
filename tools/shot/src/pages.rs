@@ -392,6 +392,31 @@ pub fn exit_pages() -> canvas::Pages {
     play(&session("exit")).editor().pages()
 }
 
+/// The pages of the two documents M2's exit session writes, opens again
+/// and prints (`spec/sessions/exit-m2.ron`): the document with pictures,
+/// in Book on A5, then the Markdown file, on A4, side by side and lined
+/// up at their tops on a grey sheet.
+pub fn exit_m2_sheet() -> Page {
+    let played = play(&session("exit-m2"));
+    let mut pages: Vec<Page> = played.editor().pages().pages;
+    for window in &played.behind {
+        if window.editor().is_markdown() {
+            pages.extend(window.editor().pages().pages);
+        }
+    }
+    let gap = INCH / 4;
+    let width = pages.iter().map(|p| p.width + gap).sum::<i64>() + gap;
+    let height = pages.iter().map(|p| p.height).max().unwrap_or(0) + 2 * gap;
+    let mut out = Page::new(width, height);
+    out.fill_background(Color::rgb(160, 160, 160));
+    let mut x = gap;
+    for page in &pages {
+        out.place(page, Point::new(x, gap));
+        x += page.width + gap;
+    }
+    out
+}
+
 /// The session `spec/sessions/{name}.ron`.
 fn session(name: &str) -> app::session::Session {
     let source = testkit::specs("sessions")

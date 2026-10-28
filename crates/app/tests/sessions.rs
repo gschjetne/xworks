@@ -173,6 +173,121 @@ fn the_exit_document_reopens_and_exports_the_same() {
     assert!(missing.is_empty(), "not read: {missing:?}\nfrom: {text}");
 }
 
+/// M2's exit (docs/ROADMAP.md, review 7fnfdhb5): the documents the exit
+/// session writes, a document with pictures and a Markdown file, reopen
+/// after xWorks quits as they were left, the Markdown byte for byte, with
+/// the same story and the same pages; and each prints to PDF as those
+/// pages, its text extractable. The session itself goes on to quit, open
+/// both again and print them; here that's done by hand, to compare.
+#[test]
+fn the_m2_exit_documents_reopen_and_print_the_same() {
+    let source = testkit::specs("sessions")
+        .expect("spec/sessions")
+        .into_iter()
+        .find(|(name, _)| name == "exit-m2")
+        .expect("spec/sessions/exit-m2.ron")
+        .1;
+    let mut exit = session::read(&source).expect("a session");
+    let quit = exit
+        .events
+        .iter()
+        .position(|s| matches!(s, session::Step::Command(c) if c == "quit"))
+        .expect("xWorks quits");
+    exit.events.truncate(quit);
+    let mut res = resources().clone();
+    res.documents = testkit::scratch_dir("app-exit-m2").expect("a folder");
+    res.language = text::Language::parse("en-GB").expect("a tag");
+    let res = Arc::new(res);
+    let played = session::play(res.clone(), &exit).expect("the session plays");
+    assert!(played.problems.is_empty(), "{:?}", played.problems);
+    // The Markdown file's window in front, the document's behind it.
+    let markdown = played.editor();
+    assert!(markdown.is_markdown());
+    let document = played
+        .behind
+        .iter()
+        .map(app::Window::editor)
+        .find(|e| !e.is_markdown())
+        .expect("the document with pictures");
+    assert!(
+        !story::pictures(document.document()).is_empty(),
+        "it has pictures"
+    );
+    let md_path = markdown.path().to_path_buf();
+    let md_bytes = std::fs::read(&md_path).expect("the Markdown file");
+    let md_outline = story::outline(markdown.document(), markdown.sheet());
+    let md_drawn = renders(&markdown.pages());
+    let xw_path = document.path().to_path_buf();
+    let xw_dump = document.document().dump();
+    let xw_paragraphs = paragraph_texts(document.document());
+    let xw_drawn = renders(&document.pages());
+    let md_paragraphs = paragraph_texts(markdown.document());
+    // xWorks quits: every window closes.
+    let session::Played {
+        mut window,
+        mut behind,
+        ..
+    } = played;
+    window.close();
+    for other in &mut behind {
+        other.close();
+    }
+    drop((window, behind));
+    assert_eq!(
+        std::fs::read(&md_path).expect("the Markdown file"),
+        md_bytes,
+        "quitting wrote it as it was"
+    );
+
+    // Opened again, each is as it was left.
+    let mut md = app::Editor::open(res.clone(), &md_path).expect("it reopens");
+    assert_eq!(story::outline(md.document(), md.sheet()), md_outline);
+    let md_pages = md.pages();
+    assert!(renders(&md_pages) == md_drawn, "the Markdown's same pages");
+    let mut xw = app::Editor::open(res.clone(), &xw_path).expect("it reopens");
+    assert_eq!(xw.document().dump(), xw_dump, "the same dump");
+    let xw_pages = xw.pages();
+    assert!(xw_drawn.len() >= 2, "several pages, not {}", xw_drawn.len());
+    assert!(renders(&xw_pages) == xw_drawn, "the document's same pages");
+    // Opening wrote nothing.
+    assert_eq!(std::fs::read(&md_path).unwrap(), md_bytes);
+
+    // Printed to PDF, beside themselves: their pages, their text read
+    // back, each stretch between tabs and pictures.
+    for (editor, pages, paragraphs) in [
+        (&mut md, &md_pages, &md_paragraphs),
+        (&mut xw, &xw_pages, &xw_paragraphs),
+    ] {
+        editor.update(app::Event::Command("export-pdf".to_string()));
+        let pdf = std::fs::read(editor.path().with_extension("pdf")).expect("the PDF");
+        let read = lopdf::Document::load_mem(&pdf).expect("the PDF reads");
+        assert_eq!(read.get_pages().len(), pages.pages.len());
+        // Without spaces, and without the soft hyphens Book's justified
+        // lines break words at.
+        let squeeze = |text: &str| -> String {
+            text.chars()
+                .filter(|c| !c.is_whitespace() && *c != '\u{ad}')
+                .collect()
+        };
+        let text = squeeze(&testkit::pdf::text(&pdf).expect("text reads"));
+        let missing: Vec<&str> = paragraphs
+            .iter()
+            .flat_map(|p| p.split(['\t', '\u{fffc}', '\u{2028}']))
+            .filter(|stretch| !text.contains(&squeeze(stretch)))
+            .collect();
+        assert!(missing.is_empty(), "not read: {missing:?}\nfrom: {text}");
+    }
+}
+
+/// Each paragraph's text, in reading order.
+fn paragraph_texts(document: &doc::Document) -> Vec<String> {
+    document
+        .paragraphs()
+        .iter()
+        .filter_map(|&id| document.paragraph(id).map(|p| p.text.clone()))
+        .collect()
+}
+
 /// The editor lays out again only what an edit changed: whatever a session
 /// did, its pages draw as those of its document laid out afresh, as
 /// opening it does, with the same structure.

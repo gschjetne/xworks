@@ -328,6 +328,9 @@ fn key_name(key: Key, modifiers: Modifiers) -> String {
 pub struct Played {
     /// The window.
     pub window: Window,
+    /// The windows behind it, still open, in the order they came to be
+    /// behind it.
+    pub behind: Vec<Window>,
     /// The clipboard's text.
     pub clipboard: String,
     /// What was wrong at the session's [`Step::Expect`]s.
@@ -348,7 +351,11 @@ impl Played {
 /// hasn't chosen any settings, such as the ruler's unit, or as the
 /// recorded window had them where it starts. A document a command opens,
 /// as New does, opens in a window of its own, which the session goes on
-/// in, as a person's would, the window before staying open behind it.
+/// in, as a person's would, the window before staying open behind it; one
+/// open already in a window behind brings that window forward, as the
+/// shell does. Quit closes every window, as quitting does, and xWorks
+/// starts again, as without a file: in a new document, where the session
+/// goes on.
 pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorError> {
     let mut res = (*res).clone();
     if let Some(tag) = &session.language {
@@ -535,6 +542,30 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
                     Effect::Paste => queue.extend(window.update(Event::Pasted(clipboard.clone()))),
                     Effect::Choose(choice) => choosing = Some(choice),
                     Effect::Window(action) => actions.push(action),
+                    Effect::Open(Some(path))
+                        if let Some(k) = behind.iter().position(|w| w.editor().path() == path) =>
+                    {
+                        let forward = behind.remove(k);
+                        behind.push(std::mem::replace(&mut window, forward));
+                        window.update(Event::Focused);
+                    }
+                    Effect::Open(Some(path)) if window.editor().path() == path => {}
+                    Effect::Quit => {
+                        for mut other in behind.drain(..) {
+                            other.close();
+                        }
+                        window.close();
+                        match Window::create(res.clone()) {
+                            Ok(mut started) => {
+                                started.update(Event::Resize { width, height });
+                                // The windows quit are gone before it goes on.
+                                drop(std::mem::replace(&mut window, started));
+                            }
+                            Err(e) => {
+                                problems.push(format!("at step {n}, xWorks didn't start: {e}"))
+                            }
+                        }
+                    }
                     Effect::Open(path) => {
                         let opened = match path {
                             Some(path) => Window::open(res.clone(), &path),
@@ -551,7 +582,6 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
                     Effect::OpenVersion(..)
                     | Effect::OpenExternally(_)
                     | Effect::Reveal(_)
-                    | Effect::Quit
                     | Effect::Pointer(_) => {}
                 }
             }
@@ -565,6 +595,7 @@ pub fn play(res: Arc<Resources>, session: &Session) -> Result<Played, EditorErro
     window.poll();
     Ok(Played {
         window,
+        behind,
         clipboard,
         problems,
         actions,

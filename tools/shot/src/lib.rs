@@ -26,8 +26,8 @@ pub use typeset::typeset_page;
 
 pub use pages::{
     blocks_pages, blocks_sheet, document_pages, document_sheet, editor_lists_page,
-    editor_menu_page, editor_page, exit_pages, exit_sheet, fonts, pictures_pages, pictures_sheet,
-    shapes_page, text_page,
+    editor_menu_page, editor_page, exit_m2_sheet, exit_pages, exit_sheet, fonts, pictures_pages,
+    pictures_sheet, shapes_page, text_page,
 };
 
 /// A named page, and the resolution it's drawn at.
@@ -96,6 +96,13 @@ pub fn scenes() -> &'static [Scene] {
             ppi: 48.0,
             page: exit_sheet,
             pages: Some(exit_pages),
+        },
+        Scene {
+            name: "exit-m2-pages",
+            description: "the pages M2's exit session writes, opens again after quitting and prints: a document with pictures, in Book, and a Markdown file, side by side, at 48 pixels per inch",
+            ppi: 48.0,
+            page: exit_m2_sheet,
+            pages: None,
         },
         Scene {
             name: "mockup-pages",
