@@ -385,6 +385,52 @@ pub enum SnapshotError {
     Loop(ObjectId),
 }
 
+/// A set of object IDs, as checking a snapshot needs: a bit for each ID
+/// below the snapshot's next one, where its IDs are as dense as a
+/// document's, and a tree for the rest, so a snapshot naming a vast ID
+/// takes no vast room.
+struct IdSet {
+    bits: Vec<u64>,
+    rest: BTreeSet<ObjectId>,
+}
+
+impl IdSet {
+    /// An empty set, for `count` IDs below `bound`: bits for those below
+    /// `bound` if that takes no more than a byte an ID.
+    fn new(bound: u64, count: usize) -> IdSet {
+        let words = if bound <= (count as u64).saturating_add(64).saturating_mul(8) {
+            bound.div_ceil(64) as usize
+        } else {
+            0
+        };
+        IdSet {
+            bits: vec![0; words],
+            rest: BTreeSet::new(),
+        }
+    }
+
+    /// Adds `id`: true if it wasn't in the set.
+    fn insert(&mut self, id: ObjectId) -> bool {
+        match self.bits.get_mut((id.0 / 64) as usize) {
+            Some(word) => {
+                let bit = 1 << (id.0 % 64);
+                let new = *word & bit == 0;
+                *word |= bit;
+                new
+            }
+            None => self.rest.insert(id),
+        }
+    }
+
+    /// Whether `id` is in the set.
+    fn contains(&self, id: ObjectId) -> bool {
+        match self.bits.get((id.0 / 64) as usize) {
+            Some(word) => word & (1 << (id.0 % 64)) != 0,
+            None => self.rest.contains(&id),
+        }
+    }
+}
+
 impl Document {
     /// The document as plain data.
     pub fn to_snapshot(&self) -> Snapshot {
@@ -409,7 +455,8 @@ impl Document {
     /// parts on nothing. Runs are normalized.
     pub fn from_snapshot(snapshot: Snapshot) -> Result<Document, SnapshotError> {
         let mut objects = IdMap::new();
-        let mut ids = BTreeSet::new();
+        let (bound, count) = (snapshot.next_id, snapshot.objects.len());
+        let mut ids = IdSet::new(bound, count);
         let mut paragraphs = 0;
         let mut sheet = None;
         for (id, object) in snapshot.objects {
@@ -452,8 +499,9 @@ impl Document {
             return Err(SnapshotError::EmptyStory(document.root));
         }
         // Every object is listed once, by its own parent, which can hold it.
-        let mut listed = BTreeSet::new();
-        for (id, object) in document.objects.entries() {
+        let entries = document.objects.entries();
+        let mut listed = IdSet::new(bound, count);
+        for &(id, object) in &entries {
             for &c in object.children() {
                 let Some(child) = document.object(c).filter(|o| o.parent() == Some(id)) else {
                     return Err(SnapshotError::NotItsParagraph {
@@ -472,21 +520,27 @@ impl Document {
                 }
             }
         }
-        for &id in &ids {
-            if id != document.root && Some(id) != document.sheet && !listed.contains(&id) {
+        // Every object, in order of ID.
+        for &(id, _) in &entries {
+            if id != document.root && Some(id) != document.sheet && !listed.contains(id) {
                 return Err(SnapshotError::Stray(id));
             }
         }
         // And every object is in the root's tree or the stylesheet: none
         // is in a ring of containers holding each other.
-        let mut reached: BTreeSet<ObjectId> = document.subtree(document.root).into_iter().collect();
+        let mut reached = IdSet::new(bound, count);
+        for id in document.subtree(document.root) {
+            reached.insert(id);
+        }
         if let Some(sheet) = document.sheet {
-            if reached.contains(&sheet) {
+            if reached.contains(sheet) {
                 return Err(SnapshotError::Stray(sheet));
             }
-            reached.extend(document.subtree(sheet));
+            for id in document.subtree(sheet) {
+                reached.insert(id);
+            }
         }
-        if let Some(&stray) = ids.iter().find(|id| !reached.contains(id)) {
+        if let Some(&(stray, _)) = entries.iter().find(|(id, _)| !reached.contains(*id)) {
             return Err(SnapshotError::Stray(stray));
         }
         if document.paragraphs == 0 {
@@ -1317,4 +1371,29 @@ fn byte_index(text: &str, chars: u32) -> usize {
     text.char_indices()
         .nth(chars as usize)
         .map_or(text.len(), |(i, _)| i)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// A set of IDs holds what a tree of them holds, in bits where they're
+    /// dense and in a tree where they're not, or beyond its bound.
+    #[test]
+    fn an_id_set_is_a_set() {
+        let dense: Vec<u64> = (0..300).map(|k| (k * 7919) % 200).collect();
+        let sparse: Vec<u64> = vec![3, 1 << 40, 5, 1 << 40, u64::MAX, 3, 0, u64::MAX];
+        for (bound, ids) in [(200, &dense), (1 << 41, &sparse), (64, &sparse)] {
+            let mut set = IdSet::new(bound, ids.len());
+            let mut tree = BTreeSet::new();
+            for &id in ids {
+                assert_eq!(set.insert(ObjectId(id)), tree.insert(ObjectId(id)), "{id}");
+            }
+            for id in (0..256).chain([1 << 40, (1 << 40) + 1, u64::MAX]) {
+                assert_eq!(set.contains(ObjectId(id)), tree.contains(&ObjectId(id)));
+            }
+        }
+        assert!(!IdSet::new(200, 300).bits.is_empty());
+        assert!(IdSet::new(1 << 41, 8).bits.is_empty());
+    }
 }

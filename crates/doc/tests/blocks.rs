@@ -421,6 +421,28 @@ fn snapshots_of_trees_are_checked() {
         Document::from_snapshot(s),
         Err(SnapshotError::Stray(_))
     ));
+    // The same far beyond the document's IDs, where they're too sparse to
+    // be checked as the document's are; and one of them twice.
+    let mut s = good.clone();
+    let far = 1 << 40;
+    s.next_id = far + 2;
+    s.objects.push((
+        ObjectId(far),
+        container(Kind::Quote, ObjectId(far + 1), &[far + 1]),
+    ));
+    s.objects.push((
+        ObjectId(far + 1),
+        container(Kind::Quote, ObjectId(far), &[far]),
+    ));
+    assert_eq!(
+        Document::from_snapshot(s.clone()),
+        Err(SnapshotError::Stray(ObjectId(far)))
+    );
+    s.objects.push((ObjectId(far), para(ObjectId(20), "")));
+    assert_eq!(
+        Document::from_snapshot(s),
+        Err(SnapshotError::Duplicate(ObjectId(far)))
+    );
     // A story whose only blocks are empty containers has no paragraph.
     let mut s = doc::Snapshot {
         root,
