@@ -587,3 +587,46 @@ fn groups_are_clipped_and_transformed_in_the_pdf_too() {
     assert!(content.contains("W\nn"), "{content}");
     assert!(content.contains("0 -1 -1 0 216 288 cm"), "{content}");
 }
+
+/// Glyph runs and images whose source isn't in the structure, or that
+/// have none, are paragraphs and figures of their own after it, and their
+/// text still extracts.
+#[test]
+fn what_the_structure_lacks_comes_after_it() {
+    let mut page = page_from(7 * INCH, 4 * INCH, &LINES[..2], false, 0);
+    let mut extra = page_from(7 * INCH, 2 * INCH, &[("en", "Beyond the end")], false, 7);
+    extra.items.push(scene::Item::Image {
+        image: picture(),
+        rect: scene::Rect::new(INCH, INCH, INCH, INCH),
+        alt: Some("A loose picture".to_string()),
+        source: None,
+    });
+    page.place(&extra, Point::new(0, 2 * INCH));
+    let pdf = render_pdf::pdf(&[page], &paragraphs(2), None).expect("a PDF");
+    let found: Vec<String> = elements(&pdf)
+        .into_iter()
+        .map(|(kind, _)| kind)
+        .filter(|kind| matches!(kind.as_str(), "P" | "Figure"))
+        .collect();
+    assert_eq!(found, ["P", "P", "P", "Figure"]);
+    let text = squeeze(&pdf_extract::extract_text_from_mem(&pdf).expect("text extracts"));
+    assert!(text.contains("Beyondtheend"), "{text}");
+}
+
+/// A font that can't be read for embedding is an error, not a panic.
+#[test]
+fn a_font_that_cant_be_embedded_is_refused() {
+    let mut page = letter(&LINES[..1]);
+    for item in &mut page.items {
+        if let scene::Item::Glyphs(run) = item {
+            run.font = scene::Font {
+                data: std::sync::Arc::new(vec![0u8; 64]),
+                index: 0,
+            };
+        }
+    }
+    assert!(matches!(
+        render_pdf::pdf(&[page], &paragraphs(1), None),
+        Err(render_pdf::Error::Font { page: 0 })
+    ));
+}

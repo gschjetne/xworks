@@ -1,5 +1,7 @@
-//! PDF output of display lists, with fonts embedded and subset; printing goes
-//! through it (docs/ARCHITECTURE.md, section 10). It writes with krilla.
+//! PDF output of display lists, with fonts embedded and subset, for export
+//! and print: printing is "render to PDF, hand it to the system", so what
+//! prints is what's on screen (docs/ARCHITECTURE.md, section 10). It writes
+//! with krilla.
 //!
 //! [`pdf`] writes [`scene::Page`]s as a tagged PDF document, a page each,
 //! with the document's [`scene::Structure`]: its paragraphs, headings and
@@ -8,22 +10,50 @@
 //! (`L`, `LI`, `Lbl`, `LBody`), quotes (`BlockQuote`), code (`Code`) and
 //! tables (`Table`, `TR`, `TH`, `TD`) nest them.
 //!
-//! Invariants:
+//! # What a caller may rely on
 //!
-//! - Text stays text: glyphs are drawn from fonts embedded in the file,
+//! - **Pure.** No I/O, threads, clocks or environment (Clippy's
+//!   `crates/clippy.toml`), and it builds for WebAssembly (CI): it returns
+//!   the file's bytes for the caller to write.
+//! - **The same pages give the same bytes,** every time
+//!   (`tests/pdf.rs`, `the_same_pages_give_the_same_bytes`).
+//! - **Text stays text:** glyphs are drawn from fonts embedded in the file,
 //!   subset to the glyphs used, with the text each shows, so the PDF can
-//!   be searched and copied from.
-//! - Text is written in the order it reads, right-to-left runs included,
-//!   so it reads back in that order in any reader; fills and strokes are
-//!   artifacts, outside the reading order.
-//! - Images are figures, with their alternative text, written as the same
-//!   sRGB pixels the screen draws, so print matches the screen; but an
+//!   be searched and copied from (`tests/pdf.rs`,
+//!   `fonts_are_embedded_and_subset`).
+//! - **Text reads in order:** it's written in the order it reads,
+//!   right-to-left runs included, so it reads back in that order in any
+//!   reader, in every script; fills and strokes are artifacts, outside the
+//!   reading order (`tests/pdf.rs`, `text_extracts_back_as_typed`).
+//! - **Tagged:** the tag tree holds each block of the structure once, with
+//!   its text from every page it falls on, its language, and the blocks
+//!   nested in it; a block with nothing in it isn't tagged. Glyph runs and
+//!   images whose source isn't in the structure, or that have none, are
+//!   paragraphs and figures of their own after it (`tests/pdf.rs`,
+//!   `the_pdf_is_tagged_with_the_documents_structure`,
+//!   `blocks_nest_in_the_tags` and `what_the_structure_lacks_comes_after_it`).
+//! - **Images are figures,** with their alternative text, written as the
+//!   same sRGB pixels the screen draws, so print matches the screen; an
 //!   image that keeps the sRGB JPEG it was decoded from is written as that
-//!   file, unchanged, which keeps its size.
-//! - Groups are clips and transforms in the PDF too.
-//! - Each page is its display list's size, 12 700 layout units to the
-//!   point.
-//! - The same pages give the same bytes, every time.
+//!   file, unchanged, which keeps its size (`tests/pdf.rs`,
+//!   `images_are_figures_with_their_alternative_text` and
+//!   `a_kept_jpeg_is_written_as_it_is`).
+//! - **Groups** are clips and transforms in the PDF too (`tests/pdf.rs`,
+//!   `groups_are_clipped_and_transformed_in_the_pdf_too`).
+//! - **Each page is its display list's size,** 12 700 layout units to the
+//!   point (`tests/pdf.rs`, `pages_have_their_sizes`).
+//! - **Errors, not panics:** a page PDF can't hold, a font that can't be
+//!   embedded, or a document the writer refuses is an [`Error`]
+//!   (`tests/pdf.rs`, `a_page_pdf_cant_hold_is_refused` and
+//!   `a_font_that_cant_be_embedded_is_refused`).
+//!
+//! # What it doesn't promise
+//!
+//! - Pixels: a PDF viewer draws it, and its anti-aliasing and hinting are
+//!   its own.
+//! - PDF/A or PDF/UA conformance, though it's tagged as they ask.
+//! - Small files for pictures other than kept sRGB JPEGs: those are
+//!   written as their pixels.
 
 use std::collections::HashMap;
 use std::hash::{Hash, Hasher};
