@@ -594,9 +594,9 @@ Noted for after M1, not yet planned:
   some Arabic letters in the exit document's PDF, which pdftotext reads
   correctly.
 - **UX design opens F5** (project owner, 2026-10-22, review v0qk8k5d).
-- **zune-jpeg's fix** for the panic a damaged JPEG causes in its AVX2
-  code, taken when it's released (project owner, 2026-10-28, review
-  7fnfdhb5).
+- **zune-jpeg 0.5.16,** taken when it's released, for its fix of the panic
+  a damaged JPEG causes in its AVX2 code, which its third release
+  candidate has (project owner, 2026-10-28, review 7fnfdhb5).
   Before the toolkit grows more widgets, a design document and mockups
   drawn with `shot`, reviewed by the owner, settle what the tracks would
   otherwise each invent:
