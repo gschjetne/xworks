@@ -182,7 +182,8 @@
         // as a number. Tab stops are named by their position: one added
         // at a position, of a kind ("start", "center", "end" or
         // "decimal:" and its character); one moved from a position to
-        // another; one's kind set; one removed.
+        // another; one's kind set; its leader set, a character or none
+        // (""); one removed.
         (id: "paragraph-style", title: "Paragraph Style", arg: Some(Text)),
         (id: "font", title: "Font", arg: Some(Text)),
         (id: "size", title: "Size", arg: Some(Int)),
@@ -199,6 +200,7 @@
         // its zero (project owner, 2026-10-24, review 77nh3z47).
         (id: "tab-stop-place", title: "Place a Tab Stop", arg: Some(List)),
         (id: "tab-stop-kind", title: "Set a Tab Stop's Kind", arg: Some(List)),
+        (id: "tab-stop-leader", title: "Set a Tab Stop's Leader", arg: Some(List)),
         (id: "tab-stop-remove", title: "Remove a Tab Stop", arg: Some(Int)),
         // The page's size, by name, and a margin, by side ("top",
         // "bottom", "left" or "right") and length: the document's page

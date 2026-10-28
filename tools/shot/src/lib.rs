@@ -238,6 +238,20 @@ pub fn scenes() -> &'static [Scene] {
             pages: None,
         },
         Scene {
+            name: "chrome-leaders",
+            description: "a seed order whose tab stops have leaders, dashes, a line and dots, set from the Text tab, each shown on the ruler before its stop (M2's exit)",
+            ppi: 96.0,
+            page: chrome::leaders_light,
+            pages: None,
+        },
+        Scene {
+            name: "ruler-leaders-dark",
+            description: "the top of the same window, dark, the inspector shut: the ruler's leaders in the dark look",
+            ppi: 96.0,
+            page: chrome::ruler_leaders_dark,
+            pages: None,
+        },
+        Scene {
             name: "markdown-draft",
             description: "a Markdown file as it opens, in the draft view: every block and mark Markdown holds, a picture it links to, and what it keeps as written",
             ppi: 96.0,

@@ -151,6 +151,81 @@ pub(crate) fn ruler_paper_edge() -> Page {
     ruler(&["units-centimetres", "ruler-from-edge"])
 }
 
+/// A seed order on a new document, its lines' tab stops with leaders set
+/// from the Text tab (M2's exit, review 7fnfdhb5): dashes to a start stop
+/// at 4 cm, a line to an end stop at 11 cm, and dots to a decimal one at
+/// 15 cm. The caret is in its first line, whose stops the ruler shows,
+/// each leader before its mark; `dark`, as the system's look is.
+fn leaders(dark: bool) -> Window {
+    let mut window = new_document(
+        "Seed order",
+        &[
+            "Seed order",
+            "Beans\tBroad, Aquadulce\t2\t3.40",
+            "Peas\tKelvedon Wonder\t1\t2.95",
+            "Lettuce\tLittle Gem\t3\t1.80",
+            "Carrots\tEarly Nantes\t1\t12.25",
+        ],
+    );
+    window.update(Event::Theme { dark });
+    let key = |key, shift| Event::Key {
+        key,
+        modifiers: Modifiers {
+            primary: true,
+            shift,
+            ..Modifiers::default()
+        },
+    };
+    window.update(key(Key::Home, false));
+    window.update(Event::Command("style-heading-1".to_string()));
+    window.update(Event::Key {
+        key: Key::Down,
+        modifiers: Modifiers::default(),
+    });
+    window.update(key(Key::End, true));
+    let mm = text::units::MILLIMETRE;
+    for (at, kind, leader) in [
+        (40, "start", "-"),
+        (110, "end", "_"),
+        (150, "decimal:.", "."),
+    ] {
+        run(
+            &mut window,
+            "tab-stop-add",
+            vec![Arg::Int(at * mm), Arg::Text(kind.into())],
+        );
+        run(
+            &mut window,
+            "tab-stop-leader",
+            vec![Arg::Int(at * mm), Arg::Text(leader.into())],
+        );
+    }
+    // The caret at the first line's start.
+    window.update(key(Key::Home, false));
+    window.update(Event::Key {
+        key: Key::Down,
+        modifiers: Modifiers::default(),
+    });
+    window
+}
+
+/// The seed order with the inspector open on its Text tab: each stop's
+/// place, kind and leader.
+pub(crate) fn leaders_light() -> Page {
+    let mut window = leaders(false);
+    window.update(Event::Command("toggle-inspector".to_string()));
+    window.view()
+}
+
+/// The top of the seed order's window, dark, the inspector shut: the
+/// ruler's leaders in the dark look, and the lines they fill, 1280 by 240.
+pub(crate) fn ruler_leaders_dark() -> Page {
+    let view = leaders(true).view();
+    let mut top = Page::new(view.width, 240 * text::units::PIXEL);
+    top.items = view.items;
+    top
+}
+
 /// The command palette, open over the sample on pages, "head" typed, as
 /// `mockup-palette` shows it.
 pub(crate) fn palette() -> Page {

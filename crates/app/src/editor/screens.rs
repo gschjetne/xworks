@@ -31,7 +31,8 @@ use text::{Ligatures, TabStop};
 
 use super::Editor;
 use super::format::{
-    MOST, add_stop, line_height_label, move_stop, set_stop_kind, stop_kind, stop_label,
+    MOST, add_stop, leader_choices, line_height_label, move_stop, set_stop_kind, set_stop_leader,
+    stop_kind, stop_label,
 };
 
 /// The kinds the Style tab shows, in the order its list offers them: each
@@ -75,15 +76,6 @@ fn kind_of(code: &str) -> Option<StyleKind> {
 /// Line heights the Style tab offers, in thousandths of the font; 0 is as
 /// tall as the fonts make them.
 const LINE_HEIGHTS: &[i64] = &[0, 1000, 1150, 1200, 1250, 1350, 1500, 2000];
-
-/// The leaders a tab layout's stop can have: none, or a character, with
-/// what each is called.
-const LEADERS: [(&str, &str); 4] = [
-    ("", "No leader"),
-    (".", "Dots"),
-    ("-", "Dashes"),
-    ("_", "Line"),
-];
 
 /// What the Style tab shows: the caret's paragraph style, until the
 /// person chooses a style or a part, or a kind of them; and the screens
@@ -593,10 +585,7 @@ impl Editor {
                 let (Some(at), Some(leader)) = (int(0), text(1)) else {
                     return;
                 };
-                let leader = leader.chars().next().filter(|&c| story::valid_leader(c));
-                for stop in stops.iter_mut().filter(|s| s.position == at) {
-                    stop.leader = leader;
-                }
+                set_stop_leader(&mut stops, at, leader);
             }
             _ => {
                 let Some(at) = int(0) else { return };
@@ -1469,14 +1458,7 @@ impl Editor {
             if !options.contains(&kind) {
                 options.push(kind);
             }
-            let mut leaders: Vec<(String, String)> = LEADERS
-                .iter()
-                .map(|(c, l)| (c.to_string(), l.to_string()))
-                .collect();
-            let leader = stop.leader.map(String::from).unwrap_or_default();
-            if !leaders.iter().any(|(c, _)| *c == leader) {
-                leaders.push((leader.clone(), format!("Leader {leader}")));
-            }
+            let (leaders, leader) = leader_choices(stop.leader);
             sections.push(Section {
                 title: format!("Tab stop {}", k + 1),
                 rows: vec![
@@ -1519,13 +1501,7 @@ impl Editor {
                             "layout-stop-leader",
                             at,
                             writable,
-                            choice(
-                                leaders
-                                    .iter()
-                                    .map(|(c, l)| Choice::new(Arg::Text(c.clone()), l.clone()))
-                                    .collect(),
-                                leaders.iter().position(|(c, _)| *c == leader),
-                            ),
+                            choice(leaders, leader),
                         )],
                     ),
                 ],

@@ -1,7 +1,7 @@
 //! What the inspector and the ruler show of the selection, and the
 //! commands with arguments they run: a paragraph's style, alignment,
-//! spacing, line height, indents and tab stops, and its text's font, size
-//! and language.
+//! spacing, line height, indents and tab stops with their leaders, and its
+//! text's font, size and language.
 
 use chrome::{
     Arg, Choice, Control, ControlKind, Indents, Inspector, InspectorTab, Length, Row, Ruler,
@@ -101,6 +101,46 @@ pub(super) fn set_stop_kind(stops: &mut [TabStop], at: i64, kind: StopKind) {
     }
 }
 
+/// The leaders the inspector offers a tab stop, the Text tab a
+/// paragraph's and the Style tab a tab layout's: none, or a character,
+/// each as it's given to commands and what it's called.
+const LEADERS: [(&str, &str); 4] = [
+    ("", "No leader"),
+    (".", "Dots"),
+    ("-", "Dashes"),
+    ("_", "Line"),
+];
+
+/// The choices of a stop's leader, which is `leader`: none, dots, dashes
+/// or a line, and another character it has, as itself; and which it is.
+pub(super) fn leader_choices(leader: Option<char>) -> (Vec<Choice>, Option<usize>) {
+    let mut leaders: Vec<(String, String)> = LEADERS
+        .iter()
+        .map(|(c, l)| (c.to_string(), l.to_string()))
+        .collect();
+    let leader = leader.map(String::from).unwrap_or_default();
+    if !leaders.iter().any(|(c, _)| *c == leader) {
+        leaders.push((leader.clone(), format!("Leader {leader}")));
+    }
+    let selected = leaders.iter().position(|(c, _)| *c == leader);
+    (
+        leaders
+            .into_iter()
+            .map(|(c, l)| Choice::new(Arg::Text(c), l))
+            .collect(),
+        selected,
+    )
+}
+
+/// Gives the stop of `stops` at `at` the leader `typed` names: its
+/// character, if it's one a leader can be, or none, as for "".
+pub(super) fn set_stop_leader(stops: &mut [TabStop], at: i64, typed: &str) {
+    let leader = typed.chars().next().filter(|&c| story::valid_leader(c));
+    for stop in stops.iter_mut().filter(|s| s.position == at) {
+        stop.leader = leader;
+    }
+}
+
 fn control(command: &str, args: Vec<Arg>, enabled: bool, kind: ControlKind) -> Control {
     Control {
         command: command.to_string(),
@@ -148,21 +188,23 @@ impl Editor {
     }
 
     /// Changes the tab stops of every paragraph selected, each from its
-    /// own, with `change`.
+    /// own, with `change`, as one edit; a paragraph whose stops it leaves
+    /// as they were is left as it was.
     fn change_tabs(&mut self, name: &str, change: impl Fn(&mut Vec<TabStop>)) {
         let ops = self
             .selected_paragraphs()
             .into_iter()
-            .map(|paragraph| {
+            .filter_map(|paragraph| {
                 let p = self.paragraph(paragraph);
-                let mut stops = story::paragraph_tabs(p, &self.sheet).stops;
+                let before = story::paragraph_tabs(p, &self.sheet).stops;
+                let mut stops = before.clone();
                 change(&mut stops);
                 stops.retain(|s| (0..=MOST).contains(&s.position));
-                Op::SetParaProp {
+                (stops != before).then(|| Op::SetParaProp {
                     paragraph,
                     key: keys::TABS.to_string(),
                     value: Some(Value::Text(story::format_tabs(&stops))),
-                }
+                })
             })
             .collect();
         self.commit(name, ops, false);
@@ -278,6 +320,11 @@ impl Editor {
             "tab-stop-kind" => {
                 if let (Some(at), Some(kind)) = (int(0), text(1).and_then(StopKind::from_id)) {
                     self.change_tabs("Tab Stop", |stops| set_stop_kind(stops, at, kind));
+                }
+            }
+            "tab-stop-leader" => {
+                if let (Some(at), Some(leader)) = (int(0), text(1)) {
+                    self.change_tabs("Leader", |stops| set_stop_leader(stops, at, leader));
                 }
             }
             "tab-stop-remove" => {
@@ -578,6 +625,7 @@ impl Editor {
             .iter()
             .map(|stop| {
                 let kind = stop_kind(stop.align);
+                let leader = leader_choices(stop.leader);
                 let mut options: Vec<StopKind> = kinds.to_vec();
                 if !options.contains(&kind) {
                     options.push(kind);
@@ -605,6 +653,16 @@ impl Editor {
                                     .iter()
                                     .map(|k| Choice::new(Arg::Text(k.id()), stop_label(*k)))
                                     .collect(),
+                                plain: true,
+                            },
+                        ),
+                        control(
+                            "tab-stop-leader",
+                            vec![Arg::Int(stop.position)],
+                            writable,
+                            ControlKind::Choice {
+                                selected: leader.1,
+                                choices: leader.0,
                                 plain: true,
                             },
                         ),
