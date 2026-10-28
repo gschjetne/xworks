@@ -1,4 +1,6 @@
-//! Test support for every crate: images, PNG output and golden records.
+//! Test support for every crate: images, PNG output and golden records,
+//! and the files tests read from the workspace (docs/ARCHITECTURE.md,
+//! section 13). Only tests and tools use it.
 //!
 //! - [`Image`]: straight-alpha RGBA pixels, 8 bits a channel, row by row,
 //!   the form every render is compared in.
@@ -11,17 +13,46 @@
 //!   `spec/markdown/commonmark.ron` lists them.
 //! - [`hyphenation`]: the hyphenation patterns, as
 //!   `spec/text/hyphenation.ron` lists them.
-//! - [`specs`]: the RON files in a directory of `spec/`, for tests to read.
+//! - [`specs`] and [`spec_bytes`]: the files in a directory of `spec/`, for
+//!   tests to read, and [`icons`], Lucide's.
 //! - [`scratch_dir`]: a fresh, empty directory under `target/` for a test's
 //!   files.
 //!
 //! testkit is an impure crate: it reads and writes files.
 //!
-//! Invariants:
+//! # What a caller may rely on
 //!
-//! - An image's pixel buffer always holds exactly width × height × 4
-//!   bytes.
-//! - The same pixels always give the same hash, on every platform.
+//! - **An image's pixel buffer** always holds exactly width × height × 4
+//!   bytes, and filling a rectangle stays within it (`image`'s unit tests
+//!   `from_rgba_checks_the_length`, `fill_rect_is_clipped_to_the_image` and
+//!   `fill_rect_outside_the_image_changes_nothing`); PNG written reads back
+//!   as the same pixels (`png_round_trips`).
+//! - **The same pixels give the same hash,** on every platform, and the
+//!   size is in it, so the same pixels in another shape hash otherwise
+//!   (`golden`'s unit tests `hash_covers_size_then_pixels` and
+//!   `same_pixels_in_another_shape_hash_differently`); a record matches
+//!   its image and no other, reads back as it was written, and is refused
+//!   where its file's name isn't its scene's (`a_record_matches_its_image_and_nothing_else`,
+//!   `records_round_trip_through_ron` and `load_all_rejects_a_misnamed_record`).
+//! - **Files are found from the workspace's root,** or from `XWORKS_ROOT`
+//!   where it's set, as for a Windows build run from WSL; what's listed is
+//!   sorted by name, and what's missing is an [`Error`] saying where, and
+//!   for a font or a pattern file how to fetch it (unit test
+//!   `specs_are_sorted_by_name_and_a_missing_folder_says_where`).
+//! - **A scratch directory** is empty when it's given, whatever an earlier
+//!   run left in it (unit test `a_scratch_directory_starts_empty`).
+//! - **PDF text** reads as typed in every script, where pdf-extract
+//!   misreads Arabic (`render-pdf`'s `tests/pdf.rs`,
+//!   `text_extracts_back_as_typed`).
+//!
+//! # What it doesn't promise
+//!
+//! - That fetched files are what their specs' hashes say: `fetch-fonts`
+//!   checks those (`fetch-fonts --check`).
+//! - Separate scratch directories for tests that run at once: each test
+//!   names its own.
+//! - A stable API: it serves the workspace's tests and tools, and changes
+//!   with them.
 
 pub mod commonmark;
 mod error;
@@ -136,4 +167,30 @@ pub fn scratch_dir(name: &str) -> Result<PathBuf, Error> {
         source,
     })?;
     Ok(dir)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn a_scratch_directory_starts_empty() {
+        let dir = scratch_dir("testkit-scratch").unwrap();
+        std::fs::write(dir.join("left.txt"), "left over").unwrap();
+        std::fs::create_dir_all(dir.join("deeper/still")).unwrap();
+        let again = scratch_dir("testkit-scratch").unwrap();
+        assert_eq!(again, dir);
+        assert_eq!(std::fs::read_dir(&again).unwrap().count(), 0);
+    }
+
+    #[test]
+    fn specs_are_sorted_by_name_and_a_missing_folder_says_where() {
+        let golden = specs("golden").unwrap();
+        assert!(!golden.is_empty());
+        assert!(golden.windows(2).all(|w| w[0].0 < w[1].0));
+        match specs("no-such-folder") {
+            Err(Error::Io { path, .. }) => assert!(path.ends_with("spec/no-such-folder")),
+            other => panic!("{other:?}"),
+        }
+    }
 }
