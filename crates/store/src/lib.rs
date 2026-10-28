@@ -1,5 +1,9 @@
 //! The `.xw` file format: reading, writing, history, and the canonical text
-//! dump (docs/ARCHITECTURE.md, section 6; spec/format/README.md).
+//! dump (docs/ARCHITECTURE.md, section 6; spec/format/README.md). A
+//! document is an SQLite database of a fixed, versioned schema: its
+//! snapshots and log of transactions, in postcard's encoding, its named
+//! versions, and the fonts and pictures it carries. Saving is continuous:
+//! each transaction is written as it's committed.
 //!
 //! - [`Store::create`] writes a new document; [`Store::open`] reads one, at
 //!   its last committed transaction, with its undo history, to write to
@@ -20,19 +24,74 @@
 //!
 //! store is an impure crate: it reads and writes files.
 //!
-//! Invariants:
+//! # What a caller may rely on
 //!
-//! - A file under a document's name is always a finished one, and always
-//!   opens at a committed transaction, whenever the writer stops.
-//! - One program at a time writes to a document: the one holding its
-//!   lock. Any other opens it read-only and can say who holds it, where
-//!   the system lets it read that. The system lets a lock go when its
-//!   program ends, however it ends.
-//! - A file from a newer schema is never written to.
-//! - A file from an older schema is upgraded when it's opened, all at once
-//!   or not at all, and then opens as it did before.
-//! - Nothing read from a file is trusted: what doesn't hold together is an
-//!   error, never a panic or a broken document.
+//! - **A file is always whole.** A file under a document's name is always
+//!   a finished one, and always opens at a committed transaction, with
+//!   every transaction its writer saw committed, whenever the writer stops
+//!   (`tests/crash.rs`, `a_crash_loses_nothing_committed`, which kills a
+//!   writer at a thousand moments). A new file is written beside its name
+//!   and renamed into place.
+//! - **Reopening gives the same document,** dump, renders and undo
+//!   history, a run of typing still undoing as one; equal documents with
+//!   equal histories dump identically (`tests/store.rs`,
+//!   `reopening_gives_the_same_dump_and_the_same_renders` and
+//!   `typing_continues_and_undoes_as_one_after_reopening`). A snapshot every
+//!   [`SNAPSHOT_EVERY`] entries bounds the replay, and named versions go
+//!   back to what they named
+//!   (`snapshots_bound_the_replay_and_versions_go_back`).
+//! - **One program at a time writes to a document:** the one holding its
+//!   lock. Any other opens it read-only and can say who holds it, where the
+//!   system lets it read that; the system lets a lock go when its program
+//!   ends, however it ends; a document moved while it's open takes its lock
+//!   along; and the lock file is hidden (`tests/lock.rs`; `tests/files.rs`,
+//!   `a_lock_in_a_folder_of_locks`, for Markdown files' locks).
+//! - **A file from a newer schema is never written to:** it opens
+//!   read-only, writes fail with [`Error::ReadOnly`], and its bytes stay as
+//!   they were (`tests/store.rs`, `a_newer_schema_opens_read_only` and
+//!   `a_newer_file_is_left_byte_for_byte`).
+//! - **A file from an older schema is upgraded** when it's opened, all at
+//!   once or not at all, and then opens as it did before: M1's and M2's
+//!   files, kept as fixtures, open with their own dumps
+//!   (`tests/fixtures.rs`, `m1s_file_opens_with_its_text_and_history`,
+//!   `m2s_file_opens_with_its_text_and_history`,
+//!   `older_files_upgrade_to_a_new_files_tables`,
+//!   `a_damaged_older_file_is_left_as_it_was` and
+//!   `schema_2s_stylesheet_is_neutral_at_version_1`).
+//! - **Nothing read is trusted:** a file that isn't a document, or whose
+//!   snapshots, log, pictures or fonts don't hold together, is an
+//!   [`Error`], never a panic or a broken document; a picture whose bytes
+//!   aren't what its ID says is damage (`tests/store.rs`,
+//!   `what_isnt_a_document_is_refused` and
+//!   `damage_is_an_error_not_a_document`; `tests/versions.rs`,
+//!   `pictures_are_kept_once_by_their_hash`; the `store_file` fuzz target).
+//! - **The encoding is pinned:** operations, blocks, snapshots and
+//!   stylesheets encode to the same bytes until a new schema
+//!   (`tests/store.rs`, `the_encoding_is_pinned` and its siblings).
+//! - **Pictures and fonts are kept once,** by the SHA-256 of their bytes,
+//!   and pictures are never deleted, as undoing may bring one back; a
+//!   version copied out carries the fonts and the pictures it shows, and
+//!   one opened only to read can't be written (`tests/versions.rs`,
+//!   `pictures_are_kept_once_by_their_hash`,
+//!   `fonts_are_kept_once_by_their_hash`,
+//!   `a_named_version_is_copied_out_as_a_document_of_its_own` and
+//!   `a_version_opened_to_read_cant_be_written`).
+//! - **A file written whole** is written beside itself, flushed, and
+//!   renamed into place, through a symbolic link to the file it names,
+//!   with its permissions; its [`Stamp`] changes when another program
+//!   writes over it or puts another file in its place (`tests/files.rs`,
+//!   `a_file_written_whole_and_its_stamp` and `a_file_written_through_a_link`).
+//!
+//! # What it doesn't promise
+//!
+//! - Surviving a power cut whole: SQLite runs in write-ahead-log mode with
+//!   `synchronous = NORMAL`, so a commit survives a crash of the program,
+//!   and a power cut can lose the last transactions, never the file.
+//! - Locks on file systems that don't keep them, as some network shares
+//!   don't.
+//! - Sharing a [`Store`] between threads: one is used from one thread at a
+//!   time.
+//! - That a document it's given holds together: `doc` keeps that.
 
 mod file;
 mod lock;

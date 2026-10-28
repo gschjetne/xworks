@@ -74,6 +74,31 @@ fn pictures_are_kept_once_by_their_hash() {
     assert!(opened.store.image(&b).expect("read").is_some());
 }
 
+/// A font the document carries is kept once, by the SHA-256 of its bytes,
+/// however often it's embedded, and reads back as it was.
+#[test]
+fn fonts_are_kept_once_by_their_hash() {
+    let dir = scratch("fonts");
+    let path = dir.join("fonts.xw");
+    let mut store = Store::create(&path, &Document::new(), "story").expect("created");
+    let a = store.embed_font(b"one font's bytes").expect("embedded");
+    let again = store
+        .embed_font(b"one font's bytes")
+        .expect("embedded again");
+    let b = store.embed_font(b"another font's bytes").expect("embedded");
+    assert_eq!(a, again, "the same bytes, the same font");
+    assert_ne!(a, b);
+    assert_eq!(a, store::image_id(b"one font's bytes"), "its SHA-256");
+    drop(store);
+    let opened = Store::open(&path).expect("it opens");
+    let mut want = vec![
+        (a, b"one font's bytes".to_vec()),
+        (b, b"another font's bytes".to_vec()),
+    ];
+    want.sort();
+    assert_eq!(opened.store.fonts().expect("listed"), want);
+}
+
 #[test]
 fn a_document_without_pictures_dumps_as_before() {
     let dir = scratch("no-images");

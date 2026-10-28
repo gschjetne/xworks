@@ -282,6 +282,37 @@ fn a_newer_schema_opens_read_only() {
     );
 }
 
+/// A file from a newer schema is never written to: opened, read, refused
+/// writes and closed, it's the same bytes as before.
+#[test]
+fn a_newer_file_is_left_byte_for_byte() {
+    let dir = scratch("newer-bytes");
+    let path = dir.join("newer.xw");
+    let mut document = Document::new();
+    let mut store = Store::create(&path, &document, "story").expect("created");
+    let t = typing(&mut document, 0, "Written by a newer xWorks.");
+    store
+        .append(Entry::Commit(&t), &document)
+        .expect("appended");
+    drop(store);
+    let connection = Connection::open(&path).expect("SQLite opens it");
+    connection
+        .pragma_update(None, "user_version", store::SCHEMA + 1)
+        .expect("set");
+    drop(connection);
+    let before = std::fs::read(&path).expect("the file");
+
+    let mut opened = Store::open(&path).expect("it opens");
+    let t = typing(&mut document, 0, " More.");
+    assert!(opened.store.append(Entry::Commit(&t), &document).is_err());
+    assert!(opened.store.name_version("No").is_err());
+    assert!(opened.store.add_image("png", b"not written").is_err());
+    let _ = opened.store.document_at(opened.store.seq());
+    drop(opened);
+    store::dump(&path).expect("it dumps");
+    assert_eq!(std::fs::read(&path).expect("the file"), before);
+}
+
 #[test]
 fn what_isnt_a_document_is_refused() {
     let dir = scratch("refused");
