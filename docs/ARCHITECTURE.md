@@ -266,9 +266,9 @@ target.
 - **`markdown`** (S1): Markdown files as themselves. A file untouched is
   written back byte for byte, an edit changes only what it edited, what's
   written reads back as the same story, and what Markdown can't hold is
-  refused rather than lost. Nothing walks the story by recursion, but
-  reading takes time in the square or cube of how deep blocks nest, a
-  fault stage 8 found.
+  refused rather than lost. Nothing walks the story by recursion, and
+  reading takes time in the file's size however deep its blocks nest,
+  which stage 8 found it didn't, and made so.
 
 The generic shell and the tools are programs, not crates to build on;
 each has a short doc at the head of its `main.rs` saying what it does and

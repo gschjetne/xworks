@@ -73,14 +73,15 @@
 //!   stack: quotes and lists nested far deeper than a small stack could
 //!   recurse through read, write back and edit (`tests/outside.rs`,
 //!   `nesting_never_exhausts_the_stack`).
+//! - **Reading takes time in the file's size,** however deep its blocks
+//!   nest, as pulldown-cmark's does: a line's start and end are found in
+//!   an index of lines, and what a container's line holds before its
+//!   blocks is kept with the container, never looked for again for each
+//!   container inside it (`tests/outside.rs`,
+//!   `reading_takes_time_in_the_size_not_the_depth`).
 //!
 //! # What it doesn't promise
 //!
-//! - Reading in time proportional to the file: reading takes time in the
-//!   square of how deep quotes nest and in the cube of how deep lists do,
-//!   so a few kilobytes of `- - - …` take a minute and more
-//!   (`tests/outside.rs`, `reading_takes_time_in_the_size_not_the_depth`,
-//!   ignored as failing).
 //! - Extensions beyond GitHub's tables, strikethrough, task lists,
 //!   autolinks and alerts: others are kept as they were written, as
 //!   source, not understood.
@@ -96,6 +97,7 @@ mod write;
 
 use std::collections::HashMap;
 use std::ops::Range;
+use std::sync::Arc;
 
 use doc::{Document, ObjectId};
 
@@ -280,9 +282,70 @@ pub(crate) struct Source {
     pub prev: Option<ObjectId>,
     /// The list items whose markers are on its first line, innermost
     /// first: those it's the first block of.
-    pub first_of: Vec<ObjectId>,
+    pub first_of: Items,
     /// How it was written.
     pub syntax: Syntax,
+}
+
+/// List items, innermost first, as a list shared with those it goes on
+/// from: a block's items are its container's and maybe one more, so items
+/// nested on one line share theirs rather than each copy a longer list,
+/// which would take room and time in the square of how deep they nest.
+#[derive(Clone, Default)]
+pub(crate) struct Items(Option<Arc<ItemsNode>>);
+
+struct ItemsNode {
+    id: ObjectId,
+    rest: Items,
+}
+
+impl Items {
+    /// `id`, then these.
+    pub(crate) fn with(&self, id: ObjectId) -> Items {
+        Items(Some(Arc::new(ItemsNode {
+            id,
+            rest: self.clone(),
+        })))
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.0.is_none()
+    }
+
+    /// The items, innermost first.
+    pub(crate) fn iter(&self) -> impl Iterator<Item = ObjectId> + '_ {
+        std::iter::successors(self.0.as_deref(), |node| node.rest.0.as_deref()).map(|n| n.id)
+    }
+
+    pub(crate) fn contains(&self, id: &ObjectId) -> bool {
+        self.iter().any(|i| i == *id)
+    }
+}
+
+impl PartialEq<Items> for Vec<ObjectId> {
+    fn eq(&self, items: &Items) -> bool {
+        self.iter().copied().eq(items.iter())
+    }
+}
+
+impl std::fmt::Debug for Items {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_list().entries(self.iter()).finish()
+    }
+}
+
+impl Drop for Items {
+    /// One node at a time, as dropping each in the next's drop would
+    /// recurse as deep as items nest.
+    fn drop(&mut self) {
+        let mut next = self.0.take();
+        while let Some(node) = next {
+            next = match Arc::try_unwrap(node) {
+                Ok(mut node) => node.rest.0.take(),
+                Err(_) => None,
+            };
+        }
+    }
 }
 
 /// How a block was written.

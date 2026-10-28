@@ -10,7 +10,9 @@ use doc::{Block, Document, Kind, Object, ObjectId, Paragraph, Props, Run, Snapsh
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Parser, Tag, TagEnd};
 use story::{OBJECT, keys};
 
-use crate::{File, Habits, InlineHabits, OPTIONS, Read, Reference, Source, Syntax, TextLine};
+use crate::{
+    File, Habits, InlineHabits, Items, OPTIONS, Read, Reference, Source, Syntax, TextLine,
+};
 
 /// What reading needs from outside the file.
 pub struct Settings<'a> {
@@ -221,8 +223,10 @@ fn ends_line(bytes: &[u8], i: usize) -> bool {
 }
 
 /// Where the line holding byte `at` of `text` starts, wherever in a
-/// character `at` is.
-pub(crate) fn line_start(text: &str, at: usize) -> usize {
+/// character `at` is, found by looking back along it, as [`LineIndex`]
+/// finds it at once.
+#[cfg(test)]
+fn line_start(text: &str, at: usize) -> usize {
     let bytes = text.as_bytes();
     (0..at.min(bytes.len()))
         .rev()
@@ -250,8 +254,74 @@ pub(crate) fn without_ending(text: &str, at: usize) -> usize {
     }
 }
 
-/// The whole lines of `range` of `text`, from its first line's start to
-/// its last's line ending, blank lines at its end left out.
+/// Where each line of a text starts, for finding the line any byte is on
+/// at once, rather than by looking along it for its start or end, which
+/// would take time in the line's length each time: a line of containers
+/// nested deep is looked at once for each.
+struct LineIndex {
+    /// Each line's start, in order: 0, and after each line ending.
+    starts: Vec<usize>,
+    len: usize,
+}
+
+impl LineIndex {
+    fn new(text: &str) -> LineIndex {
+        let bytes = text.as_bytes();
+        let mut starts = vec![0];
+        starts.extend(
+            (0..bytes.len())
+                .filter(|&i| ends_line(bytes, i))
+                .map(|i| i + 1),
+        );
+        LineIndex {
+            starts,
+            len: bytes.len(),
+        }
+    }
+
+    /// How many lines the text has, counting an empty last one.
+    fn count(&self) -> usize {
+        self.starts.len()
+    }
+
+    /// Where the line holding byte `at` starts, wherever in a character
+    /// `at` is.
+    fn start(&self, at: usize) -> usize {
+        let at = at.min(self.len);
+        self.starts[self.starts.partition_point(|&s| s <= at) - 1]
+    }
+
+    /// Where the line holding byte `at` ends, after its line ending, as
+    /// [`line_end`] finds it.
+    fn end(&self, at: usize) -> usize {
+        let at = at.min(self.len);
+        self.starts
+            .get(self.starts.partition_point(|&s| s <= at))
+            .copied()
+            .unwrap_or(self.len)
+    }
+
+    /// The whole lines of `range` of `text`, the text indexed, from its
+    /// first line's start to its last's line ending, blank lines at its end
+    /// left out.
+    fn whole(&self, text: &str, range: &Range<usize>) -> Range<usize> {
+        let start = self.start(range.start);
+        let end = text[..range.end.min(text.len())]
+            .trim_end_matches([' ', '\t', '\r', '\n'])
+            .len()
+            .max(start);
+        let end = if end == start && range.end <= start {
+            start
+        } else {
+            self.end(end.saturating_sub(1).max(start))
+        };
+        start..end.max(start)
+    }
+}
+
+/// The whole lines of `range` of `text`, as [`LineIndex::whole`] finds
+/// them, by looking along the text.
+#[cfg(test)]
 fn whole_lines(text: &str, range: &Range<usize>) -> Range<usize> {
     let start = line_start(text, range.start);
     let end = text[..range.end.min(text.len())]
@@ -302,7 +372,18 @@ struct Frame {
     last_end: usize,
     /// How wide what a list item puts before each of its lines is.
     width: usize,
-    first_of: Vec<ObjectId>,
+    first_of: Items,
+    /// Where its line starts.
+    line: usize,
+    /// The items a block starting on its line as its first would be the
+    /// first block of, innermost first: it, if it's an item, and those
+    /// around it on its line that it's the first block of
+    /// (`Builder::first_of`).
+    on_line: Items,
+    /// Where what it and the containers around it put at the start of a
+    /// line ends, for the line last asked about: the line's start, and the
+    /// end, none if the line doesn't have it (`Builder::indent_of`).
+    prefix: Option<(usize, Option<usize>)>,
     syntax: Syntax,
     /// A table's columns' alignments.
     aligns: Vec<Alignment>,
@@ -358,7 +439,7 @@ struct Para {
     /// Where the line being read starts its text, and its first
     /// character.
     line: Option<(usize, u32)>,
-    first_of: Vec<ObjectId>,
+    first_of: Items,
     syntax: Syntax,
     /// How it writes its marks, line breaks and links.
     habits: InlineHabits,
@@ -415,6 +496,10 @@ fn style_by(sheet: &[(ObjectId, Object)], role: &str, key: &str, value: Value) -
 
 struct Builder<'a> {
     text: &'a str,
+    /// Where its lines start.
+    index: LineIndex,
+    /// How many quotes are open.
+    quotes: usize,
     sheet: &'a [(ObjectId, Object)],
     /// The sheet's styles paragraphs take: body text's, code's, each
     /// heading level's, and a table's header row's, found once.
@@ -454,11 +539,15 @@ impl<'a> Builder<'a> {
         language: Option<String>,
         start: usize,
     ) -> Builder<'a> {
+        let index = LineIndex::new(text);
         // Room for about as many objects as the file has lines, so their
         // lists rarely grow as they're read.
-        let lines = text.bytes().filter(|&b| b == b'\n').count() + 1;
+        let lines = index.count();
+        let line = index.start(start);
         Builder {
             text,
+            index,
+            quotes: 0,
             sheet,
             body: story::default_style_id(sheet),
             code: style_by(sheet, "code", keys::CODE, Value::Bool(true)),
@@ -496,7 +585,10 @@ impl<'a> Builder<'a> {
                 cursor: start,
                 last_end: start,
                 width: 0,
-                first_of: Vec::new(),
+                first_of: Items::default(),
+                line,
+                on_line: Items::default(),
+                prefix: None,
                 syntax: Syntax::Made,
                 aligns: Vec::new(),
                 numbers: Vec::new(),
@@ -526,7 +618,29 @@ impl<'a> Builder<'a> {
     /// How far the marker of a list item at `at` is indented, after what
     /// the containers around its list put on its line; none where that
     /// can't be told, as with tabs.
-    fn indent_of(&self, at: usize) -> Option<usize> {
+    fn indent_of(&mut self, at: usize) -> Option<usize> {
+        let indent = self.indent_kept(at);
+        #[cfg(test)]
+        assert_eq!(indent, self.indent_by_looking(at), "the indent at {at}");
+        indent
+    }
+
+    fn indent_kept(&mut self, at: usize) -> Option<usize> {
+        let n = self.stack.len();
+        let pos = if n >= 3 {
+            self.prefix_end(n - 2, self.index.start(at))?
+        } else {
+            self.index.start(at)
+        };
+        let before = self.text.get(pos..at)?;
+        before.bytes().all(|b| b == b' ').then_some(before.len())
+    }
+
+    /// What [`Builder::indent_of`] finds, found by looking along the line
+    /// through every container, as it was before containers kept what
+    /// they found: for the unit tests to check it by.
+    #[cfg(test)]
+    fn indent_by_looking(&self, at: usize) -> Option<usize> {
         let text = self.text;
         let mut pos = line_start(text, at);
         let n = self.stack.len();
@@ -563,10 +677,11 @@ impl<'a> Builder<'a> {
         before.bytes().all(|b| b == b' ').then_some(before.len())
     }
 
-    /// The items whose markers are on the first line of a block starting
-    /// at `at` in the innermost container: those it's the first block of,
-    /// and whose marker is on its line, innermost first.
-    fn first_of(&self, at: usize) -> Vec<ObjectId> {
+    /// What [`Builder::first_of`] finds, found by looking through the
+    /// containers, as it was before each kept its line's items: for the
+    /// unit tests to check it by.
+    #[cfg(test)]
+    fn first_of_by_looking(&self, at: usize) -> Vec<ObjectId> {
         let line = line_start(self.text, at);
         let mut out = Vec::new();
         for frame in self.stack.iter().rev() {
@@ -581,6 +696,76 @@ impl<'a> Builder<'a> {
             }
         }
         out
+    }
+
+    /// Where what the containers around frame `k`, and it, put at the
+    /// start of the line starting at `line` ends, as far as the line has
+    /// it: what each quote puts, up to three spaces, its `>` and a space
+    /// after it, and each item its width. Each frame keeps its answer for
+    /// the line last asked about, so items nested on one line take time in
+    /// how many there are, not in its square.
+    ///
+    /// It needn't know where the item it's asked for starts, which only
+    /// stops a prefix short: an item's marker isn't a space, so a prefix
+    /// never takes it for one, and one running past it is too long.
+    fn prefix_end(&mut self, k: usize, line: usize) -> Option<usize> {
+        // Down to the innermost frame that knows, or the story's.
+        let mut from = k;
+        while from > 0 && self.stack[from].prefix.is_none_or(|(l, _)| l != line) {
+            from -= 1;
+        }
+        let mut pos = match self.stack[from].prefix {
+            Some((l, pos)) if from > 0 && l == line => pos,
+            _ => Some(line),
+        };
+        let text = self.text;
+        for frame in &mut self.stack[from + 1..=k] {
+            pos = pos.and_then(|pos| match frame.kind {
+                FrameKind::Quote => {
+                    let rest = text.get(pos..)?;
+                    let lead = rest.len() - rest.trim_start_matches(' ').len();
+                    if lead > 3 || !text[pos + lead..].starts_with('>') {
+                        return None;
+                    }
+                    let pos = pos + lead + 1;
+                    if text[pos..].starts_with('\t') {
+                        return None;
+                    }
+                    Some(pos + usize::from(text[pos..].starts_with(' ')))
+                }
+                FrameKind::Item => {
+                    let pos = pos + frame.width;
+                    text.is_char_boundary(pos).then_some(pos)
+                }
+                _ => Some(pos),
+            });
+            frame.prefix = Some((line, pos));
+        }
+        pos
+    }
+
+    /// The items whose markers are on the first line of a block starting
+    /// at `at` in the innermost container: those it's the first block of,
+    /// and whose marker is on its line, innermost first. They're the items
+    /// on the container's line, if it has no blocks yet and the block
+    /// starts on that line: each frame finds its own when it opens, from
+    /// those of the frame around it, as that can't change while it's open.
+    fn first_of(&self, at: usize) -> Items {
+        let top = self.stack.last().expect("the story is always open");
+        let items = if top.children.is_empty()
+            && top.kind != FrameKind::Root
+            && top.line == self.index.start(at)
+        {
+            top.on_line.clone()
+        } else {
+            Items::default()
+        };
+        #[cfg(test)]
+        assert!(
+            self.first_of_by_looking(at) == items,
+            "the items a block at {at} is first of"
+        );
+        items
     }
 
     /// The style a heading of `level` takes.
@@ -644,7 +829,7 @@ impl<'a> Builder<'a> {
         id: ObjectId,
         object: Object,
         lines: Range<usize>,
-        first_of: Vec<ObjectId>,
+        first_of: Items,
         syntax: Syntax,
     ) {
         let frame = self.stack.last_mut().expect("the story is always open");
@@ -714,23 +899,19 @@ impl<'a> Builder<'a> {
         if upto <= from {
             return;
         }
-        let depth = self
-            .stack
-            .iter()
-            .filter(|f| matches!(f.kind, FrameKind::Quote))
-            .count();
+        let depth = self.quotes;
         let mut at = from;
         let mut run: Option<(usize, usize, String)> = None;
         let mut found: Vec<(Range<usize>, String)> = Vec::new();
         while at < upto {
-            let end = line_end(self.text, at).min(upto);
+            let end = self.index.end(at).min(upto);
             let line = &self.text[at..without_ending(self.text, end).max(at)];
             let content = strip_prefixes(line, depth);
             // Blank, or what pulldown-cmark takes for blank, such as a line
             // of vertical tabs.
             if content.trim().is_empty() {
                 if let Some((start, last, text)) = run.take() {
-                    found.push((line_start(self.text, start)..last, text));
+                    found.push((self.index.start(start)..last, text));
                 }
             } else {
                 match &mut run {
@@ -745,7 +926,7 @@ impl<'a> Builder<'a> {
             at = end;
         }
         if let Some((start, last, text)) = run {
-            found.push((line_start(self.text, start)..last, text));
+            found.push((self.index.start(start)..last, text));
         }
         for (lines, text) in found {
             self.raw("definition", text, lines);
@@ -772,7 +953,9 @@ impl<'a> Builder<'a> {
                 return;
             }
             self.gap(
-                line_start(self.text, range.start).max(self.stack.last().expect("open").cursor),
+                self.index
+                    .start(range.start)
+                    .max(self.stack.last().expect("open").cursor),
             );
             let style = self.body_style();
             self.open(ParaKind::Paragraph, style, range.clone());
@@ -926,12 +1109,12 @@ impl<'a> Builder<'a> {
 
     /// Ends the line of text being read, after a soft or a hard break.
     fn end_line(&mut self, soft: bool) {
-        let text = self.text;
+        let (text, index) = (self.text, &self.index);
         let Some(p) = &mut self.para else {
             return;
         };
         if let Some((content, first)) = p.line.take() {
-            let whole = line_start(text, content)..without_ending(text, line_end(text, content));
+            let whole = index.start(content)..without_ending(text, index.end(content));
             p.lines.push(TextLine {
                 whole,
                 content,
@@ -971,7 +1154,7 @@ impl<'a> Builder<'a> {
             }
             _ => {}
         }
-        let lines = whole_lines(self.text, &p.range);
+        let lines = self.index.whole(self.text, &p.range);
         if p.kind == ParaKind::Paragraph {
             self.alert(&mut p);
         }
@@ -1018,7 +1201,7 @@ impl<'a> Builder<'a> {
         };
         if frame.kind != FrameKind::Quote
             || !frame.children.is_empty()
-            || line_start(self.text, frame.range.start) != line_start(self.text, first.content)
+            || self.index.start(frame.range.start) != self.index.start(first.content)
         {
             return;
         }
@@ -1041,10 +1224,18 @@ impl<'a> Builder<'a> {
     fn push_frame(&mut self, kind: FrameKind, range: Range<usize>, props: Props, syntax: Syntax) {
         let id = self.id();
         let first_of = self.first_of(range.start);
+        let line = self.index.start(range.start);
         let cursor = match kind {
             FrameKind::Item => item_content(self.text, range.start),
-            _ => line_start(self.text, range.start),
+            _ => line,
         };
+        let on_line = match kind {
+            FrameKind::Item => first_of.with(id),
+            _ => first_of.clone(),
+        };
+        if kind == FrameKind::Quote {
+            self.quotes += 1;
+        }
         self.stack.push(Frame {
             id,
             kind,
@@ -1055,6 +1246,9 @@ impl<'a> Builder<'a> {
             last_end: cursor,
             width: 0,
             first_of,
+            line,
+            on_line,
+            prefix: None,
             syntax,
             aligns: Vec::new(),
             numbers: Vec::new(),
@@ -1070,6 +1264,9 @@ impl<'a> Builder<'a> {
         let end = self.stack.last().expect("open").range.end;
         self.gap(end);
         let mut frame = self.stack.pop().expect("a container to end");
+        if frame.kind == FrameKind::Quote {
+            self.quotes -= 1;
+        }
         if matches!(frame.kind, FrameKind::Item | FrameKind::Quote) && frame.children.is_empty() {
             // An empty item or quote holds an empty paragraph, to type in.
             let id = self.id();
@@ -1089,7 +1286,7 @@ impl<'a> Builder<'a> {
                     lines: frame.cursor..frame.cursor,
                     parent: frame.id,
                     prev: None,
-                    first_of: Vec::new(),
+                    first_of: Items::default(),
                     syntax: Syntax::Made,
                 },
             );
@@ -1122,25 +1319,21 @@ impl<'a> Builder<'a> {
         // A container's lines are its first and its blocks': where it ends
         // is the line its next block may start on.
         let lines = match frame.kind {
-            FrameKind::Table | FrameKind::Row => whole_lines(self.text, &frame.range),
+            FrameKind::Table | FrameKind::Row => self.index.whole(self.text, &frame.range),
             FrameKind::List => {
-                let start = line_start(self.text, frame.range.start);
-                start..line_end(self.text, frame.range.start).max(frame.last_end)
+                let start = self.index.start(frame.range.start);
+                start..self.index.end(frame.range.start).max(frame.last_end)
             }
             _ => {
                 let r = &frame.range;
                 let end = if r.end < self.text.len() && !self.text[..r.end].ends_with(['\n', '\r'])
                 {
-                    line_start(self.text, r.end).max(r.start)
+                    self.index.start(r.end).max(r.start)
                 } else {
                     r.end
                 };
-                let lines = whole_lines(self.text, &(r.start..end));
-                lines.start
-                    ..lines
-                        .end
-                        .max(frame.last_end)
-                        .max(line_end(self.text, r.start))
+                let lines = self.index.whole(self.text, &(r.start..end));
+                lines.start..lines.end.max(frame.last_end).max(self.index.end(r.start))
             }
         };
         let parent = self.stack.last().expect("open").id;
@@ -1255,7 +1448,7 @@ impl<'a> Builder<'a> {
                 self.add(
                     id,
                     rule,
-                    whole_lines(self.text, &range),
+                    self.index.whole(self.text, &range),
                     first_of,
                     Syntax::Rule,
                 );
@@ -1281,7 +1474,10 @@ impl<'a> Builder<'a> {
     /// ends, and what's between the last block and this one is read.
     fn block_start(&mut self, range: &Range<usize>) {
         self.close_implicit();
-        let at = line_start(self.text, range.start).max(self.stack.last().expect("open").cursor);
+        let at = self
+            .index
+            .start(range.start)
+            .max(self.stack.last().expect("open").cursor);
         self.gap(at);
     }
 
@@ -1307,8 +1503,9 @@ impl<'a> Builder<'a> {
                 self.open(ParaKind::Heading, style, range.clone());
                 let underline = setext
                     .then(|| {
-                        let end = without_ending(self.text, whole_lines(self.text, &range).end);
-                        let last = &self.text[line_start(self.text, end.saturating_sub(1))..end];
+                        let end =
+                            without_ending(self.text, self.index.whole(self.text, &range).end);
+                        let last = &self.text[self.index.start(end.saturating_sub(1))..end];
                         last.trim().chars().next()
                     })
                     .flatten();
@@ -1404,8 +1601,8 @@ impl<'a> Builder<'a> {
                 {
                     list.numbers.push(n);
                 }
-                let rest = &self.text
-                    [marker.end..without_ending(self.text, line_end(self.text, marker.end))];
+                let rest =
+                    &self.text[marker.end..without_ending(self.text, self.index.end(marker.end))];
                 let spaces = rest.chars().take_while(|&c| c == ' ').count();
                 let tabbed = rest[spaces..].starts_with('\t');
                 // An item whose text starts on the line after its marker is
@@ -1452,9 +1649,9 @@ impl<'a> Builder<'a> {
             }
             Tag::Table(aligns) => {
                 self.block_start(&range);
-                let lines = whole_lines(self.text, &range);
-                let header = line_end(self.text, lines.start);
-                let delimiter = header..line_end(self.text, header);
+                let lines = self.index.whole(self.text, &range);
+                let header = self.index.end(lines.start);
+                let delimiter = header..self.index.end(header);
                 let widths = padded_widths(self.text, &lines);
                 self.push_frame(
                     FrameKind::Table,
@@ -1641,12 +1838,8 @@ impl<'a> Builder<'a> {
 
     /// Ends a block kept whole, as a footnote's definition is.
     fn end_kept(&mut self, _id: ObjectId, range: Range<usize>) {
-        let lines = whole_lines(self.text, &range);
-        let depth = self
-            .stack
-            .iter()
-            .filter(|f| matches!(f.kind, FrameKind::Quote))
-            .count();
+        let lines = self.index.whole(self.text, &range);
+        let depth = self.quotes;
         let text: Vec<&str> = self.text[lines.clone()]
             .lines()
             .map(|l| strip_prefixes(l, depth).trim_end())
@@ -1698,7 +1891,7 @@ impl<'a> Builder<'a> {
                     lines: at..at,
                     parent: ObjectId(0),
                     prev: self.stack[0].children.last().copied(),
-                    first_of: Vec::new(),
+                    first_of: Items::default(),
                     syntax: Syntax::Made,
                 },
             );
@@ -1908,6 +2101,71 @@ mod tests {
         assert_eq!(lang("+++\nlang = \"de\"\n+++\n"), Some("de".to_string()));
         assert_eq!(front_matter("--- \nno end\n"), None);
         assert_eq!(front_matter("# Title\n---\n"), None);
+    }
+
+    /// What containers keep, the items on their lines and where their
+    /// prefixes end, gives what looking along the line through every
+    /// container gave (`Builder::first_of` and `Builder::indent_of` check
+    /// it in unit tests): for every CommonMark example, our own files, and
+    /// quotes and lists nested on a line and over lines, with lazy lines,
+    /// tabs and numbers.
+    #[test]
+    fn what_containers_keep_is_what_looking_finds() {
+        let settings = Settings {
+            sheet: &[],
+            language: None,
+            sizes: &|_| None,
+        };
+        let mut texts: Vec<String> = testkit::commonmark::load()
+            .expect("CommonMark's examples")
+            .into_iter()
+            .map(|e| e.markdown)
+            .collect();
+        for (_, bytes) in testkit::spec_bytes("markdown/files", "md").expect("our files") {
+            texts.push(String::from_utf8(bytes).expect("UTF-8"));
+        }
+        texts.extend(
+            [
+                "- - - - deep\n",
+                "> > - > - 1. deep\n  > more\n",
+                "- a\n  - b\n    - c\n  - d\n- e\n",
+                "1. one\n   > quoted\n   > - item\n   >   - inner\n2. two\n",
+                "> - a\n>   - b\n> lazy\n> > - c\n>\t- tabbed\n",
+                ">    - code or not\n>  - item\n",
+                "- \t- tab after the marker\n-   - three spaces\n",
+                "* > > + > deep\n  still\n",
+            ]
+            .map(str::to_string),
+        );
+        for text in texts {
+            read(text.as_bytes(), &settings).unwrap_or_else(|e| panic!("{text:?}: {e}"));
+        }
+    }
+
+    /// The index finds each line's start and end, and a range's whole
+    /// lines, as looking along the text does, with every line ending.
+    #[test]
+    fn the_line_index_finds_lines_as_looking_does() {
+        for text in [
+            "",
+            "a",
+            "\n",
+            "> a\n> b\n\nc",
+            "one\r\ntwo\rthree\n\r\n\rfour  \n\t\n",
+            "é\r\n€\n",
+        ] {
+            let index = LineIndex::new(text);
+            for at in 0..=text.len() + 2 {
+                assert_eq!(index.start(at), line_start(text, at), "{text:?} {at}");
+                assert_eq!(index.end(at), line_end(text, at), "{text:?} {at}");
+                for end in at..=text.len() {
+                    if text.is_char_boundary(end) {
+                        let range = at.min(text.len())..end;
+                        assert_eq!(index.whole(text, &range), whole_lines(text, &range));
+                    }
+                }
+            }
+        }
     }
 
     #[test]

@@ -3,7 +3,7 @@
 //! written back byte for byte, edited and read back on a small stack, as
 //! nothing walks the story by recursion; what Markdown can't hold is
 //! refused rather than written away; and reading takes time in a file's
-//! size, not in how deep its blocks nest, which doesn't hold yet.
+//! size, not in how deep its blocks nest.
 
 #![allow(
     clippy::disallowed_methods,
@@ -67,16 +67,15 @@ fn a_file_that_isnt_utf8_is_an_error() {
     assert!(read(b"").is_ok());
 }
 
-/// On a stack of 256 KiB, an eighth of a test's own, quotes nested 2 000
-/// deep and lists 400, which recursion of a few hundred bytes a level
-/// would overflow, are read, written back as they were, edited in their
-/// deepest paragraph, written and read back as edited. Lists go no deeper
-/// only as reading them takes time in the cube of their depth (below).
+/// On a stack of 256 KiB, an eighth of a test's own, quotes and lists
+/// nested 2 000 deep, which recursion of a few hundred bytes a level would
+/// overflow, are read, written back as they were, edited in their deepest
+/// paragraph, written and read back as edited.
 #[test]
 fn nesting_never_exhausts_the_stack() {
     let work = || {
         let sheet = StyleSheet::from_spec(&neutral());
-        for (what, bytes) in nested(2000, 400) {
+        for (what, bytes) in nested(2000, 2000) {
             let mut read = read(&bytes).unwrap_or_else(|e| panic!("{what}: {e}"));
             let written = read.file.write(&read.document, &sheet).expect("it writes");
             assert!(written == bytes, "{what} are written back as they were");
@@ -107,14 +106,14 @@ fn nesting_never_exhausts_the_stack() {
         .expect("it reads, writes and edits on a small stack");
 }
 
-/// A file a few kilobytes long should read in well under a second however
-/// deep it nests (docs/ARCHITECTURE.md, section 11: outside input never
-/// hangs). It doesn't: reading takes time in the square of the depth for
-/// quotes, and in its cube for lists, so 4 KB of `- - - …` takes a minute
-/// and a half in a debug build, though pulldown-cmark itself reads it in
-/// a millisecond.
+/// A file a few kilobytes long reads in well under a second however deep
+/// it nests (docs/ARCHITECTURE.md, section 11: outside input never hangs),
+/// in a debug build too. It took time in the square of the depth for
+/// quotes, and in its cube for lists, so 4 KB of `- - - …` took a minute
+/// and a half, as each container looked along its line for the line's
+/// start, and found the items on it by looking through those around it,
+/// each looking for its own line's start too.
 #[test]
-#[ignore = "reading takes time in the square or cube of the depth: M2 stage 8 part A's report, markdown"]
 fn reading_takes_time_in_the_size_not_the_depth() {
     for (what, bytes) in nested(1000, 1000) {
         let start = Instant::now();
