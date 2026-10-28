@@ -845,7 +845,7 @@ fn build_line(
     let mut pieces: Vec<Piece> = Vec::new();
     for (index, part) in shaping.parts(range.clone()) {
         let item = &shaping.items[index];
-        let glyphs = shaping.glyphs(index, part.clone(), item.level);
+        let mut glyphs = shaping.glyphs(index, part.clone(), item.level);
         let mut from = part.start;
         for &g in between(graphemes, part.start, part.end) {
             if g == part.end || level_at(g) != level_at(from) {
@@ -862,7 +862,8 @@ fn build_line(
                         &shaping.objects,
                     )
                 } else if sub == part {
-                    glyphs.clone()
+                    // The part whole, which is the last of it.
+                    std::mem::take(&mut glyphs)
                 } else {
                     glyphs
                         .iter()
@@ -980,7 +981,7 @@ fn build_line(
             }
             pen += g.advance;
         }
-        cells.extend(piece_cells(text, graphemes, piece, x));
+        piece_cells(text, graphemes, piece, x, &mut cells);
         let style = &paragraph.spans[item.span].style;
         runs.push(GlyphRun {
             face: item.face,
@@ -1257,10 +1258,10 @@ pub(crate) fn between(graphemes: &[usize], start: usize, end: usize) -> &[usize]
 /// between them. Hard breaks have no cell, and a hyphen layout added is
 /// part of the cell of the grapheme before it, so the caret at the line's
 /// end stands after it.
-fn piece_cells(text: &str, graphemes: &[usize], piece: &Piece, x: i64) -> Vec<Cell> {
+fn piece_cells(text: &str, graphemes: &[usize], piece: &Piece, x: i64, cells: &mut Vec<Cell>) {
     let rtl = piece.level % 2 == 1;
     // Clusters left to right, with their extents.
-    let mut clusters: Vec<(usize, i64, i64)> = Vec::new();
+    let mut clusters: Vec<(usize, i64, i64)> = Vec::with_capacity(piece.glyphs.len());
     let mut pen = x;
     for g in &piece.glyphs {
         match clusters.last_mut() {
@@ -1276,42 +1277,43 @@ fn piece_cells(text: &str, graphemes: &[usize], piece: &Piece, x: i64) -> Vec<Ce
     }
     let mut starts: Vec<usize> = clusters.iter().map(|c| c.0).collect();
     starts.sort_unstable();
-    let mut cells = Vec::new();
     for (cluster, left, right) in clusters {
         let end = starts
             .get(starts.partition_point(|&s| s <= cluster))
             .copied()
             .unwrap_or(piece.range.end);
-        let mut bounds = vec![cluster];
-        bounds.extend(between(graphemes, cluster, end));
-        if bounds.last() != Some(&end) {
-            bounds.push(end);
-        }
-        let n = (bounds.len() - 1) as i64;
+        // Its graphemes' bounds: where it starts, those inside it, and
+        // where it ends.
+        let inside = between(graphemes, cluster, end);
+        let closed = inside.last().map_or(cluster == end, |&last| last == end);
+        let bound = |i: usize| match i {
+            0 => cluster,
+            i if i <= inside.len() => inside[i - 1],
+            _ => end,
+        };
+        let count = inside.len() + usize::from(!closed);
+        let n = count as i64;
         let width = right - left;
-        let mut parts: Vec<Cell> = bounds
-            .windows(2)
-            .enumerate()
-            .map(|(k, pair)| {
-                let k = k as i64;
-                let (from, to) = if rtl { (n - 1 - k, n - k) } else { (k, k + 1) };
-                Cell {
-                    range: pair[0]..pair[1],
-                    left: left + width * from / n,
-                    right: left + width * to / n,
-                    rtl,
-                }
-            })
-            .collect();
-        if rtl {
-            parts.reverse();
-        }
-        cells.extend(parts.into_iter().filter(|c| {
-            !text[c.range.clone()]
+        // Left to right, as they're shown: backwards along the text where
+        // it runs right to left.
+        for j in 0..count {
+            let k = if rtl { count - 1 - j } else { j };
+            let range = bound(k)..bound(k + 1);
+            if text[range.clone()]
                 .chars()
                 .next()
                 .is_some_and(shape::is_hard_break)
-        }));
+            {
+                continue;
+            }
+            let k = k as i64;
+            let (from, to) = if rtl { (n - 1 - k, n - k) } else { (k, k + 1) };
+            cells.push(Cell {
+                range,
+                left: left + width * from / n,
+                right: left + width * to / n,
+                rtl,
+            });
+        }
     }
-    cells
 }
