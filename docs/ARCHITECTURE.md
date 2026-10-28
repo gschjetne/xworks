@@ -1946,7 +1946,11 @@ a fuzz target.
   out of room, and each with a texel of border copied from its edge:
   vello_gpu clamps a sample before taking half a texel off it, which blends
   an image's last two texels at its right and bottom edges, where
-  vello_cpu holds the edge.
+  vello_cpu holds the edge. Each goes in from a buffer of its own, copied
+  by the frame's commands after vello_gpu's pass that clears the space of
+  any leaving in that frame. Stage 8 found it written to the queue
+  instead, which runs before that pass: an image put where another had
+  just been drew as nothing.
 - **render-pdf writes images as figures**, with their alternative text,
   from the same sRGB pixels the screen draws. An sRGB JPEG is to pass
   through unchanged instead, keeping its size (project owner, 2026-10-23,
