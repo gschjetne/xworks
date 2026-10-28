@@ -703,6 +703,9 @@ impl Editor {
         let mut paragraphs: Vec<ParagraphLayout> = Vec::new();
         let mut slots: Vec<Option<ParagraphLayout>> = Vec::new();
         let (mut words, todo): (Vec<Option<usize>>, Vec<usize>);
+        // Whether every paragraph is laid out afresh, as when a document
+        // opens: then the layouts made, in order, are the paragraphs'.
+        let mut afresh = false;
         if same_flow {
             paragraphs = std::mem::take(&mut self.laid.paragraphs);
             words = std::mem::take(&mut self.laid.words)
@@ -720,46 +723,47 @@ impl Editor {
                     .zip(std::mem::take(&mut self.laid.words))
                     .map(|(p, words)| (p.id, (p, words)))
                     .collect();
-            let mut kept_words = Vec::with_capacity(entries.len());
-            slots = entries
-                .iter()
-                .map(|entry| {
-                    let id = entry.id;
-                    let same = !all && unchanged(id);
-                    match old.remove(&id) {
-                        Some((layout, count)) if same => {
-                            kept_words.push(Some(count));
-                            (!fresh_for(id) && layout.place == entry.place).then_some(layout)
-                        }
-                        _ => {
-                            kept_words.push(None);
-                            None
-                        }
-                    }
-                })
-                .collect();
+            // With every paragraph laid out again, or none laid out yet,
+            // nothing is kept.
+            afresh = all || old.is_empty();
+            let mut kept_words = vec![None; entries.len()];
+            if !afresh {
+                slots = entries
+                    .iter()
+                    .zip(&mut kept_words)
+                    .map(|(entry, kept)| {
+                        let id = entry.id;
+                        let (layout, count) = old.remove(&id).filter(|_| unchanged(id))?;
+                        *kept = Some(count);
+                        (!fresh_for(id) && layout.place == entry.place).then_some(layout)
+                    })
+                    .collect();
+            }
             words = kept_words;
-            todo = (0..entries.len()).filter(|&k| slots[k].is_none()).collect();
+            todo = (0..entries.len())
+                .filter(|&k| afresh || slots[k].is_none())
+                .collect();
         }
         // The rest laid out and counted afresh: on the worker pool when
         // there are several, as when a document opens, and here when
         // there's one, as when typing, which waking the pool would slow.
         let (document, res, sheet) = (&self.document, &self.res, &*self.sheet);
         let counted = &words;
-        let lay_out = |&k: &usize| {
+        // With the hyphenation patterns loaded when a pass of laying out
+        // starts, the same for every paragraph of the pass.
+        let lay_out = |&k: &usize, hyphenation: &text::Hyphenation| {
             let entry = &entries[k];
             let source = match &composed {
                 Some(c) if entry.id == focus => c,
                 _ => document,
             };
-            let hyphenation = res.hyphenation();
             let layout = story::lay_out_at(
                 source,
                 entry.id,
                 &entry.place,
                 sheet,
                 res.fonts(),
-                &hyphenation,
+                hyphenation,
             );
             let count = counted[k].unwrap_or_else(|| {
                 let p = document.paragraph(entry.id).expect("a paragraph");
@@ -767,19 +771,20 @@ impl Editor {
             });
             (layout, count)
         };
-        let mut fresh: Vec<(ParagraphLayout, usize)> = if todo.len() > 1 {
-            todo.par_iter().map(lay_out).collect()
+        let hyphenation = res.hyphenation();
+        let (mut fresh, mut counts): (Vec<ParagraphLayout>, Vec<usize>) = if todo.len() > 1 {
+            todo.par_iter().map(|k| lay_out(k, &hyphenation)).unzip()
         } else {
-            todo.iter().map(lay_out).collect()
+            todo.iter().map(|k| lay_out(k, &hyphenation)).unzip()
         };
         // A character the fonts lack brings in those kept until text needs
         // them, such as the CJK faces, and its paragraphs are laid out again.
-        if fresh.iter().any(|(p, _)| p.layout.missing) {
+        if fresh.iter().any(|p| p.layout.missing) {
             match res.load_on_demand() {
                 Ok(true) => {
-                    for (k, fresh) in todo.iter().zip(&mut fresh) {
-                        if fresh.0.layout.missing {
-                            *fresh = lay_out(k);
+                    for ((k, fresh), count) in todo.iter().zip(&mut fresh).zip(&mut counts) {
+                        if fresh.layout.missing {
+                            (*fresh, *count) = lay_out(k, &hyphenation);
                         }
                     }
                 }
@@ -791,14 +796,15 @@ impl Editor {
         // bring them in, and their paragraphs are laid out again.
         let wanted: Vec<text::Language> = fresh
             .iter()
-            .flat_map(|(p, _)| p.layout.unhyphenated.iter().cloned())
+            .flat_map(|p| p.layout.unhyphenated.iter().cloned())
             .collect();
         if !wanted.is_empty() {
             match res.load_hyphenation(&wanted) {
                 Ok(true) => {
-                    for (k, fresh) in todo.iter().zip(&mut fresh) {
-                        if !fresh.0.layout.unhyphenated.is_empty() {
-                            *fresh = lay_out(k);
+                    let hyphenation = res.hyphenation();
+                    for ((k, fresh), count) in todo.iter().zip(&mut fresh).zip(&mut counts) {
+                        if !fresh.layout.unhyphenated.is_empty() {
+                            (*fresh, *count) = lay_out(k, &hyphenation);
                         }
                     }
                 }
@@ -806,21 +812,26 @@ impl Editor {
                 Err(e) => self.message = format!("Couldn't load hyphenation: {e}"),
             }
         }
-        for (&k, (layout, count)) in todo.iter().zip(fresh) {
-            if same_flow {
-                paragraphs[k] = layout;
-            } else {
-                slots[k] = Some(layout);
+        let words: Vec<usize> = if afresh {
+            paragraphs = fresh;
+            counts
+        } else {
+            for ((&k, layout), count) in todo.iter().zip(fresh).zip(counts) {
+                if same_flow {
+                    paragraphs[k] = layout;
+                } else {
+                    slots[k] = Some(layout);
+                }
+                words[k] = Some(count);
             }
-            words[k] = Some(count);
-        }
-        if !same_flow {
-            paragraphs = slots
-                .into_iter()
-                .map(|p| p.expect("every paragraph laid out"))
-                .collect();
-        }
-        let words: Vec<usize> = words.into_iter().map(|w| w.unwrap_or(0)).collect();
+            if !same_flow {
+                paragraphs = slots
+                    .into_iter()
+                    .map(|p| p.expect("every paragraph laid out"))
+                    .collect();
+            }
+            words.into_iter().map(|w| w.unwrap_or(0)).collect()
+        };
         // The blocks to pour: those of changed paragraphs made again, when
         // the flow is kept.
         let look = &self.sheet.blocks;
@@ -833,10 +844,11 @@ impl Editor {
             }
             (units, blocks)
         } else {
-            (
-                canvas::units(&paragraphs),
-                canvas::blocks(&paragraphs, look),
-            )
+            let units = canvas::units(&paragraphs);
+            let blocks = (0..units.len())
+                .map(|u| canvas::block(&paragraphs, &units, u, look))
+                .collect();
+            (units, blocks)
         };
         let pages = canvas::paginate(self.page_style().body_height(), &blocks);
         let mut places: Vec<Vec<(usize, i64)>> = paragraphs
