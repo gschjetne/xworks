@@ -3,7 +3,8 @@
 //! is set in, every family xWorks has, on the Style tab's screen of a
 //! face, in a short window: it opens on the family chosen, scrolls with
 //! the wheel, its scroll bar and the keys, and a press, and screen
-//! readers, find each family where it's drawn as scrolled.
+//! readers, find each family where it's drawn as scrolled. A menu taller
+//! than the window scrolls too.
 
 use std::sync::{Arc, OnceLock};
 
@@ -216,4 +217,45 @@ fn the_keys_choose_what_they_light() {
     assert!(faces.iter().all(|(_, shows, _)| *shows));
     key(&mut tall, Key::Escape);
     assert!(list(&tall).is_none());
+}
+
+/// Every title drawn in `window`, as glyphs.
+fn drawn_titles(window: &Window) -> Vec<String> {
+    let mut stack = window.view().items;
+    let mut out = Vec::new();
+    while let Some(item) = stack.pop() {
+        match item {
+            scene::Item::Group(g) => stack.extend(g.items),
+            scene::Item::Glyphs(g) => out.push(g.text),
+            _ => {}
+        }
+    }
+    out
+}
+
+/// A menu taller than the window scrolls too: the keys that light its
+/// items scroll them into view, round its ends, and so does the wheel.
+#[test]
+fn a_menu_taller_than_the_window_scrolls() {
+    let mut window = window("app-popups-menu", 300.0);
+    window.update(Event::Key {
+        key: Key::Char('o'),
+        modifiers: Modifiers {
+            alt: true,
+            ..Modifiers::default()
+        },
+    });
+    let shows = |window: &Window, title: &str| drawn_titles(window).iter().any(|t| t == title);
+    assert!(shows(&window, "Bold"), "Format opens at its top");
+    assert!(!shows(&window, "Smaller"), "its last item out of sight");
+    // Up from the first goes round to the last, scrolled into view.
+    key(&mut window, Key::Up);
+    assert!(shows(&window, "Smaller") && !shows(&window, "Bold"));
+    // Down goes round to the first again.
+    key(&mut window, Key::Down);
+    assert!(shows(&window, "Bold") && !shows(&window, "Smaller"));
+    // The wheel over it scrolls it.
+    window.update(Event::Move { x: 220.0, y: 150.0 });
+    window.update(Event::Scroll(10_000.0));
+    assert!(shows(&window, "Smaller"));
 }
