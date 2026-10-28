@@ -42,9 +42,10 @@
 //!   document is always valid: operations keep it so, and
 //!   [`Document::from_snapshot`] refuses a snapshot that isn't, saying why
 //!   ([`SnapshotError`]) (`tests/properties.rs`,
-//!   `broken_snapshots_are_refused`; `tests/blocks.rs`,
-//!   `snapshots_of_trees_are_checked`; `tests/styles.rs`,
-//!   `broken_stylesheets_are_refused`).
+//!   `documents_survive_storing_as_snapshots`, whose random edits always
+//!   leave a valid snapshot, and `broken_snapshots_are_refused`;
+//!   `tests/blocks.rs`, `snapshots_of_trees_are_checked`;
+//!   `tests/styles.rs`, `broken_stylesheets_are_refused`).
 //! - **Addresses.** Objects are addressed by ID, never by index, and
 //!   [`Document::new_id`] never gives out an ID the document ever held,
 //!   deleted ones and those in a snapshot it was read from included
@@ -75,9 +76,8 @@
 //!   document after it (`tests/properties.rs`, `snapshots_never_change`),
 //!   and [`Document::changed_since`] names every object that differs from
 //!   an earlier clone (`tests/properties.rs`,
-//!   `changes_since_cover_every_difference`). A
-//!   document stored as a [`Snapshot`] reads back equal
-//!   (`documents_survive_storing_as_snapshots`).
+//!   `changes_since_cover_every_difference`). A document stored as a
+//!   [`Snapshot`] reads back equal (`documents_survive_storing_as_snapshots`).
 //! - **Rebasing converges:** either order of two concurrent operations,
 //!   each rebased over the other, gives the same document, by the rules
 //!   [`rebase`] lists. M1's operations always meet by those rules; only
