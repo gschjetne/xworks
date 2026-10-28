@@ -417,14 +417,13 @@ fn more_images_than_the_atlas_holds_draw_grey() {
 }
 
 /// An image put in the atlas in a frame where another left it, as when
-/// one page of pictures follows another, or images unseen for a while are
-/// forgotten while new ones come into view, shows as it is. It doesn't:
-/// vello_gpu clears the space an image leaves with a render pass in the
-/// frame's encoder, while render-gpu writes the new image with
-/// `Queue::write_texture`, which runs before the encoder's passes, so the
-/// new image is cleared and draws as nothing for as long as it stays.
+/// one page of pictures follows another, shows as it is: vello_gpu clears
+/// the space an image leaves with a pass in the frame's encoder, so the
+/// new one is copied in by a later command in that encoder, not written
+/// with `Queue::write_texture`, which runs before the encoder's passes and
+/// would be cleared.
 #[test]
-#[ignore = "fails, and needs a GPU: M2 stage 8 part A's report, render-gpu"]
+#[ignore = "needs a GPU: on WSL, run the Windows build (CLAUDE.md)"]
 fn an_image_put_where_another_just_left_shows() {
     let instance = instance();
     let device = render_gpu::open(&instance, None).expect("a GPU");
@@ -445,10 +444,8 @@ fn an_image_put_where_another_just_left_shows() {
 /// while leave the atlas, show as they are: a row of pictures scrolled a
 /// cell a frame, four in view, so from the 34th frame on one leaves the
 /// atlas in each frame a new one comes into it, never more than it holds.
-/// It doesn't, as above: from that frame, the one coming in draws as
-/// nothing.
 #[test]
-#[ignore = "fails, and needs a GPU: M2 stage 8 part A's report, render-gpu"]
+#[ignore = "needs a GPU: on WSL, run the Windows build (CLAUDE.md)"]
 fn images_coming_into_view_as_unseen_ones_leave_show() {
     let instance = instance();
     let device = render_gpu::open(&instance, None).expect("a GPU");

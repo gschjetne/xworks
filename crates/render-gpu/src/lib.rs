@@ -18,7 +18,7 @@
 //!
 //! Its tests need a GPU, so CI doesn't run them: they're run by hand, on
 //! Windows from WSL (CLAUDE.md), `tests/matches_cpu.rs` with
-//! `--run-ignored only`.
+//! `--run-ignored only`. They pass on WSL's llvmpipe too.
 //!
 //! - **It draws what render-cpu draws:** the same items in the same order,
 //!   images from the same level, within 8 levels of 255 on text, fills,
@@ -40,6 +40,12 @@
 //!   it, and there are as many pages as images; a page drawing more
 //!   shows the rest as grey (`tests/matches_cpu.rs`,
 //!   `more_images_than_the_atlas_holds_draw_grey`).
+//! - **An image shows from the frame it enters the atlas,** even in space
+//!   another left in that frame, crowded out or unseen for a while: the
+//!   frame's encoder copies it in after vello_gpu's pass clears that
+//!   space (`tests/matches_cpu.rs`,
+//!   `an_image_put_where_another_just_left_shows` and
+//!   `images_coming_into_view_as_unseen_ones_leave_show`).
 //! - **Errors, not panics,** where the GPU fails a frame: [`Renderer::render`]
 //!   and [`Canvas::draw`] say why, and [`open`] is `None` where there's no
 //!   adapter.
@@ -51,11 +57,6 @@
 //! - That it runs: a machine may have no GPU, or only a software one, as
 //!   WSL's llvmpipe is, where the shells draw with render-cpu instead.
 //! - That its errors are typed: they're messages, for the log.
-//! - An image put in the atlas in the frame another leaves it shows as
-//!   nothing: vello_gpu clears the space the one leaving had in the
-//!   frame's passes, after render-gpu has written the new one there
-//!   (`tests/matches_cpu.rs`, `an_image_put_where_another_just_left_shows`,
-//!   ignored as failing).
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -324,7 +325,8 @@ impl Renderer {
     /// Puts the image levels `items` draw in the atlas, if they aren't
     /// there, making room by taking out those not drawn now, longest
     /// unused first; and takes out those unused for a while. Returns where
-    /// each is, by image and level.
+    /// each is, by image and level. All go in `encoder`, those coming in
+    /// after those leaving, whose space vello_gpu clears there.
     fn upload(
         &mut self,
         device: &Device,
@@ -367,7 +369,9 @@ impl Renderer {
                     &device.device,
                     &device.queue,
                     encoder,
-                    &Bordered::new(&image.levels()[level]),
+                    &Bordered {
+                        level: &image.levels()[level],
+                    },
                 );
                 self.images.insert(
                     key,
@@ -575,52 +579,71 @@ impl Drawer<'_> {
 /// bilinearly, so without the border its last half texel on the right and
 /// at the bottom would blend the last two; with it, its edges are held
 /// as vello_cpu holds them.
-struct Bordered {
-    width: u32,
-    height: u32,
-    pixels: Vec<u8>,
+///
+/// It's written into a buffer of its own, which the frame's encoder copies
+/// into the atlas, not written with `Queue::write_texture`: vello_gpu
+/// clears the space an image leaves with a pass in that encoder, and a
+/// write to the queue runs before the encoder's passes, so an image put
+/// where another left in the same frame would be cleared once written.
+struct Bordered<'a> {
+    level: &'a scene::Level,
 }
 
-impl Bordered {
-    fn new(level: &scene::Level) -> Bordered {
-        let (w, h) = (level.width as usize, level.height as usize);
-        let mut pixels = Vec::with_capacity((w + 2) * (h + 2) * 4);
-        for y in 0..h + 2 {
-            let source = (y.clamp(1, h) - 1) * w * 4;
-            let line = &level.pixels[source..source + w * 4];
-            pixels.extend_from_slice(&line[..4]);
-            pixels.extend_from_slice(line);
-            pixels.extend_from_slice(&line[(w - 1) * 4..]);
-        }
-        Bordered {
-            width: level.width + 2,
-            height: level.height + 2,
-            pixels,
-        }
-    }
-}
-
-impl vello_gpu::AtlasWriter for Bordered {
+impl vello_gpu::AtlasWriter for Bordered<'_> {
     fn width(&self) -> u16 {
-        self.width as u16
+        (self.level.width + 2) as u16
     }
 
     fn height(&self) -> u16 {
-        self.height as u16
+        (self.level.height + 2) as u16
     }
 
     fn write_to_atlas(
         &self,
-        _device: &wgpu::Device,
-        queue: &wgpu::Queue,
-        _encoder: &mut wgpu::CommandEncoder,
+        device: &wgpu::Device,
+        _queue: &wgpu::Queue,
+        encoder: &mut wgpu::CommandEncoder,
         atlas_texture: &wgpu::Texture,
         offset: [u16; 2],
         width: u16,
         height: u16,
     ) {
-        let (width, height) = (u32::from(width), u32::from(height));
-        queue.write_texture(
+        let (w, h) = (self.level.width as usize, self.level.height as usize);
+        // A copy from a buffer takes its rows 256 bytes apart, or a
+        // multiple of that.
+        let row = ((w + 2) * 4).next_multiple_of(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT as usize);
+        let buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("image"),
+            size: (row * (h + 2)) as u64,
+            usage: wgpu::BufferUsages::MAP_WRITE | wgpu::BufferUsages::COPY_SRC,
+            mapped_at_creation: true,
+        });
+        // Mapped as it's made, it fails to map only where it couldn't be
+        // made, as on a lost device: then the image draws as nothing.
+        let Ok(mut mapped) = buffer.slice(..).get_mapped_range_mut() else {
+            return;
+        };
+        for y in 0..h + 2 {
+            let source = (y.clamp(1, h) - 1) * w * 4;
+            let line = &self.level.pixels[source..source + w * 4];
+            let at = y * row;
+            mapped.slice(at..at + 4).copy_from_slice(&line[..4]);
+            mapped.slice(at + 4..at + 4 + w * 4).copy_from_slice(line);
+            mapped
+                .slice(at + 4 + w * 4..at + 8 + w * 4)
+                .copy_from_slice(&line[(w - 1) * 4..]);
+        }
+        drop(mapped);
+        buffer.unmap();
+        encoder.copy_buffer_to_texture(
+            wgpu::TexelCopyBufferInfo {
+                buffer: &buffer,
+                layout: wgpu::TexelCopyBufferLayout {
+                    offset: 0,
+                    bytes_per_row: Some(row as u32),
+                    rows_per_image: Some(u32::from(height)),
+                },
+            },
             wgpu::TexelCopyTextureInfo {
                 texture: atlas_texture,
                 mip_level: 0,
@@ -631,15 +654,9 @@ impl vello_gpu::AtlasWriter for Bordered {
                 },
                 aspect: wgpu::TextureAspect::All,
             },
-            &self.pixels,
-            wgpu::TexelCopyBufferLayout {
-                offset: 0,
-                bytes_per_row: Some(4 * width),
-                rows_per_image: Some(height),
-            },
             wgpu::Extent3d {
-                width,
-                height,
+                width: u32::from(width),
+                height: u32::from(height),
                 depth_or_array_layers: 1,
             },
         );
