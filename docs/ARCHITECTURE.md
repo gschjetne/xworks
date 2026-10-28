@@ -1105,6 +1105,82 @@ sjj5ak5a):
   then keeps it; choosing the tab again follows the caret.
 - **Format, Styles' access key is S,** and Align to Start's is A.
 
+**What stage 8 built: finishing the follow-up** (M2's exit, review
+7fnfdhb5). The choices below are its own, open to the owner's review; ★
+marks those that need the owner's decision.
+- **The ruler shows a stop's leader:** a run 12 pixels long, ending 2
+  pixels before the stop's mark, on the line of the mark's foot, in the
+  ruler's ink, as its indents are drawn, with the ticks under it
+  cleared: dots two pixels square, four apart; dashes four pixels long;
+  or a line, all on whole pixels, so they're sharp at the ruler's size,
+  light and dark (`chrome::Stop`'s `leader`, `chrome::LeaderLook`). A
+  leader of another character than a dash or a line shows as dots.
+  What a point hits is as before.
+- **The Text tab sets a stop's leader** from a list beside its
+  alignment, none, dots, dashes or a line, the tab layout's screen's,
+  from the same code (`tab-stop-leader`); one edit, "Leader", Undo takes
+  back. An edit that leaves a paragraph's stops as they were now leaves
+  the paragraph alone, so a leader where there's no stop makes no edit.
+  A Markdown paragraph has no stops of its own, so a leader there needs
+  a stop first, which asks, as anything Markdown can't hold does.
+- **A list chooses its list definition** from the Text tab's List row,
+  whose name became a list of the document's definitions, its label
+  still the link to the one taken (`list-definition`, one edit, named
+  after the definition). The lists the selection is in each take it.
+  - ★ The definition a list's kind takes anyway is named by none: the
+    list's `list` is unset, so Markdown holds it, and the list follows
+    its kind's after a stylesheet is replaced, as before.
+  - ★ A definition of the other kind turns the list that kind: given
+    one that numbers, a bulleted list is numbered, and the status bar
+    says "Numbered the list, as Roman numbers its items", rather than
+    keeping its kind and showing numbers Markdown would write as
+    bullets. A definition numbers if its first level does.
+  - Markdown can't hold a list naming a definition of its own
+    (`markdown::What::ListDefinition`): a Markdown file's sheet is
+    Neutral, whose only definitions are its two kinds' own, so this asks
+    only of a list that came named, as one pasted from a document.
+  - Pasting brings a list's definition along, matched by role and name
+    as styles are, and an update keeps it, three-way, as tests show.
+- **Lists that pop up scroll** (`toolkit::Popup`): a menu, its
+  submenu, the editor's panel, and an inspector's choices.
+  - ★ A field's list goes under its field where it fits, over it where
+    only that fits, and otherwise in the larger of the two rooms, as
+    tall as it, scrolling; over the field, it may cover the title bar's
+    buttons, as a menu covers what's under it. A menu or the panel stays
+    inside the window, as tall as it at most.
+  - It scrolls with the wheel over it, and with a scroll bar as the
+    inspector's, its thumb lit under the pointer, its list wider by the
+    bar so no row is under it; rows out of sight aren't drawn or hit,
+    and those partly out are cut at its edge.
+  - ★ A field's list opens with the row chosen in its middle, as far as
+    the rows go, as macOS opens a pop-up on its choice; the arrows, Page
+    Up and Down, Home and End then light another and scroll only as far
+    as shows it whole. A menu's keys scroll what they light into view,
+    round its ends too, and the panel's do.
+  - Screen readers get an inspector's open list as a list box of its
+    choices, each where it's drawn as scrolled, hidden out of sight, the
+    one set selected and the one lit active. Menus and the panel aren't
+    in the tree, as they weren't before.
+- **M2's exit session** (`spec/sessions/exit-m2.ron`) writes a document
+  with pictures, in Book, and a Markdown file by New Markdown Document,
+  quits, opens both again through File, Open, and prints them. What a
+  session needed, the least: the player quits as the shell does,
+  closing every window, and starts again in a new document, as xWorks
+  started without a file does, which stays, empty; a document open in a
+  window behind comes forward rather than opening twice, as the shell
+  has it; and a session played keeps the windows behind its last.
+  - ★ It prints by Export as PDF, which writes beside each document the
+    PDF Print writes to the system's folder for temporary files and
+    hands to the system to print, which a headless session can't follow.
+  - Its pictures are the app's test pictures, 32 by 24 pixels, placed at
+    96 to the inch, so a third of an inch wide.
+  - ★ Found doing it: a first-line indent moves the stops on a
+    paragraph's first line by its width, as the text measures them from
+    where that line starts, and the story moves them by the start indent
+    alone. Book's indented Body puts "12.40" past the column's end, so
+    the session sets its costs in First Paragraph. It isn't fixed here:
+    it's in `text`, which stage 8's other part changes.
+
 **Container: SQLite** (project owner, 2026-10-18). A document is an SQLite
 database with a fixed, versioned schema: objects, the transaction log, embedded
 fonts and images, and metadata. The reasons:
