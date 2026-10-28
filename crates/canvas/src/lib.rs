@@ -1,7 +1,8 @@
 //! The canvas substrate: pages, masters and the open pasteboard, frames, and
-//! automatic pagination (docs/ARCHITECTURE.md, section 4). M1 has its first
-//! form: automatic pages from one page style, the mode the word processor
-//! grows from.
+//! automatic pagination (docs/ARCHITECTURE.md, section 4). So far it has
+//! M1's first form, grown through M2: automatic pages from one page style,
+//! the mode the word processor grows from, a story's laid-out paragraphs
+//! poured into them and drawn.
 //!
 //! - [`PageStyle`]: a page's size and margins, a document's page style.
 //! - [`paginate`]: blocks of lines poured into pages, breaking paragraphs
@@ -21,9 +22,9 @@
 //!
 //! The rules where a page breaks:
 //!
-//! - A paragraph that doesn't fit breaks between lines, with at least two
-//!   of its lines at the foot of a page (no orphans) and two at the top of
-//!   the next (no widows), where it has that many.
+//! - A paragraph that doesn't fit breaks between lines, with at least
+//!   [`ORPHANS`] of its lines at the foot of a page and [`WIDOWS`] at the
+//!   top of the next, where it has that many.
 //! - A block that keeps with the next, as headings do, moves to the next
 //!   page rather than end a page without the start of the block after it;
 //!   a run of such blocks moves together.
@@ -32,12 +33,47 @@
 //! - Where a page is too short to keep those rules, it takes what fits;
 //!   a line taller than the page still goes on a page of its own.
 //!
-//! Invariants:
+//! # What a caller may rely on
 //!
-//! - Every line of every block is placed once, in order.
-//! - Where a page breaks depends only on what comes before the break and
-//!   the run of kept-together blocks it ends in: editing a block leaves
-//!   every page before that run's page as it was.
+//! - **Pure.** No I/O, threads, clocks or environment (Clippy's
+//!   `crates/clippy.toml`), and it builds for WebAssembly (CI). Positions
+//!   are layout units, 914 400 to the inch, from a page's top left.
+//! - **The rules above hold** (unit tests `what_fits_stays_on_one_page`,
+//!   `a_paragraph_breaks_between_lines`, `no_widows_no_orphans`,
+//!   `headings_keep_with_what_follows`, `a_heading_at_the_top_of_a_page_stays`,
+//!   `space_before_goes_at_the_top_of_a_page` and
+//!   `a_line_taller_than_the_page_gets_one`).
+//! - **Every line of every block is placed once, in order,** within its
+//!   page, but a line taller than the page alone on one, and there's
+//!   always a page, if only an empty one (`tests/properties.rs`,
+//!   `every_line_is_placed_once_in_order_and_fits`).
+//! - **Breaks stay put:** where a page breaks depends only on what comes
+//!   before the break and the run of kept-together blocks it ends in, so
+//!   editing a block leaves every page before that run's page as it was
+//!   (`tests/properties.rs`, `breaks_before_an_edit_stay_put`;
+//!   `tests/document.rs`, `an_edit_leaves_the_pages_before_it`). The same
+//!   blocks always give the same pages (`the_same_blocks_give_the_same_pages`;
+//!   `the_same_document_breaks_the_same_way`).
+//! - **Pages hold their text:** a document's blocks draw within its
+//!   margins, and every glyph run and image points into the structure, so
+//!   tagged PDF and screen readers find it (`tests/document.rs`,
+//!   `the_sample_fills_pages_within_their_margins` and
+//!   `blocks_draw_within_the_margins_and_point_into_the_structure`).
+//! - **Blocks draw as the stylesheet says:** a table's row pours as one
+//!   block, a quote has its sheet's space above and below, rules are
+//!   hairlines across their column, struck text and tasks draw their lines
+//!   and boxes (`tests/document.rs`), and pictures are drawn where their
+//!   characters stand, a tint where the document's file lacks one
+//!   (`tests/pictures.rs`, `pictures_are_drawn_where_their_characters_stand`).
+//!   What's drawn matches the approved goldens (`tools/shot/tests/golden.rs`).
+//!
+//! # What it doesn't promise
+//!
+//! - Masters, the open pasteboard, frames, threading stories through them,
+//!   floats, footnotes and columns: they come with Write (T1) and the
+//!   canvas track.
+//! - Optimal page breaks: pages are filled first fit, which keeps breaks
+//!   before an edit where they were.
 
 use std::collections::HashMap;
 use std::ops::Range;
