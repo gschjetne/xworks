@@ -2,13 +2,94 @@
 //! one face, one bidi level and one script, each shaped with HarfRust.
 
 use std::ops::Range;
+use std::sync::{Arc, PoisonError, RwLock};
 
-use harfrust::{Buffer, BufferFlags, ShapeOptions, ShaperFont, Tag};
-use locale::{Bidi, Script};
+use harfrust::{Buffer, BufferFlags, ShapeOptions, ShapePlan, ShaperFont, Tag};
+use locale::{Bidi, Language, Script};
 
 use crate::font::{Face, FaceId, Fonts};
-use crate::layout::{Inline, Span};
+use crate::layout::{Inline, Ligatures, Span};
 use crate::units::scale;
+
+/// What a shaping plan is made for, in its face: which way the text runs,
+/// its script and language, and the ligatures it's set with.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct PlanKey {
+    pub rtl: bool,
+    pub script: Script,
+    pub language: Language,
+    pub ligatures: Ligatures,
+}
+
+/// A plan HarfRust shapes with, and the language as it takes it.
+#[derive(Clone)]
+pub(crate) struct Plan {
+    pub plan: Arc<ShapePlan>,
+    pub language: Option<harfrust::Language>,
+}
+
+/// The plans a face has shaped with, each made once for its key and kept:
+/// HarfRust would otherwise make one, choosing the font's features and
+/// lookups again, for every stretch of text it shapes. A plan depends on
+/// nothing but its face and its key, so text shapes the same with a plan
+/// kept as with one made afresh. Clones of a face share them, as they share
+/// its data.
+#[derive(Clone, Default)]
+pub(crate) struct Plans(Arc<RwLock<Vec<(PlanKey, Plan)>>>);
+
+impl Plans {
+    /// The plan for `key` in `font`, made if there's none yet.
+    pub(crate) fn get(&self, font: &harfrust::Font, key: &PlanKey) -> Plan {
+        let found = |plans: &[(PlanKey, Plan)]| {
+            plans
+                .iter()
+                .find(|(k, _)| k == key)
+                .map(|(_, plan)| plan.clone())
+        };
+        if let Some(plan) = found(&self.0.read().unwrap_or_else(PoisonError::into_inner)) {
+            return plan;
+        }
+        let language = (key.language != Language::und())
+            .then(|| harfrust::Language::new(key.language.to_string()))
+            .flatten();
+        let plan = Plan {
+            plan: Arc::new(ShapePlan::new(
+                font,
+                direction(key.rtl),
+                harfrust_script(key.script),
+                language.as_ref(),
+                &key.ligatures.features(),
+            )),
+            language,
+        };
+        let mut plans = self.0.write().unwrap_or_else(PoisonError::into_inner);
+        // Another layout may have made it meanwhile: the same plan, as
+        // plans depend only on their keys.
+        if let Some(plan) = found(&plans) {
+            return plan;
+        }
+        plans.push((key.clone(), plan.clone()));
+        plan
+    }
+
+    /// How many plans are kept.
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        self.0.read().unwrap_or_else(PoisonError::into_inner).len()
+    }
+}
+
+fn direction(rtl: bool) -> harfrust::Direction {
+    if rtl {
+        harfrust::Direction::RightToLeft
+    } else {
+        harfrust::Direction::LeftToRight
+    }
+}
+
+fn harfrust_script(script: Script) -> Option<harfrust::Script> {
+    harfrust::Script::from_iso15924_tag(Tag::new(&script.code()))
+}
 
 /// A stretch of a paragraph shaped in one go.
 #[derive(Clone, Debug)]
@@ -30,7 +111,7 @@ pub(crate) struct Item {
 }
 
 /// A shaped glyph, in layout units.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct Shaped {
     pub id: u32,
     /// Where its cluster starts, as a byte offset into the paragraph.
@@ -282,7 +363,15 @@ fn shape_text(
 ) -> Vec<Shaped> {
     let face = fonts.face(face);
     let shaper = ShaperFont::new(&face.font);
+    let key = PlanKey {
+        rtl: level % 2 == 1,
+        script,
+        language: span.style.language.clone(),
+        ligatures: span.style.ligatures,
+    };
+    let plan = face.plans.get(&face.font, &key);
     let mut buffer = Buffer::new();
+    buffer.reserve(range.len());
     for (i, c) in text[range.clone()].char_indices() {
         // A tab is shaped as a space, whose glyph every font has and which
         // draws nothing; layout makes it as wide as its stop asks.
@@ -291,16 +380,10 @@ fn shape_text(
     }
     buffer.set_pre_context(&text[..range.start]);
     buffer.set_post_context(&text[range.end..]);
-    buffer.set_direction(if level % 2 == 1 {
-        harfrust::Direction::RightToLeft
-    } else {
-        harfrust::Direction::LeftToRight
-    });
-    buffer.set_script(harfrust::Script::from_iso15924_tag(Tag::new(
-        &script.code(),
-    )));
-    if span.style.language != locale::Language::und() {
-        buffer.set_language(harfrust::Language::new(span.style.language.to_string()));
+    buffer.set_direction(direction(key.rtl));
+    buffer.set_script(harfrust_script(script));
+    if plan.language.is_some() {
+        buffer.set_language(plan.language.clone());
     }
     let mut flags = BufferFlags::empty();
     if range.start == 0 {
@@ -314,7 +397,9 @@ fn shape_text(
     if harfrust::shape(
         &shaper,
         &mut buffer,
-        ShapeOptions::new().features(&features),
+        ShapeOptions::new()
+            .plan(Some(&*plan.plan))
+            .features(&features),
     )
     .is_err()
     {
@@ -348,4 +433,175 @@ fn shape_text(
             }
         })
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::layout::Style;
+    use crate::units::POINT;
+
+    /// The bundled fonts, but those kept until text needs them.
+    fn fonts() -> Fonts {
+        let mut fonts = Fonts::new();
+        for (name, bytes) in testkit::fonts::load().expect("the bundled fonts") {
+            if !name.contains("CJK") {
+                fonts.add(bytes).expect("a font");
+            }
+        }
+        fonts
+    }
+
+    /// `range` of `text` shaped as [`shape_text`] shaped it before plans
+    /// were kept: HarfRust making a plan for the call.
+    fn afresh(
+        fonts: &Fonts,
+        text: &str,
+        range: Range<usize>,
+        span: &Span,
+        face: FaceId,
+        level: u8,
+        script: Script,
+    ) -> Vec<Shaped> {
+        let face = fonts.face(face);
+        let shaper = ShaperFont::new(&face.font);
+        let mut buffer = Buffer::new();
+        for (i, c) in text[range.clone()].char_indices() {
+            let c = if c == '\t' { ' ' } else { c };
+            buffer.push(u32::from(c), (range.start + i) as u32);
+        }
+        buffer.set_pre_context(&text[..range.start]);
+        buffer.set_post_context(&text[range.end..]);
+        buffer.set_direction(direction(level % 2 == 1));
+        buffer.set_script(harfrust_script(script));
+        if span.style.language != Language::und() {
+            buffer.set_language(harfrust::Language::new(span.style.language.to_string()));
+        }
+        let mut flags = BufferFlags::empty();
+        if range.start == 0 {
+            flags |= BufferFlags::BEGINNING_OF_TEXT;
+        }
+        if range.end == text.len() {
+            flags |= BufferFlags::END_OF_TEXT;
+        }
+        buffer.set_flags(flags);
+        let features = span.style.ligatures.features();
+        harfrust::shape(
+            &shaper,
+            &mut buffer,
+            ShapeOptions::new().features(&features),
+        )
+        .expect("shaped");
+        let (size, upem) = (span.style.size, face.units_per_em);
+        buffer
+            .glyph_infos()
+            .iter()
+            .zip(buffer.glyph_positions())
+            .map(|(info, pos)| {
+                let cluster = info.cluster as usize;
+                let hidden = text[cluster..].chars().next().is_some_and(is_hard_break);
+                Shaped {
+                    id: info.glyph_id,
+                    cluster,
+                    advance: if hidden {
+                        0
+                    } else {
+                        scale(pos.x_advance, size, upem)
+                    },
+                    x_offset: scale(pos.x_offset, size, upem),
+                    y_offset: scale(pos.y_offset, size, upem),
+                    unsafe_to_break: info.unsafe_to_break(),
+                    hidden,
+                    inserted: false,
+                    object: false,
+                }
+            })
+            .collect()
+    }
+
+    /// Text shaped with a plan kept, the first time and every time after,
+    /// gets the glyphs HarfRust gives with a plan made for the call: in
+    /// each script and direction, with a language and without, with
+    /// ligatures off, which take a plan of their own, and part of a
+    /// paragraph, with the text around it as context.
+    #[test]
+    fn a_kept_plan_shapes_as_one_made_afresh() {
+        let fonts = fonts();
+        let none = Ligatures {
+            standard: false,
+            contextual: false,
+            discretionary: false,
+            historical: false,
+        };
+        let all = Ligatures {
+            standard: true,
+            contextual: true,
+            discretionary: true,
+            historical: true,
+        };
+        let on = Ligatures::default();
+        let cases = [
+            (
+                "Noto Serif",
+                "The office's affluent fjord, AV To.",
+                "und",
+                on,
+                0,
+            ),
+            (
+                "EB Garamond",
+                "Office stuff, fifty-fifth\tcafé",
+                "en-GB",
+                on,
+                0,
+            ),
+            (
+                "EB Garamond",
+                "Office stuff, fifty-fifth\tcafé",
+                "en-GB",
+                none,
+                0,
+            ),
+            (
+                "EB Garamond",
+                "Office stuff, fifty-fifth\tcafé",
+                "en-GB",
+                all,
+                0,
+            ),
+            ("Noto Serif", "Ελληνικά γράμματα", "el", on, 0),
+            ("Noto Naskh Arabic", "مرحبا بالعالم", "ar", on, 1),
+            ("Noto Serif Hebrew", "שלום עולם", "he", on, 1),
+        ];
+        for (family, text, language, ligatures, level) in cases {
+            let face = fonts.select(family, 400, false).expect(family);
+            let script = text.chars().find_map(Script::of).expect("a script");
+            let span = Span {
+                len: text.len(),
+                style: Style {
+                    family: family.to_string(),
+                    size: 12 * POINT,
+                    weight: 400,
+                    italic: false,
+                    language: Language::parse(language).expect("a language"),
+                    ligatures,
+                },
+            };
+            // The whole, and a part with text either side.
+            let start = text.char_indices().nth(2).map_or(0, |(i, _)| i);
+            let end = text.char_indices().nth(9).map_or(text.len(), |(i, _)| i);
+            for range in [0..text.len(), start..end] {
+                let made = afresh(&fonts, text, range.clone(), &span, face, level, script);
+                for time in ["first", "second"] {
+                    let kept = shape_text(&fonts, text, range.clone(), &span, face, level, script);
+                    assert_eq!(kept, made, "{text:?} {range:?}, the {time} time");
+                }
+            }
+        }
+        // A plan for each way it was shaped, kept by its face.
+        let garamond = fonts
+            .select("EB Garamond", 400, false)
+            .expect("EB Garamond");
+        assert_eq!(fonts.face(garamond).plans.len(), 3);
+    }
 }

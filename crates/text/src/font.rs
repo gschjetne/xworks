@@ -41,6 +41,8 @@ pub struct Face {
     blob: Blob,
     index: u32,
     pub(crate) font: harfrust::Font,
+    /// The plans its text has been shaped with, kept to shape with again.
+    pub(crate) plans: crate::shape::Plans,
     family: String,
     weight: u16,
     italic: bool,
@@ -272,6 +274,7 @@ fn load(data: &scene::FontData, blob: &Blob, index: u32) -> Result<Face, FontErr
         underline,
         strikeout,
         font,
+        plans: crate::shape::Plans::default(),
     })
 }
 
