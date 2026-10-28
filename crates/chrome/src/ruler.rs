@@ -153,6 +153,32 @@ pub struct Stop {
     pub position: i64,
     /// How text sits at it.
     pub kind: StopKind,
+    /// The character that fills the room a tab opens up to it, if any:
+    /// its leader, which the ruler shows before its mark.
+    pub leader: Option<char>,
+}
+
+/// How a leader is drawn small, as the ruler shows it: a run of dots,
+/// dashes or a line.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum LeaderLook {
+    /// Dots, for a full stop and any character but a dash or a line.
+    Dots,
+    /// Dashes, for a hyphen or a dash.
+    Dashes,
+    /// A line, for an underscore or a rule.
+    Line,
+}
+
+impl LeaderLook {
+    /// How leader `c` looks on the ruler.
+    pub fn of(c: char) -> LeaderLook {
+        match c {
+            '-' | '‐' | '‑' | '‒' | '–' | '—' | '―' | '−' => LeaderLook::Dashes,
+            '_' | '‾' | '─' | '━' | '⎯' => LeaderLook::Line,
+            _ => LeaderLook::Dots,
+        }
+    }
 }
 
 /// How text sits at a tab stop.
@@ -223,6 +249,16 @@ mod tests {
         }
         assert_eq!(StopKind::from_id("decimal:"), None);
         assert_eq!(StopKind::Center.name(), "Centred");
+    }
+
+    #[test]
+    fn leaders_look_as_their_characters_do() {
+        assert_eq!(LeaderLook::of('.'), LeaderLook::Dots);
+        assert_eq!(LeaderLook::of('·'), LeaderLook::Dots);
+        assert_eq!(LeaderLook::of('*'), LeaderLook::Dots);
+        assert_eq!(LeaderLook::of('-'), LeaderLook::Dashes);
+        assert_eq!(LeaderLook::of('–'), LeaderLook::Dashes);
+        assert_eq!(LeaderLook::of('_'), LeaderLook::Line);
     }
 
     #[test]

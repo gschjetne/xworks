@@ -334,6 +334,7 @@ impl Editor {
                 .map(|s| Stop {
                     position: s.position,
                     kind: stop_kind(s.align),
+                    leader: s.leader,
                 })
                 .collect(),
             enabled: self.writable(),

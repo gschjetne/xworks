@@ -247,6 +247,89 @@ fn the_ruler_hits_its_stops_and_indents() {
     assert!(ruler.draw(&kit).len() > 40);
 }
 
+/// A stop with a leader shows it on the ruler (M2's exit, review
+/// 7fnfdhb5): a short run of its dots, dashes or line just before its
+/// mark, in the ruler's ink, light and dark, the ticks under it cleared;
+/// a stop without one shows none. What a point hits is as without them.
+#[test]
+fn the_ruler_shows_each_stops_leader() {
+    let cm = Unit::Centimetre.units();
+    let plain = ruler_model(Unit::Centimetre);
+    let stop = |position: i64, kind: StopKind, leader: Option<char>| Stop {
+        position,
+        kind,
+        leader,
+    };
+    let led = Ruler {
+        stops: vec![
+            stop(4 * cm, StopKind::Start, Some('.')),
+            stop(7 * cm, StopKind::End, Some('-')),
+            stop(10 * cm, StopKind::Center, Some('_')),
+            stop(13 * cm, StopKind::Decimal(','), None),
+        ],
+        ..plain.clone()
+    };
+    let unled = Ruler {
+        stops: led
+            .stops
+            .iter()
+            .map(|s| Stop { leader: None, ..*s })
+            .collect(),
+        ..plain
+    };
+    for look in ["light", "dark"] {
+        let theme = theme(look);
+        let labels = Labels::new();
+        let kit = Kit {
+            fonts: fonts(),
+            theme: &theme,
+            icons: icons(),
+            labels: &labels,
+            caret: true,
+        };
+        let ruler = RulerView::new(&kit, &led, px(40), px(1000));
+        let drawn = ruler.draw(&kit);
+        let inked = |area: toolkit::Rect| -> Vec<scene::Rect> {
+            drawn
+                .iter()
+                .filter(|item| {
+                    matches!(item, scene::Item::Fill { color, .. } if *color == theme.colors.ink)
+                })
+                .filter_map(scene::Item::bounds)
+                .filter(|r| {
+                    r.x >= area.x
+                        && r.x + r.width <= area.x + area.width
+                        && r.y >= area.y
+                        && r.y + r.height <= area.y + area.height
+                })
+                .collect()
+        };
+        // Dots, three; dashes, two; a line, one; each ending before its
+        // stop's mark, and within the ruler's height.
+        for (i, count) in [(0, 3), (1, 2), (2, 1)] {
+            let area = ruler.leader(i).expect("a leader");
+            let marks = inked(area);
+            assert_eq!(marks.len(), count, "{look}: stop {i}");
+            let x = px(100) + led.stops[i].position;
+            assert!(area.x + area.width < x - px(1), "{look}: before its mark");
+            assert!(area.y > px(40) && area.y + area.height < px(40 + 26));
+        }
+        assert_eq!(ruler.leader(3), None, "no leader, none shown");
+        // The ink is the look's, which shows on its field.
+        assert_ne!(theme.colors.ink, theme.colors.field);
+        // The leaders add only what draws them.
+        let without = RulerView::new(&kit, &unled, px(40), px(1000)).draw(&kit);
+        assert_eq!(drawn.len(), without.len() + 3 + 3 + 2 + 1);
+        // Hitting is as without them, across the ruler's foot and head.
+        let other = RulerView::new(&kit, &unled, px(40), px(1000));
+        for x in (0..1000).map(px) {
+            for y in [px(40 + 6), px(40 + 20)] {
+                assert_eq!(ruler.hit(x, y), other.hit(x, y), "{look}: at {x}, {y}");
+            }
+        }
+    }
+}
+
 /// A ruler over a column 15 cm wide from 100 pixels, on a page 2.5 cm
 /// wider each side, with its first line indented 1 cm, and stops at 5 cm
 /// and 9 cm, measured in `unit`.
@@ -270,10 +353,12 @@ fn ruler_model(unit: Unit) -> Ruler {
             Stop {
                 position: 5 * cm,
                 kind: StopKind::Start,
+                leader: None,
             },
             Stop {
                 position: 9 * cm,
                 kind: StopKind::Decimal('.'),
+                leader: None,
             },
         ],
         enabled: true,
