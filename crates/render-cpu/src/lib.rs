@@ -1,26 +1,64 @@
 //! The reference renderer: a display list drawn to pixels in software, on
-//! `vello_cpu` (D7, docs/ARCHITECTURE.md, section 10).
+//! `vello_cpu` (D7, docs/ARCHITECTURE.md, section 10). Tests and golden
+//! images draw with it, and so does a window where the GPU is software or
+//! not ready.
 //!
-//! [`render`] draws a [`scene::Page`] at any resolution, and [`Renderer`]
-//! does too, keeping what it makes of the page's images from one render
-//! to the next, and drawing a part of a page alone, for a window that
-//! draws only what changed. At [`Level::Portable`] it draws with scalar
-//! code, and its pixels are the same on every machine and platform: tests
-//! and golden images use it. At [`Level::Fastest`] it uses the machine's
-//! best SIMD instructions, which draw slightly different pixels on some
-//! machines (within a few of 255).
+//! - [`render`]: a [`scene::Page`] drawn at any resolution, to an
+//!   [`Image`] of straight RGBA pixels.
+//! - [`Renderer`]: the same, keeping what it makes of the page's images
+//!   from one render to the next, and drawing a part of a page alone
+//!   ([`Renderer::render_rect`]), for a window that draws only what
+//!   changed.
+//! - [`Level`]: [`Level::Portable`] draws with scalar code, the same
+//!   pixels on every machine; [`Level::Fastest`] with the machine's best
+//!   SIMD instructions, for the screen.
+//! - [`pixels`]: how many pixels a length in layout units takes.
 //!
-//! Invariants:
+//! # What a caller may rely on
 //!
-//! - The same page at the same resolution and level draws the same pixels,
-//!   every time, whatever was drawn before.
-//! - Pixels are straight RGBA, 8 bits a channel, row by row; nothing is
-//!   drawn under the page's items, so what they don't cover is transparent.
-//! - Items outside groups are drawn at their coordinates scaled, with no
-//!   transform; only a group's items go through one.
-//! - An image is drawn from its smallest level at least as large as it's
-//!   drawn, sampled bilinearly.
-//! - No threads: the app runs renders on its own workers.
+//! - **Pure.** No I/O, threads, clocks or environment (Clippy's
+//!   `crates/clippy.toml`), and it builds for WebAssembly (CI). It draws
+//!   on the caller's thread; the app runs renders on its own workers.
+//! - **The same pixels everywhere at [`Level::Portable`]:** the same page
+//!   at the same resolution draws the same pixels every time, on Linux,
+//!   Windows and macOS, whatever the renderer drew before
+//!   (`tools/shot/tests/golden.rs`, `every_recorded_scene_matches_its_golden`,
+//!   which CI runs on all three; `tests/damage.rs`,
+//!   `a_renderer_draws_the_same_whatever_it_drew_before`). At
+//!   [`Level::Fastest`] pixels are within a few levels of 255 of those
+//!   (`shot`'s unit test `the_fastest_level_draws_close_to_the_portable_one`).
+//! - **Pixels:** straight RGBA, 8 bits a channel, row by row. Nothing is
+//!   drawn under the page's items, so what they don't cover is
+//!   transparent; a page of 914 400 layout units is `ppi` pixels, rounded
+//!   up (unit tests `nothing_drawn_is_transparent_and_half_alpha_stays_straight`,
+//!   `a_rectangle_on_pixel_edges_fills_exactly_its_pixels` and
+//!   `resolution_scales_the_page`).
+//! - **Items:** those outside groups are drawn at their coordinates
+//!   scaled, with no transform; a group's go through its transform, within
+//!   its clip (unit test `a_group_clips_and_transforms_its_items`). An
+//!   image is drawn from its smallest level at least as large as it's
+//!   drawn, sampled bilinearly, its edge pixels held beyond it (unit test
+//!   `an_image_fills_its_rectangle`).
+//! - **A part of a page** draws what the whole page does there, within a
+//!   level where anti-aliasing rounds the other way (unit test
+//!   `a_rect_of_the_page_draws_what_the_whole_does_there`); so damage
+//!   drawn over the old frame gives the new one (`tests/damage.rs`,
+//!   `drawing_the_damage_over_the_old_frame_gives_the_new_one`).
+//! - **Glyphs a font hasn't** don't stop the page: there's no panic, and
+//!   the rest of it draws (`tests/damage.rs`,
+//!   `glyphs_a_font_hasnt_leave_the_rest_of_the_page`).
+//!
+//! # What it doesn't promise
+//!
+//! - The same pixels at [`Level::Fastest`] on different machines, or from
+//!   another version of `vello_cpu`: goldens are recorded at
+//!   [`Level::Portable`].
+//! - Pages larger than 65 535 pixels a side: they're cut there.
+//! - Runs of fonts that aren't faces `text` loaded: a run whose font isn't
+//!   one, or names a face its file hasn't, panics inside glifo
+//!   (`tests/damage.rs`,
+//!   `a_run_whose_font_isnt_one_leaves_the_rest_of_the_page`, ignored).
+//! - Speed: it draws on one thread.
 
 use std::collections::HashMap;
 use std::sync::Arc;

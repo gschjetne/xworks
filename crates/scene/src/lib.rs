@@ -1,5 +1,7 @@
 //! The display list: what a view draws, as data, for the renderers to draw
-//! (docs/ARCHITECTURE.md, section 10).
+//! (docs/ARCHITECTURE.md, section 10). Views make pages of items; render-cpu,
+//! render-gpu and render-pdf draw them, and none of them looks back at the
+//! document that made them.
 //!
 //! - [`Page`]: a page's size and its [`Item`]s, drawn in order, each over
 //!   the ones before: fills, strokes, glyph runs, images, and groups of
@@ -8,9 +10,8 @@
 //!   output can be searched and copied and screen readers can read it.
 //! - [`Image`]: a raster image, sRGB and premultiplied, at most
 //!   [`MAX_SIDE`] pixels a side, with smaller copies of itself for drawing
-//!   it small, made by a resampler whose pixels are the same everywhere,
-//!   and, where it's given, the sRGB JPEG file it was decoded from, for
-//!   PDF to hold as it is.
+//!   it small, and, where it's given, the sRGB JPEG file it was decoded
+//!   from, for PDF to hold as it is.
 //! - [`Group`]: items drawn through a [`Transform`], within a clip.
 //! - [`Path`], [`Rect`], [`Color`], [`Font`].
 //! - [`Structure`]: a document's blocks in reading order, nested as lists,
@@ -19,14 +20,57 @@
 //! - [`changed`] and [`redraw`]: where two display lists draw differently,
 //!   so a window draws only that again.
 //!
-//! Invariants:
+//! # What a caller may rely on
 //!
-//! - Positions and sizes are in layout units, 914 400 to the inch, with y
-//!   growing down the page from its top left corner.
-//! - A display list holds no references into the document or the view that
-//!   made it: it can be drawn on any thread, by any renderer, any number of
-//!   times, and draws the same each time.
-//! - An item's [`Item::bounds`] hold everything it draws.
+//! - **Pure.** No I/O, threads, clocks or environment (Clippy's
+//!   `crates/clippy.toml`), and it builds for WebAssembly (CI).
+//! - **Units:** positions and sizes are integers in layout units, 914 400
+//!   to the inch, with y growing down the page from its top left corner;
+//!   colours are sRGB with straight alpha. The renderers draw by them
+//!   (render-cpu's unit tests
+//!   `a_rectangle_on_pixel_edges_fills_exactly_its_pixels` and
+//!   `resolution_scales_the_page`; this crate's unit test
+//!   `a_rect_is_closed_and_clockwise_on_screen`).
+//! - **A display list stands alone.** It holds no references into the
+//!   document or the view that made it, sharing only fonts' and images'
+//!   bytes, so it can be drawn on any thread, by any renderer, any number
+//!   of times, and draws the same each time (this crate's unit test
+//!   `display_lists_go_between_threads`; render-cpu's
+//!   `tests/damage.rs`, `a_renderer_draws_the_same_whatever_it_drew_before`).
+//! - **Bounds hold what's drawn:** an item's [`Item::bounds`] hold every
+//!   pixel it draws, anti-aliasing, glyphs, strokes, images and groups
+//!   included (render-cpu's `tests/damage.rs`,
+//!   `every_item_draws_within_its_bounds`; this crate's unit test
+//!   `a_group_is_bounded_by_its_transformed_items_and_its_clip`).
+//! - **Damage is enough:** drawing every item of a new list over the
+//!   rectangles [`changed`] and [`redraw`] give, over the old list's
+//!   pixels, gives the new list's pixels; nothing changed is no damage
+//!   (render-cpu's `tests/damage.rs`,
+//!   `drawing_the_damage_over_the_old_frame_gives_the_new_one`; `damage`'s
+//!   unit tests).
+//! - **Images are the same everywhere:** at most [`MAX_SIDE`] pixels a
+//!   side, a larger one scaled to fit keeping its proportions, with
+//!   levels halved down to a pixel by an area-averaging resampler in
+//!   integers, so every platform has the same pixels; pixels that don't
+//!   fill the size given are an [`ImageError`], never a panic (`image`'s
+//!   unit tests, such as `levels_halve_down_to_a_pixel` and
+//!   `an_image_needs_pixels_and_the_right_number_of_them`).
+//! - **Structure:** a block is inside an earlier block or none;
+//!   [`Structure::parent`] takes any other parent as none, so no structure
+//!   loops (this crate's unit test `a_parent_is_an_earlier_block`).
+//!
+//! # What it doesn't promise
+//!
+//! - That every item is visible: items may lie off the page, and paths
+//!   may be empty.
+//! - Exact turns: [`Transform::rotate`] by other than quarter turns takes
+//!   its sine and cosine from the platform, which may differ in the last
+//!   bit, so goldens turn by quarters or give the matrix.
+//! - Tight bounds: they're generous, glyphs taken to fill their font's
+//!   bounding box and strokes to reach twice their width.
+//! - That [`Glyphs::text`] and [`Glyph::text`] agree with the glyphs, or
+//!   that sources point into blocks that exist: the view that made them
+//!   keeps that, and renderers take what they're given.
 
 mod damage;
 mod image;
@@ -713,5 +757,39 @@ mod tests {
         }));
         assert!(fonts[1].same(&Font { data: b, index: 0 }));
         assert!(fonts[2].same(&Font { data: a, index: 1 }));
+    }
+
+    /// A block is inside an earlier block or none: a parent that's the
+    /// block itself, a later one or past the end is none, so no structure
+    /// loops. Appending one structure to another keeps its nesting.
+    #[test]
+    fn a_parent_is_an_earlier_block() {
+        let structure = Structure {
+            language: None,
+            blocks: vec![Role::Quote, Role::Paragraph, Role::Paragraph, Role::Quote],
+            parents: vec![Some(3), Some(0), Some(2), Some(9)],
+        };
+        let parents: Vec<_> = (0..5).map(|b| structure.parent(b)).collect();
+        assert_eq!(parents, [None, Some(0), None, None, None]);
+        let mut whole = Structure {
+            language: None,
+            blocks: vec![Role::Paragraph],
+            parents: Vec::new(),
+        };
+        assert_eq!(whole.append(&structure), 1);
+        let parents: Vec<_> = (0..5).map(|b| whole.parent(b)).collect();
+        assert_eq!(parents, [None, None, Some(1), None, None]);
+    }
+
+    /// A display list owns what it holds, sharing fonts' and images' bytes
+    /// by reference counts, so it goes to any thread and lives as long as
+    /// it's needed; the compiler checks it.
+    #[test]
+    fn display_lists_go_between_threads() {
+        fn shared<T: Send + Sync + 'static>() {}
+        shared::<Page>();
+        shared::<Item>();
+        shared::<Image>();
+        shared::<Structure>();
     }
 }

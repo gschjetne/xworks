@@ -1,6 +1,7 @@
 //! Drawing only what changed (docs/ROADMAP.md, M2 stage 4): an item's
-//! bounds hold everything it draws, and drawing a new display list's
-//! damage over the old one's pixels gives the new one's.
+//! bounds hold everything it draws, drawing a new display list's damage
+//! over the old one's pixels gives the new one's, and a renderer draws a
+//! page the same whatever it drew before.
 
 use std::sync::OnceLock;
 
@@ -205,4 +206,111 @@ fn drawing_the_damage_over_the_old_frame_gives_the_new_one() {
     assert!(worst <= 1, "{worst} levels apart");
     // Nothing changed, nothing drawn.
     assert_eq!(scene::redraw(&new, &new, ppi, 576, 288), []);
+}
+
+/// A renderer keeps what it makes of images from one render to the next,
+/// but what it draws doesn't depend on that: after drawing other pages,
+/// other images and parts of pages, it draws a page exactly as a fresh
+/// one does, every time.
+#[test]
+fn a_renderer_draws_the_same_whatever_it_drew_before() {
+    let ppi = 96.0;
+    let picture = |seed: u8| {
+        scene::Image::new(
+            8,
+            8,
+            (0..64u8)
+                .flat_map(|i| [i.wrapping_mul(seed), 255 - i * 4, seed, 255])
+                .collect(),
+        )
+        .expect("an image")
+    };
+    let page = |seed: u8, x: i64| {
+        window(
+            [
+                lines(),
+                vec![Item::Image {
+                    image: picture(seed),
+                    rect: Rect::new(x, 2 * INCH, INCH / 2, INCH / 3),
+                    alt: None,
+                    source: None,
+                }],
+            ]
+            .into_iter()
+            .flatten()
+            .collect(),
+        )
+    };
+    let (first, second) = (page(3, INCH), page(7, 2 * INCH));
+    let fresh = render_cpu::render(&first, ppi, Level::Portable);
+    let mut renderer = Renderer::new();
+    assert_eq!(renderer.render(&first, ppi, Level::Portable), fresh);
+    renderer.render(&second, ppi, Level::Portable);
+    renderer.render_rect(
+        &second,
+        ppi,
+        Level::Portable,
+        PixelRect {
+            x: 90,
+            y: 180,
+            width: 100,
+            height: 60,
+        },
+    );
+    renderer.render(&first, 2.0 * ppi, Level::Portable);
+    assert_eq!(renderer.render(&first, ppi, Level::Portable), fresh);
+    assert_eq!(render_cpu::render(&first, ppi, Level::Portable), fresh);
+}
+
+/// `run` drawn on a page with a fill after it in its top left inch:
+/// whether the fill shows.
+fn drawn_after(run: scene::Glyphs) -> bool {
+    let mut page = Page::new(6 * INCH, 3 * INCH);
+    page.items.push(Item::Glyphs(run));
+    page.items.push(Item::Fill {
+        path: Path::rect(0, 0, INCH, INCH),
+        color: Color::rgb(10, 20, 30),
+    });
+    let image = render_cpu::render(&page, 96.0, Level::Portable);
+    pixel(&image, 10, 10) == [10, 20, 30, 255]
+}
+
+/// The first glyph run of [`lines`].
+fn first_run() -> scene::Glyphs {
+    lines()
+        .into_iter()
+        .find_map(|item| match item {
+            Item::Glyphs(run) => Some(run),
+            _ => None,
+        })
+        .expect("a glyph run")
+}
+
+/// Glyphs a font hasn't don't stop the page: there's no panic, and the
+/// rest of it draws.
+#[test]
+fn glyphs_a_font_hasnt_leave_the_rest_of_the_page() {
+    let mut run = first_run();
+    for glyph in &mut run.glyphs {
+        glyph.id = u32::MAX - glyph.id;
+    }
+    assert!(drawn_after(run));
+}
+
+/// A run whose font isn't one, or names a face its file hasn't, should
+/// leave the rest of the page too, as render-cpu's own comment says; it
+/// panics in glifo 0.4.0, which unwraps the font it reads. `text` only
+/// makes runs of faces it loaded, so no document reaches it.
+#[test]
+#[ignore = "panics in glifo: M2 stage 8 part A's report, render-cpu"]
+fn a_run_whose_font_isnt_one_leaves_the_rest_of_the_page() {
+    let mut junk = first_run();
+    junk.font = scene::Font {
+        data: std::sync::Arc::new(vec![0u8; 64]),
+        index: 0,
+    };
+    assert!(drawn_after(junk));
+    let mut far = first_run();
+    far.font.index = 7;
+    assert!(drawn_after(far));
 }
