@@ -1,6 +1,7 @@
 //! The GPU renderer on wgpu, for the shells: display lists drawn by
 //! `vello_gpu` (D7, docs/ARCHITECTURE.md, section 10), matching render-cpu,
-//! which draws with its twin `vello_cpu`, within a few levels of 255.
+//! which draws with its twin `vello_cpu`, so goldens rendered on the CPU
+//! hold for the screen.
 //!
 //! - [`open`]: a device on the fastest adapter, for a window's surface or
 //!   none.
@@ -8,19 +9,53 @@
 //!   frame or one read back, all of it or only some rectangles of it.
 //! - [`Canvas`]: a window's own picture, kept between frames: each frame
 //!   draws into it only where the display list changed, by the GPU or by
-//!   render-cpu, and it's copied whole to the window, as wgpu presents
-//!   only whole frames.
+//!   writing render-cpu's pixels, and it's copied whole to the window, as
+//!   wgpu presents only whole frames.
 //!
 //! render-gpu is an impure crate: it drives the GPU.
 //!
-//! Invariants:
+//! # What a caller may rely on
 //!
-//! - One renderer draws at any size: the size goes with each frame.
-//! - It draws what render-cpu draws, the same items in the same order,
-//!   images from the same level.
-//! - Images live in vello_gpu's atlas only while they're drawn, at most
-//!   [`MOST_IMAGES`] at once, so the atlas never runs out of room: each
-//!   image fits a page of it, and there are as many pages as images.
+//! Its tests need a GPU, so CI doesn't run them: they're run by hand, on
+//! Windows from WSL (CLAUDE.md), `tests/matches_cpu.rs` with
+//! `--run-ignored only`.
+//!
+//! - **It draws what render-cpu draws:** the same items in the same order,
+//!   images from the same level, within 8 levels of 255 on text, fills,
+//!   strokes, images, clips and transforms (`tests/matches_cpu.rs`,
+//!   `the_gpu_draws_what_the_cpu_draws` and
+//!   `images_clips_and_transforms_draw_as_on_the_cpu`).
+//! - **One renderer draws at any size:** the size goes with each frame.
+//! - **A canvas shows the page last drawn into it:** drawing only where
+//!   [`Canvas::damage`] says gives what drawing it all would, within a
+//!   level, and a canvas drawing nothing yet, or at another resolution,
+//!   draws everything (`tests/matches_cpu.rs`,
+//!   `a_canvas_drawn_where_it_changed_shows_the_new_page`); render-cpu's
+//!   pixels written into it are kept as they are, in either of the
+//!   formats a window's frame has, cut at its edges
+//!   (`render_cpus_pixels_are_written_as_they_are`).
+//! - **The atlas never runs out of room:** images live in vello_gpu's
+//!   atlas only while they're drawn, with a texel of border copied from
+//!   their edges, at most [`MOST_IMAGES`] at once, each fitting a page of
+//!   it, and there are as many pages as images; a page drawing more
+//!   shows the rest as grey (`tests/matches_cpu.rs`,
+//!   `more_images_than_the_atlas_holds_draw_grey`).
+//! - **Errors, not panics,** where the GPU fails a frame: [`Renderer::render`]
+//!   and [`Canvas::draw`] say why, and [`open`] is `None` where there's no
+//!   adapter.
+//!
+//! # What it doesn't promise
+//!
+//! - render-cpu's pixels exactly: the two differ by a few levels, more on
+//!   gradients, and goldens are rendered on the CPU.
+//! - That it runs: a machine may have no GPU, or only a software one, as
+//!   WSL's llvmpipe is, where the shells draw with render-cpu instead.
+//! - That its errors are typed: they're messages, for the log.
+//! - An image put in the atlas in the frame another leaves it shows as
+//!   nothing: vello_gpu clears the space the one leaving had in the
+//!   frame's passes, after render-gpu has written the new one there
+//!   (`tests/matches_cpu.rs`, `an_image_put_where_another_just_left_shows`,
+//!   ignored as failing).
 
 use std::borrow::Cow;
 use std::collections::HashMap;

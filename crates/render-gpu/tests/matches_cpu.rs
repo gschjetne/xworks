@@ -321,3 +321,117 @@ fn written_as_they_are(device: &render_gpu::Device) {
         );
     }
 }
+
+/// Solid images, one per cell of a row of cells a tenth of an inch wide,
+/// and how to read them back.
+struct Cells {
+    images: Vec<scene::Image>,
+}
+
+impl Cells {
+    const PPI: f64 = 100.0;
+
+    /// `count` images, each a colour of its own, starting from `first`.
+    fn new(first: usize, count: usize) -> Cells {
+        Cells {
+            images: (first..first + count)
+                .map(|i| scene::Image::new(2, 2, Cells::colour(i).repeat(4)).expect("an image"))
+                .collect(),
+        }
+    }
+
+    fn colour(i: usize) -> [u8; 4] {
+        [(i * 3) as u8, 255 - (i * 3) as u8, 40, 255]
+    }
+
+    /// A page of `cells` cells holding these images from the first.
+    fn page(&self, cells: usize) -> Page {
+        let mut page = Page::new(cells as i64 * INCH / 10, INCH / 10);
+        for (i, image) in self.images.iter().enumerate().take(cells) {
+            page.items.push(Item::Image {
+                image: image.clone(),
+                rect: Rect::new(i as i64 * INCH / 10, 0, INCH / 10, INCH / 10),
+                alt: None,
+                source: None,
+            });
+        }
+        page
+    }
+
+    /// The colours in the middle of each of `cells` cells of `page` drawn.
+    fn drawn(
+        renderer: &mut render_gpu::Renderer,
+        device: &render_gpu::Device,
+        page: &Page,
+        cells: usize,
+    ) -> Vec<[u8; 4]> {
+        let (w, _, pixels) = renderer
+            .render_offscreen(device, page, Cells::PPI)
+            .expect("it renders");
+        (0..cells)
+            .map(|i| {
+                let at = (5 * usize::from(w) + i * 10 + 5) * 4;
+                [pixels[at], pixels[at + 1], pixels[at + 2], pixels[at + 3]]
+            })
+            .collect()
+    }
+}
+
+fn near(a: [u8; 4], b: [u8; 4]) -> bool {
+    a.iter().zip(b).all(|(a, b)| a.abs_diff(b) <= 2)
+}
+
+/// More images than the atlas holds at once draw without an error, frame
+/// after frame: the first [`render_gpu::MOST_IMAGES`] as they are, the
+/// rest grey; and a page of fewer of them shows every one.
+#[test]
+#[ignore = "needs a GPU: on WSL, run the Windows build (CLAUDE.md)"]
+fn more_images_than_the_atlas_holds_draw_grey() {
+    let instance =
+        wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    let device = render_gpu::open(&instance, None).expect("a GPU");
+    let mut renderer = render_gpu::Renderer::new(&device.device, wgpu::TextureFormat::Rgba8Unorm);
+    let count = render_gpu::MOST_IMAGES + 2;
+    let cells = Cells::new(0, count);
+    for _ in 0..2 {
+        let drawn = Cells::drawn(&mut renderer, &device, &cells.page(count), count);
+        for (i, &colour) in drawn.iter().enumerate() {
+            let want = if i < render_gpu::MOST_IMAGES {
+                Cells::colour(i)
+            } else {
+                [128, 128, 128, 255]
+            };
+            assert!(near(colour, want), "cell {i}: {colour:?} for {want:?}");
+        }
+    }
+    let drawn = Cells::drawn(&mut renderer, &device, &cells.page(4), 4);
+    for (i, &colour) in drawn.iter().enumerate() {
+        assert!(near(colour, Cells::colour(i)), "cell {i}: {colour:?}");
+    }
+}
+
+/// An image put in the atlas in a frame where another left it, as when
+/// one page of pictures follows another, or images unseen for a while are
+/// forgotten while new ones come into view, shows as it is. It doesn't:
+/// vello_gpu clears the space an image leaves with a render pass in the
+/// frame's encoder, while render-gpu writes the new image with
+/// `Queue::write_texture`, which runs before the encoder's passes, so the
+/// new image is cleared and draws as nothing for as long as it stays.
+#[test]
+#[ignore = "fails, and needs a GPU: M2 stage 8 part A's report, render-gpu"]
+fn an_image_put_where_another_just_left_shows() {
+    let instance =
+        wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    let device = render_gpu::open(&instance, None).expect("a GPU");
+    let mut renderer = render_gpu::Renderer::new(&device.device, wgpu::TextureFormat::Rgba8Unorm);
+    let before = Cells::new(100, 4);
+    Cells::drawn(&mut renderer, &device, &before.page(4), 4);
+    // More than the atlas holds come next, so the four before leave it in
+    // the frame the new ones come in.
+    let count = render_gpu::MOST_IMAGES + 2;
+    let after = Cells::new(0, count);
+    let drawn = Cells::drawn(&mut renderer, &device, &after.page(count), count);
+    for (i, &colour) in drawn.iter().enumerate().take(render_gpu::MOST_IMAGES) {
+        assert!(near(colour, Cells::colour(i)), "cell {i}: {colour:?}");
+    }
+}
