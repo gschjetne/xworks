@@ -79,6 +79,12 @@ pub(crate) fn candidates(
     let mut out = Vec::new();
     let mut previous = 0;
     for b in locale::line_breaks(text, languages) {
+        // UAX #14 lets a line break after a space with a combining mark
+        // after it, inside what a reader sees as one character: a line
+        // never ends there.
+        if !b.mandatory && graphemes.binary_search(&b.offset).is_err() {
+            continue;
+        }
         if let Some(hyphenation) = hyphenation {
             for offset in hyphen_points(
                 text,

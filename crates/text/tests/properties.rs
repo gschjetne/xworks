@@ -292,6 +292,31 @@ proptest! {
     }
 }
 
+/// Found by the `paragraph` fuzz target: a space and a combining mark after
+/// it, here a Hebrew accent with no letter of its own, are one grapheme,
+/// but UAX #14 lets a line break between them. A line that ended there
+/// left the caret at its end on one line and, hit where it's drawn, on
+/// the other.
+#[test]
+fn a_line_never_ends_inside_a_grapheme() {
+    let text = "ڠڠrtlmڰ\u{3}\0 \u{5a7}\0?2*2!\u{8}2!\u{8}\u{5a0} \u{5a7}\0\n\u{59d}";
+    let layout = lay_out(text, 16.0, None, Align::Start, false);
+    let graphemes = locale::graphemes(text);
+    for line in &layout.lines {
+        assert!(graphemes.contains(&line.range.start), "{:?}", line.range);
+    }
+    let mut cursor = Some(Cursor {
+        offset: 0,
+        affinity: Affinity::Downstream,
+    });
+    while let Some(c) = cursor {
+        let caret = layout.caret(c);
+        let hit = layout.caret(layout.hit(caret.x, caret.top));
+        assert_eq!((hit.x, hit.line), (caret.x, caret.line), "at {c:?}");
+        cursor = layout.next(c);
+    }
+}
+
 /// Found by `lines_cover_the_text_and_fit`: a Hebrew word broken between
 /// letters that kern together came out wider than its line, because lines
 /// were measured as the paragraph was shaped whole, not as the broken word
