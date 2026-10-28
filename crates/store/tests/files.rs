@@ -81,7 +81,14 @@ fn a_lock_in_a_folder_of_locks() {
     let Acquired::Held(mut held) = acquire_at(&lock) else {
         panic!("the lock is had");
     };
-    assert!(matches!(acquire_at(&lock), Acquired::InUse(Some(_))));
+    let Acquired::InUse(holder) = acquire_at(&lock) else {
+        panic!("held twice");
+    };
+    // Where the system lets the lock file be read, it says who has it;
+    // on Windows the lock keeps others from reading it.
+    if cfg!(unix) {
+        assert!(holder.is_some());
+    }
     let moved = lock_in(&folder, &other);
     held.moved_to(&moved).expect("it moves");
     assert!(matches!(acquire_at(&moved), Acquired::InUse(_)));
