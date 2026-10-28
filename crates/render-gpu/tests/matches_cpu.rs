@@ -6,6 +6,17 @@ use scene::{Color, Group, Item, Page, Path, Point, Rect, Segment, Transform};
 use text::units::{INCH, POINT};
 use text::{Align, Fonts, Language, Paragraph, Span, Style};
 
+/// An instance on Vulkan, Metal or DirectX 12, unless `WGPU_BACKEND` asks
+/// for others, as the shells open it. Not OpenGL: on WSL, starting it has
+/// Mesa load and unload WSL's `libd3d12core.so`, which leaves a destructor
+/// for the thread's data pointing where it was, so the test's thread
+/// crashes as it ends.
+fn instance() -> wgpu::Instance {
+    let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle_from_env();
+    descriptor.backends = wgpu::Backends::PRIMARY.with_env();
+    wgpu::Instance::new(descriptor)
+}
+
 fn page() -> Page {
     let mut fonts = Fonts::new();
     for (name, bytes) in testkit::fonts::load().expect("the bundled fonts") {
@@ -66,8 +77,7 @@ fn page() -> Page {
 #[test]
 #[ignore = "needs a GPU: on WSL, run the Windows build (CLAUDE.md)"]
 fn the_gpu_draws_what_the_cpu_draws() {
-    let instance =
-        wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    let instance = instance();
     let device = render_gpu::open(&instance, None).expect("a GPU");
     let page = page();
     let mut renderer = render_gpu::Renderer::new(&device.device, wgpu::TextureFormat::Rgba8Unorm);
@@ -158,8 +168,7 @@ fn worst(a: &[u8], b: &[u8]) -> u8 {
 #[test]
 #[ignore = "needs a GPU: on WSL, run the Windows build (CLAUDE.md)"]
 fn images_clips_and_transforms_draw_as_on_the_cpu() {
-    let instance =
-        wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    let instance = instance();
     let device = render_gpu::open(&instance, None).expect("a GPU");
     let page = pictures();
     let mut renderer = render_gpu::Renderer::new(&device.device, wgpu::TextureFormat::Rgba8Unorm);
@@ -182,8 +191,7 @@ fn images_clips_and_transforms_draw_as_on_the_cpu() {
 #[test]
 #[ignore = "needs a GPU: on WSL, run the Windows build (CLAUDE.md)"]
 fn a_canvas_drawn_where_it_changed_shows_the_new_page() {
-    let instance =
-        wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    let instance = instance();
     let device = render_gpu::open(&instance, None).expect("a GPU");
     let format = wgpu::TextureFormat::Rgba8Unorm;
     let mut renderer = render_gpu::Renderer::new(&device.device, format);
@@ -242,8 +250,7 @@ fn a_canvas_drawn_where_it_changed_shows_the_new_page() {
 #[test]
 #[ignore = "needs a GPU: on WSL, run the Windows build (CLAUDE.md)"]
 fn render_cpus_pixels_are_written_as_they_are() {
-    let instance =
-        wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    let instance = instance();
     let gpu = render_gpu::open(&instance, None).expect("a GPU");
     let software = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
         force_fallback_adapter: true,
@@ -387,8 +394,7 @@ fn near(a: [u8; 4], b: [u8; 4]) -> bool {
 #[test]
 #[ignore = "needs a GPU: on WSL, run the Windows build (CLAUDE.md)"]
 fn more_images_than_the_atlas_holds_draw_grey() {
-    let instance =
-        wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    let instance = instance();
     let device = render_gpu::open(&instance, None).expect("a GPU");
     let mut renderer = render_gpu::Renderer::new(&device.device, wgpu::TextureFormat::Rgba8Unorm);
     let count = render_gpu::MOST_IMAGES + 2;
@@ -420,8 +426,7 @@ fn more_images_than_the_atlas_holds_draw_grey() {
 #[test]
 #[ignore = "fails, and needs a GPU: M2 stage 8 part A's report, render-gpu"]
 fn an_image_put_where_another_just_left_shows() {
-    let instance =
-        wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    let instance = instance();
     let device = render_gpu::open(&instance, None).expect("a GPU");
     let mut renderer = render_gpu::Renderer::new(&device.device, wgpu::TextureFormat::Rgba8Unorm);
     let before = Cells::new(100, 4);
@@ -445,8 +450,7 @@ fn an_image_put_where_another_just_left_shows() {
 #[test]
 #[ignore = "fails, and needs a GPU: M2 stage 8 part A's report, render-gpu"]
 fn images_coming_into_view_as_unseen_ones_leave_show() {
-    let instance =
-        wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+    let instance = instance();
     let device = render_gpu::open(&instance, None).expect("a GPU");
     let mut renderer = render_gpu::Renderer::new(&device.device, wgpu::TextureFormat::Rgba8Unorm);
     let row = Cells::new(0, 80);
