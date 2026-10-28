@@ -516,18 +516,38 @@ owner approved in review a23vvez8.
   and the system's caret rate. A follow-up built them, with the ruler
   counting from the margin or the paper's edge, spacing in points and the
   inspector's tab stops read as the ruler reads (review 77nh3z47).
-- **Stage 6** is built, with a follow-up from live use: saving as you
-  type, files changed by other programs, autolinks and Markdown budgets.
-  It awaits the owner's review (jy4a2tx5).
-- **The owner added stage 9,** a document's own styles. Its research came
-  back as a design the owner settled and accepted (review 30dmn1js). It's
-  built, and its goldens are approved (review sjj5ak5a). A follow-up built
-  what that review settled: quotes' space, a Table Header style, Clear
-  Formatting clearing marks, three-way stylesheet updates, and the
-  inspector's screens for every kind of style, which scrolls. It also
-  fixed what the owner found trying it: pasting now keeps paragraphs'
-  styles and the quotes, lists and tables they're in. It awaits the
-  owner's review in the same session.
+
+**Stages 6 and 9 are done (2026-10-28),** accepted by the owner.
+
+- **Stage 6 (review jy4a2tx5):**
+  - Markdown files open, are edited and are saved as themselves;
+  - a follow-up from live use built:
+    - saving as you type, on a worker;
+    - noticing files changed by other programs;
+    - the lock kept out of the file's folder;
+    - rules, and alerts as written;
+    - autolinks, in every document;
+    - Markdown's budgets.
+- **Stage 9 (reviews 30dmn1js and sjj5ak5a),** which the owner added: a
+  document's own styles.
+  - Its research came back as a design the owner settled, and it was
+    built on that design:
+    - styles based on each other, and named parts;
+    - schema 3;
+    - six stylesheets;
+    - Clear Formatting;
+    - the inspector's Style tab;
+    - pasting with styles.
+  - A follow-up built what its review settled:
+    - space around quotes;
+    - a Table Header style;
+    - Clear Formatting clearing marks;
+    - three-way stylesheet updates;
+    - screens for every kind of style, in an inspector that scrolls.
+  - It also fixed what the owner found trying it: pasting keeps
+    paragraphs' styles and the quotes, lists and tables they're in.
+
+Stage 8, the exit, is left.
 
 ### Exit criteria
 
