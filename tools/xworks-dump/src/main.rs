@@ -6,8 +6,8 @@
 //! ```
 //!
 //! It prints what the document is, the document as it stands, its log of
-//! transactions, its named versions and the fonts it carries. Two files
-//! with equal documents and histories dump identically.
+//! transactions, its named versions, and the fonts and pictures it
+//! carries. Two files with equal documents and histories dump identically.
 
 use anyhow::Context;
 

@@ -1,7 +1,7 @@
-//! `budgets`: measures the performance budgets that apply to M1 on the
-//! machine it runs on, and prints each against its budget
-//! (`spec/budgets.ron`; docs/ARCHITECTURE.md, section 12; docs/ROADMAP.md,
-//! M1 stage 10).
+//! `budgets`: measures the performance budgets that apply so far, M1's and
+//! Markdown files', on the machine it runs on, and prints each against its
+//! budget (`spec/budgets.ron`; docs/ARCHITECTURE.md, section 12;
+//! docs/ROADMAP.md, M1 stage 10).
 //!
 //! ```text
 //! budgets [--shell PATH] [--runs N] [--scale S]
