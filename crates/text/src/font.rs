@@ -152,6 +152,9 @@ pub struct FamilySpec {
 #[derive(Clone, Debug, Default)]
 pub struct Fonts {
     faces: Vec<Face>,
+    /// Each family's faces, in the order they were added, so a face is
+    /// chosen from its family's alone.
+    families: BTreeMap<String, Vec<FaceId>>,
     fallbacks: BTreeMap<String, Vec<String>>,
 }
 
@@ -174,6 +177,12 @@ impl Fonts {
             .map(|index| load(&shared, &blob, index))
             .collect::<Result<Vec<_>, _>>()?;
         let first = self.faces.len() as u32;
+        for (k, face) in faces.iter().enumerate() {
+            self.families
+                .entry(face.family.clone())
+                .or_default()
+                .push(FaceId(first + k as u32));
+        }
         self.faces.extend(faces);
         Ok((first..self.faces.len() as u32).map(FaceId).collect())
     }
@@ -207,16 +216,18 @@ impl Fonts {
     /// The face of `family` nearest `weight` and `italic`: the right slant
     /// first, then the nearest weight, the heavier of two equally near.
     pub fn select(&self, family: &str, weight: u16, italic: bool) -> Option<FaceId> {
-        self.faces()
-            .filter(|(_, f)| f.family == family)
-            .min_by_key(|(_, f)| {
+        self.families
+            .get(family)?
+            .iter()
+            .copied()
+            .min_by_key(|&id| {
+                let f = self.face(id);
                 (
                     f.italic != italic,
                     f.weight.abs_diff(weight),
                     std::cmp::Reverse(f.weight),
                 )
             })
-            .map(|(id, _)| id)
     }
 
     /// The faces a character of `family`, `weight` and `italic` may come
