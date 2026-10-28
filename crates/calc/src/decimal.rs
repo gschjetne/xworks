@@ -5,16 +5,8 @@
 //! exponent, or an infinity or a NaN. Results are rounded to 34 digits, half
 //! to even. Like decimal128, a number keeps its exponent, so `1.50` and
 //! `1.5` are equal but print as written; the ideal exponent rules decide a
-//! result's.
-//!
-//! Invariants:
-//!
-//! - A finite number's coefficient is below 10^34, and its exponent lies
-//!   between −6176 and 6111, decimal128's range.
-//! - Operations never panic and are exact whenever the exact result fits in
-//!   34 digits; otherwise they round once, half to even.
-//! - The same operands always give the same result and status, on every
-//!   platform.
+//! result's. What a caller may rely on is the crate's contract
+//! ([`crate`]).
 
 use std::cmp::Ordering;
 use std::fmt;
