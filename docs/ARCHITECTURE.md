@@ -1696,6 +1696,12 @@ a fuzz target.
   and image-webp, and converts them to sRGB from their ICC profiles with
   moxcms. A JPEG turns as its EXIF orientation says. A picture with more
   pixels than `spec/pictures.ron` allows is refused from its header.
+- **A damaged JPEG can make zune-jpeg panic** (0.5.15, and 0.5.16's
+  release candidate): its AVX2 code checks the bounds of its output and
+  unwraps the failure. `krilla` turns that code on, and no option turns
+  it off. xWorks waits for zune-jpeg to fix it, and takes the release
+  that does (project owner, 2026-10-28, review 7fnfdhb5). Until then the
+  nightly fuzzing of JPEG pictures may find it again.
 - **render-gpu keeps images in vello_gpu's atlas** only while they're
   drawn, at most 64 at once in as many atlas pages, so the atlas can't run
   out of room, and each with a texel of border copied from its edge:
@@ -1792,6 +1798,9 @@ WSL's figure for information.
 A Markdown file has an `.xw` file's budgets (project owner, 2026-10-24,
 review jy4a2tx5): `tools/budgets` makes one of Markdown files of our own,
 over and over, until it fills as many automatic pages as the report.
+Opening one is held a tenth within its budget, the 95th percentile at
+180 ms or less on the owner's workstation, as runs there vary by about
+10 ms (project owner, 2026-10-28, review 7fnfdhb5).
 
 **Measured at M1's exit** (2026-10-22), on the owner's workstation: 16
 threads, a GeForce GTX 1070. Windows draws with render-gpu on Vulkan;

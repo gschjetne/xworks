@@ -461,7 +461,22 @@ flowchart LR
    them.
 
 8. **Exit.** Each foundation crate's contract is written down in its
-   `lib.rs` and the architecture, and the budgets are measured again.
+   `lib.rs` and the architecture, and the budgets are measured again. The
+   owner settled its plan (review 7fnfdhb5):
+   - **Contracts:** the foundation crates' are written down, and those of
+     `story`, `canvas` and `markdown`, which Write builds on first. Each
+     invariant names the test that holds it.
+   - **Speed:** opening a 500-page Markdown file is held a tenth within its
+     budget, at 180 ms.
+   - **Stage 9's follow-up is finished:**
+     - the ruler draws a tab stop's leader;
+     - the Text tab sets leaders on a paragraph's own stops;
+     - a list chooses its list definition;
+     - lists that pop up scroll.
+   - **M2's exit session** writes a Markdown file and a document with
+     pictures, quits, reopens and prints them, as a golden.
+   - **Live use** counts on Windows and on Linux under WSL; native Linux
+     comes when the owner's workstation runs it (review gqbnbar4).
 
 ### Progress
 
@@ -579,6 +594,9 @@ Noted for after M1, not yet planned:
   some Arabic letters in the exit document's PDF, which pdftotext reads
   correctly.
 - **UX design opens F5** (project owner, 2026-10-22, review v0qk8k5d).
+- **zune-jpeg's fix** for the panic a damaged JPEG causes in its AVX2
+  code, taken when it's released (project owner, 2026-10-28, review
+  7fnfdhb5).
   Before the toolkit grows more widgets, a design document and mockups
   drawn with `shot`, reviewed by the owner, settle what the tracks would
   otherwise each invent:
