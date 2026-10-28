@@ -338,7 +338,8 @@ fn a_lists_numbering_changed_renumbers_its_items() {
     assert_eq!(markers(&window), [m("1."), m("2.")]);
     let numbers = named(&window, StyleKind::List, "Numbers");
     // The Text tab says which list definition the caret's list takes, its
-    // label a link to the definition's screen in the Style tab.
+    // label a link to the definition's screen in the Style tab, in a list
+    // to choose another from (M2's exit).
     command(&mut window, "toggle-inspector");
     let text_tab = window.editor().inspector().tabs[0].clone();
     let list = text_tab.sections[0]
@@ -346,12 +347,13 @@ fn a_lists_numbering_changed_renumbers_its_items() {
         .iter()
         .find(|r| labelled(r, "List"))
         .expect("the list's row");
-    assert_eq!(
-        list.controls[1].kind,
-        ControlKind::Note {
-            text: "Numbers".to_string()
-        }
-    );
+    let ControlKind::Choice {
+        choices, selected, ..
+    } = &list.controls[1].kind
+    else {
+        panic!("a list of definitions: {:?}", list.controls[1]);
+    };
+    assert_eq!(choices[selected.expect("one chosen")].label, "Numbers");
     let link = list.controls[0].clone();
     window.update(Event::CommandWith(link.command, link.args));
     assert_eq!(

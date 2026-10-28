@@ -171,6 +171,22 @@ fn rgb((r, g, b): (u8, u8, u8)) -> [u8; 3] {
     [r, g, b]
 }
 
+/// Whether list definition `list`'s levels number their items where they
+/// don't say: as its role says, or else as whether it writes numbers.
+fn numbered_by_default(list: &story::ListStyle) -> bool {
+    match list.role.as_deref() {
+        Some("bullets") => false,
+        Some("numbers" | "headings") => true,
+        _ => !list.numbers.is_empty(),
+    }
+}
+
+/// Whether list definition `list` numbers a list's items, as its first
+/// level does: the kind of list it suits, numbered or bulleted.
+fn numbers_items(list: &story::ListStyle) -> bool {
+    list.level(0).numbering(numbered_by_default(list)) != Numbering::Bullet
+}
+
 impl Editor {
     /// The Style tab shows the caret's paragraph style again, as it does
     /// when it's opened.
@@ -377,6 +393,22 @@ impl Editor {
                     (object(0), int(1), text(2), args.get(3))
                 {
                     self.set_level(list, level, what, value);
+                }
+            }
+            "list-definition" => {
+                // By ID, as the Text tab gives it, or by name, as a script
+                // may.
+                let definition = match args.first() {
+                    Some(Arg::Text(name)) => self
+                        .sheet
+                        .lists
+                        .iter()
+                        .find(|l| l.name == *name)
+                        .and_then(|l| l.id),
+                    _ => object(0),
+                };
+                if let Some(definition) = definition {
+                    self.set_list_definition(definition);
                 }
             }
             _ => return false,
@@ -648,11 +680,88 @@ impl Editor {
         self.set_prop(list, &keys::level(level, what), Some(value));
     }
 
+    /// The list paragraph `paragraph` is in, the innermost, if it's in one.
+    fn list_of(&self, paragraph: ObjectId) -> Option<ObjectId> {
+        let mut at = self.document.parent(paragraph)?;
+        loop {
+            if self
+                .document
+                .block(at)
+                .is_some_and(|b| b.kind == doc::Kind::List)
+            {
+                return Some(at);
+            }
+            at = self.document.parent(at)?;
+        }
+    }
+
+    /// Gives the lists the selection is in, each paragraph's innermost,
+    /// list definition `definition` (M2's exit, review 7fnfdhb5), as one
+    /// edit Undo takes back: each names it, or names none where it's the
+    /// one lists of its kind take, so a Markdown file holds it. A list of
+    /// the other kind, bulleted given a definition that numbers, becomes
+    /// that kind, as its markers then are, and the status bar says so.
+    fn set_list_definition(&mut self, definition: ObjectId) {
+        let Some(chosen) = self
+            .sheet
+            .lists
+            .iter()
+            .find(|l| l.id == Some(definition))
+            .cloned()
+        else {
+            return;
+        };
+        let numbers = numbers_items(&chosen);
+        let mut lists: Vec<ObjectId> = Vec::new();
+        for p in self.selected_paragraphs() {
+            if let Some(list) = self.list_of(p)
+                && !lists.contains(&list)
+            {
+                lists.push(list);
+            }
+        }
+        // The definition lists of its kind take without naming one.
+        let named = (self.sheet.list(numbers, None).id != Some(definition))
+            .then_some(Value::Ref(definition));
+        let mut ops = Vec::new();
+        let mut turned = false;
+        for list in lists {
+            let Some(block) = self.document.block(list) else {
+                continue;
+            };
+            let ordered = matches!(block.props.get(keys::ORDERED), Some(Value::Bool(true)));
+            if ordered != numbers {
+                turned = true;
+                ops.push(Op::SetBlockProp {
+                    block: list,
+                    key: keys::ORDERED.to_string(),
+                    value: numbers.then_some(Value::Bool(true)),
+                });
+            }
+            if block.props.get(keys::LIST) != named.as_ref() {
+                ops.push(Op::SetBlockProp {
+                    block: list,
+                    key: keys::LIST.to_string(),
+                    value: named.clone(),
+                });
+            }
+        }
+        if self.commit(&chosen.name, ops, false) && turned {
+            let (kind, does) = if numbers {
+                ("Numbered", "numbers")
+            } else {
+                ("Bulleted", "bullets")
+            };
+            self.message = format!("{kind} the list, as {} {does} its items", chosen.name);
+        }
+    }
+
     // ---- the screens
 
     /// The Text tab's row for the list the caret's paragraph is in, if
     /// it's in one: its label a link to the list definition it takes, in
-    /// the Style tab, and the definition's name.
+    /// the Style tab, and a list of the document's definitions to choose
+    /// another from (M2's exit, review 7fnfdhb5).
     pub(super) fn list_row(&self) -> Option<Row> {
         let k = self.index_of(self.focus.paragraph);
         let entry = self.laid.entries.get(k)?;
@@ -672,11 +781,23 @@ impl Editor {
         };
         let definition = self.sheet.list(list.ordered, own);
         let id = definition.id?;
+        let lists: Vec<&story::ListStyle> =
+            self.sheet.lists.iter().filter(|l| l.id.is_some()).collect();
+        let choices = lists
+            .iter()
+            .map(|l| Choice::new(Arg::Int(l.id.map_or(0, |id| id.0 as i64)), l.name.clone()))
+            .collect();
+        let selected = lists.iter().position(|l| l.id == Some(id));
         Some(row(
             "",
             vec![
                 button("style-follow", vec![id_arg(id)], true, "List", None),
-                note(&definition.name),
+                control(
+                    "list-definition",
+                    Vec::new(),
+                    self.writable(),
+                    choice(choices, selected),
+                ),
             ],
         ))
     }
@@ -1543,11 +1664,7 @@ impl Editor {
             .style(id)
             .map(|s| s.props.clone())
             .unwrap_or_default();
-        let numbered = match list.role.as_deref() {
-            Some("bullets") => false,
-            Some("numbers" | "headings") => true,
-            _ => !list.numbers.is_empty(),
-        };
+        let numbered = numbered_by_default(list);
         let what = match list.role.as_deref() {
             Some("bullets") => "Bulleted lists",
             Some("numbers") => "Numbered lists",

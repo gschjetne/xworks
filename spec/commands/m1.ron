@@ -252,6 +252,9 @@
         // "reads" (with a 1 for the number), "start" (typed), "indent" or
         // "gap" (lengths).
         (id: "list-level", title: "Set a List's Level", arg: Some(List)),
+        // The list definition the lists the selection is in take: by its
+        // ID, as the Text tab gives it, or its name.
+        (id: "list-definition", title: "List Definition", arg: Some(List)),
     ],
     menus: [
         (title: "&File", items: [

@@ -70,6 +70,9 @@ pub enum What {
     /// A change to the document's stylesheet, which Markdown has no room
     /// for: a Markdown file takes the program's.
     Stylesheet,
+    /// A list definition chosen for a list, other than the one lists of
+    /// its kind take.
+    ListDefinition,
 }
 
 impl fmt::Display for What {
@@ -92,6 +95,7 @@ impl fmt::Display for What {
             What::Marks => f.write_str("marks where Markdown can't write them"),
             What::Property(key) => write!(f, "{key}"),
             What::Stylesheet => f.write_str("a change to the stylesheet"),
+            What::ListDefinition => f.write_str("a list definition of a list's own"),
         }
     }
 }
@@ -815,6 +819,12 @@ impl<'a> Writer<'a> {
 
     fn open_list(&mut self, id: ObjectId, after_list: Option<char>) -> Result<(), Unheld> {
         let b = self.document.block(id).expect("a list");
+        if b.props.contains_key(keys::LIST) {
+            return Err(Unheld {
+                block: id,
+                what: What::ListDefinition,
+            });
+        }
         check_props(id, &b.props, &[keys::ORDERED, keys::START])?;
         let ordered = matches!(b.props.get(keys::ORDERED), Some(Value::Bool(true)));
         let start = match b.props.get(keys::START) {

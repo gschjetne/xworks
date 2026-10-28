@@ -738,3 +738,41 @@ fn a_tables_header_row_is_in_table_header() {
         assert_eq!(unheld.what, markdown::What::Style(name.into()));
     }
 }
+
+/// A list that names a list definition of its own, even the one lists of
+/// its kind take, isn't held (M2's exit, review 7fnfdhb5): Markdown has
+/// no room to say which, so the app names none for its kind's own, and a
+/// Markdown file asks before any other.
+#[test]
+fn a_lists_own_list_definition_isnt_held() {
+    let sheet = sheet();
+    let read = read(b"- one\n- two\n", &sheet);
+    let list = read
+        .document
+        .subtree(read.document.root())
+        .into_iter()
+        .find(|&b| {
+            read.document
+                .block(b)
+                .is_some_and(|b| b.kind == doc::Kind::List)
+        })
+        .expect("a list");
+    let bullets = sheet.list(false, None).id.expect("Neutral's Bullets");
+    let mut named = read.document.clone();
+    named
+        .apply(&Op::SetBlockProp {
+            block: list,
+            key: keys::LIST.to_string(),
+            value: Some(Value::Ref(bullets)),
+        })
+        .expect("it applies");
+    let unheld = read
+        .file
+        .clone()
+        .write(&named, &sheet)
+        .expect_err("Markdown can't hold it");
+    assert_eq!(unheld.what, markdown::What::ListDefinition);
+    assert_eq!(unheld.what.to_string(), "a list definition of a list's own");
+    let written = read.file.clone().write(&read.document, &sheet);
+    assert_eq!(written.expect("it writes"), b"- one\n- two\n");
+}

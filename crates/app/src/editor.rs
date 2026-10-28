@@ -2225,7 +2225,9 @@ impl Editor {
             "style-set" | "style-toggle" | "style-reset" | "style-base" | "style-rename"
             | "page-size" | "page-margin" | "style-new" | "style-delete" | "style-option"
             | "colour-set" | "layout-stop-add" | "layout-stop-place" | "layout-stop-kind"
-            | "layout-stop-leader" | "layout-stop-remove" | "list-level" => writable,
+            | "layout-stop-leader" | "layout-stop-remove" | "list-level" | "list-definition" => {
+                writable
+            }
             _ if id.starts_with("language-") || id.starts_with("align-") => writable,
             _ => true,
         };
