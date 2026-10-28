@@ -89,6 +89,13 @@ pub fn address(text: &str) -> Option<String> {
 /// before it, none at a line's start.
 pub(crate) fn find(text: &[char], clean: &[bool], before: Option<char>) -> Vec<Autolink> {
     let mut out = Vec::new();
+    // Each has an `@`, the `:` of `http://` or `https://`, or `www.`: text
+    // with none has none, and most text has none.
+    let after_www = |i: usize| text[..i].ends_with(&['w', 'w', 'w']);
+    let may = |(i, &c): (usize, &char)| matches!(c, '@' | ':') || (c == '.' && after_www(i));
+    if !text.iter().enumerate().any(may) {
+        return out;
+    }
     let mut i = 0;
     while i < text.len() {
         let prev = if i == 0 { before } else { Some(text[i - 1]) };
