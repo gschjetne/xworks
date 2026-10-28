@@ -10,6 +10,7 @@
 //! what falls in its area through the canvas contract (`part`), and the
 //! commands the window doesn't handle itself.
 
+mod lists;
 mod menus;
 
 use std::path::PathBuf;
@@ -21,7 +22,7 @@ use scene::{Page, Point};
 use text::units::PIXEL;
 use toolkit::{
     BarHit, ControlRef, Field, FieldKey, InspectorHit, InspectorView, Kit, PaletteHit, PaletteView,
-    Popup, PopupRow, Rect, RulerHit, RulerView, Theme, TitleBar, TitleHit, TitleModel,
+    Rect, RulerHit, RulerView, Theme, TitleBar, TitleHit, TitleModel,
 };
 
 use crate::editor::{Edge, PointerShape, View, WindowAction};
@@ -30,6 +31,7 @@ use crate::{Choice, Editor, EditorError, Effect, Event, Resources};
 use crate::recorder::{self, Checkpoint, Recorder};
 use crate::session::{Chrome, Start};
 use crate::settings;
+use lists::{Choosing, List};
 use menus::MenuState;
 
 /// The command palette, open: what's typed, what it finds, and which is
@@ -57,6 +59,8 @@ enum Drag {
     /// The inspector's scroll bar's thumb, from where the pointer pressed
     /// it, down, and the scroll then.
     Bar { y: i64, from: i64 },
+    /// A list's scroll bar's thumb, as the inspector's.
+    List { list: List, y: i64, from: i64 },
 }
 
 /// What the pointer is over.
@@ -88,8 +92,11 @@ pub struct Window {
     access: bool,
     hover: Hover,
     palette: Option<Palette>,
-    /// An inspector's choice open as a list, and which choice is lit.
-    choosing: Option<(ControlRef, Option<usize>)>,
+    /// An inspector's choice open as a list, which choice is lit, and how
+    /// far the list is scrolled.
+    choosing: Option<Choosing>,
+    /// How far the editor's panel, open as a list, is scrolled.
+    panel_scroll: i64,
     /// An inspector's length being typed.
     editing: Option<(ControlRef, Field)>,
     /// The document's name being typed in the title bar.
@@ -252,6 +259,7 @@ impl Window {
             hover: Hover::Nothing,
             palette: None,
             choosing: None,
+            panel_scroll: 0,
             editing: None,
             renaming: None,
             drag: None,
@@ -485,7 +493,7 @@ impl Window {
                 Drag::First(at) => indents.first = at - indents.start,
                 Drag::Start(at) => indents.start = at,
                 Drag::End(at) => indents.end = model.extent - at,
-                Drag::Part | Drag::Bar { .. } => {}
+                Drag::Part | Drag::Bar { .. } | Drag::List { .. } => {}
             }
         }
         Some(RulerView::new(
@@ -639,59 +647,6 @@ impl Window {
             .get(at.row)?
             .controls
             .get(at.control)
-    }
-
-    /// The list of an inspector's choice, open under it.
-    fn choice_popup(&self, model: &chrome::Inspector) -> Option<(Popup, Vec<PopupRow>)> {
-        let (at, _) = self.choosing?;
-        let control = Window::control(model, self.tab, at)?;
-        let ControlKind::Choice {
-            choices, selected, ..
-        } = &control.kind
-        else {
-            return None;
-        };
-        let rows: Vec<PopupRow> = choices
-            .iter()
-            .enumerate()
-            .map(|(i, c)| PopupRow::of_choice(c, *selected == Some(i)))
-            .collect();
-        let field = self.inspector_view(model)?.control(at)?;
-        let popup = Popup::new(
-            &self.kit(),
-            &rows,
-            (field.x, field.bottom() + 2 * PIXEL),
-            field.width,
-            (self.width, self.height),
-        );
-        Some((popup, rows))
-    }
-
-    /// The editor's panel, open, as a list under the title bar: its
-    /// title, a line, and its rows.
-    fn panel_popup(&self) -> Option<(Popup, Vec<PopupRow>)> {
-        let (title, names, _) = self.editor.panel()?;
-        let mut rows = vec![
-            PopupRow {
-                enabled: false,
-                ..PopupRow::choice(title, false)
-            },
-            PopupRow::choice("", false),
-        ];
-        rows.extend(names.iter().map(|n| PopupRow::choice(n, false)));
-        let width = self.res.sizes.palette.units().min(self.width);
-        let kit = self.kit();
-        let popup = Popup::new(
-            &kit,
-            &rows,
-            (
-                (self.width - width) / 2,
-                self.title_height() + self.res.sizes.palette_top.units(),
-            ),
-            width,
-            (self.width, self.height),
-        );
-        Some((popup, rows))
     }
 
     // ---- commands
@@ -1018,7 +973,17 @@ impl Window {
         effects
     }
 
+    /// Handles `event`; a panel that went away leaves no scroll behind
+    /// for the next.
     fn handle(&mut self, event: Event) -> Vec<Effect> {
+        let effects = self.handle_event(event);
+        if self.editor.panel().is_none() {
+            self.panel_scroll = 0;
+        }
+        effects
+    }
+
+    fn handle_event(&mut self, event: Event) -> Vec<Effect> {
         match event {
             Event::Key { key, modifiers } => self.key(key, modifiers),
             Event::Text(text) => {
@@ -1047,6 +1012,10 @@ impl Window {
             Event::Move { x, y } => self.pointer_moved(units(x), units(y)),
             Event::Release => self.release(),
             Event::Scroll(dy) => {
+                // Over a list that's open, the wheel scrolls it.
+                if self.wheel_list(units(dy)) {
+                    return Vec::new();
+                }
                 // Over the inspector, the wheel scrolls its tab; a list
                 // open from it stays where it opened, so it closes.
                 let (x, y) = self.pointer;
@@ -1124,7 +1093,12 @@ impl Window {
             return effects;
         }
         if self.editor.panel().is_some() {
-            return self.editor.panel_key(key);
+            let effects = self.editor.panel_key(key);
+            // The row lit, after the title and its line, scrolled into
+            // view.
+            let lit = self.editor.panel().map(|(_, _, selected)| selected + 2);
+            self.reveal_row(List::Panel, lit);
+            return effects;
         }
         if self.palette.is_some() {
             return self.palette_key(key, modifiers);
@@ -1158,35 +1132,6 @@ impl Window {
             return self.run(&id, Vec::new());
         }
         self.give_part(Input::Key { key, modifiers })
-    }
-
-    fn choice_key(&mut self, key: Key, shift: bool) -> Vec<Effect> {
-        let model = Part::inspector(&self.editor);
-        let Some((at, lit)) = self.choosing else {
-            return Vec::new();
-        };
-        let count = match Window::control(&model, self.tab, at).map(|c| &c.kind) {
-            Some(ControlKind::Choice { choices, .. }) => choices.len(),
-            _ => 0,
-        };
-        match key {
-            Key::Down => {
-                self.choosing = Some((
-                    at,
-                    Some(lit.map_or(0, |l| (l + 1).min(count.saturating_sub(1)))),
-                ))
-            }
-            Key::Up => self.choosing = Some((at, Some(lit.map_or(0, |l| l.saturating_sub(1))))),
-            Key::Enter => {
-                if let Some(l) = lit {
-                    return self.choose(&model, at, l, shift);
-                }
-                self.choosing = None;
-            }
-            Key::Escape => self.choosing = None,
-            _ => {}
-        }
-        Vec::new()
     }
 
     /// Runs choice `i` of the inspector's control `at`. A paragraph style
@@ -1269,7 +1214,11 @@ impl Window {
                 effects.extend(self.finish_editing());
             }
         }
-        // Lists over everything take the press first.
+        // Lists over everything take the press first: their scroll bars,
+        // then their rows.
+        if self.press_list_bar(x, y) {
+            return effects;
+        }
         if let Some((popup, _)) = self.panel_popup() {
             match popup.hit(x, y) {
                 Some(Some(row)) if row >= 2 => effects.extend(self.editor.choose_row(row - 2)),
@@ -1282,8 +1231,8 @@ impl Window {
             if let Some((popup, _)) = self.choice_popup(&model)
                 && let Some(row) = popup.hit(x, y)
             {
-                if let (Some(row), Some((at, _))) = (row, self.choosing) {
-                    effects.extend(self.choose(&model, at, row, shift));
+                if let (Some(row), Some(choosing)) = (row, self.choosing) {
+                    effects.extend(self.choose(&model, choosing.at, row, shift));
                 }
                 return effects;
             }
@@ -1421,8 +1370,7 @@ impl Window {
                     {
                         match &control.kind {
                             ControlKind::Choice { selected, .. } => {
-                                self.choosing = Some((at, *selected));
-                                self.reveal_control(at);
+                                self.open_choice(at, *selected);
                             }
                             ControlKind::Length { .. }
                             | ControlKind::Text { .. }
@@ -1472,6 +1420,14 @@ impl Window {
                     y: y - area.y,
                 });
             }
+            Some(Drag::List {
+                list,
+                y: from_y,
+                from,
+            }) => {
+                self.drag_list(list, from_y, from, y);
+                return effects;
+            }
             Some(Drag::Bar { y: from_y, from }) => {
                 let model = self.inspector_model();
                 if let Some(view) = self.inspector_view(&model) {
@@ -1506,10 +1462,10 @@ impl Window {
         }
         let model = self.inspector_model();
         if let Some((popup, _)) = self.choice_popup(&model)
-            && let Some((at, _)) = self.choosing
+            && let Some(choosing) = &mut self.choosing
         {
             if let Some(row) = popup.hit(x, y) {
-                self.choosing = Some((at, row));
+                choosing.lit = row;
             }
             return effects;
         }
@@ -1555,7 +1511,7 @@ impl Window {
         };
         match drag {
             Drag::Part => self.give_part(Input::Release),
-            Drag::Bar { .. } => Vec::new(),
+            Drag::Bar { .. } | Drag::List { .. } => Vec::new(),
             Drag::Stop { from, to, off } => {
                 if off {
                     self.run("tab-stop-remove", vec![Arg::Int(from)])
@@ -1635,7 +1591,7 @@ impl Window {
             page.items.extend(popup.draw(&kit, &rows, lit, false));
         }
         if let Some((popup, rows)) = self.choice_popup(&model) {
-            let lit = self.choosing.and_then(|(_, l)| l);
+            let lit = self.choosing.and_then(|c| c.lit);
             page.items.extend(popup.draw(&kit, &rows, lit, false));
         }
         if let (Some(view), Some(palette)) = (self.palette_view(), &self.palette) {
@@ -1886,6 +1842,9 @@ impl Window {
         let mut children = vec![bar_id, tree.root];
         if let Some(inspector) = self.inspector_access(&mut nodes) {
             children.push(inspector);
+        }
+        if let Some(list) = self.list_access(&mut nodes) {
+            children.push(list);
         }
         children.push(status_id);
         window.set_children(children);

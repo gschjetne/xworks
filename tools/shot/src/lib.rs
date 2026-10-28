@@ -161,6 +161,13 @@ pub fn scenes() -> &'static [Scene] {
             pages: None,
         },
         Scene {
+            name: "chrome-list-scrolled",
+            description: "the Text face's list of families in a window 480 pixels high, over its field and scrolled to the family chosen, the last, with its scroll bar (M2's exit)",
+            ppi: 96.0,
+            page: chrome::list_scrolled,
+            pages: None,
+        },
+        Scene {
             name: "chrome-style-colour",
             description: "the Style tab showing the Link colour: its value beside its swatch, and what uses it",
             ppi: 96.0,

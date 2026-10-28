@@ -26,6 +26,9 @@ pub(super) struct MenuState {
     pub sub: Option<(usize, Option<usize>)>,
     /// Whether the keyboard opened it, so its access keys show.
     pub keyboard: bool,
+    /// How far its list, and its submenu's, are scrolled, where they're
+    /// taller than the window.
+    pub scroll: (i64, i64),
 }
 
 /// The first item of `items` that can be chosen, from `from` on in the
@@ -67,6 +70,7 @@ impl Window {
             lit,
             sub: None,
             keyboard: true,
+            scroll: (0, 0),
         });
         self.access = true;
     }
@@ -84,6 +88,7 @@ impl Window {
             lit: None,
             sub: None,
             keyboard,
+            scroll: (0, 0),
         });
     }
 
@@ -92,8 +97,8 @@ impl Window {
         self.access = false;
     }
 
-    /// The open menu's list, and its submenu's, laid out.
-    fn popups(
+    /// The open menu's list, and its submenu's, laid out and scrolled.
+    pub(super) fn popups(
         &self,
         kit: &Kit<'_>,
         bar: &MenuBar,
@@ -107,22 +112,26 @@ impl Window {
         let at = title.menu(state.index)?;
         let window = (self.width, self.height);
         let rows = PopupRow::of_menu(&menu.items);
-        let main = Popup::new(kit, &rows, (at.x, title.height()), 0, window);
+        let main =
+            Popup::new(kit, &rows, (at.x, title.height()), 0, window).scrolled(state.scroll.0);
         let sub = state.sub.and_then(|(item, _)| {
             let MenuItem::Submenu { items, .. } = menu.items.get(item)? else {
                 return None;
             };
             let row = main.row(item)?;
             let rows = PopupRow::of_menu(items);
-            Some(Popup::new(
-                kit,
-                &rows,
-                (main.rect().right() - 4 * PIXEL, row.y - 5 * PIXEL),
-                0,
-                window,
-            ))
+            Some(
+                Popup::new(
+                    kit,
+                    &rows,
+                    (main.rect().right() - 4 * PIXEL, row.y - 5 * PIXEL),
+                    0,
+                    window,
+                )
+                .scrolled(state.scroll.1),
+            )
         });
-        Some((main, sub))
+        Some((self.lit_thumb(main), sub.map(|s| self.lit_thumb(s))))
     }
 
     /// The open menus drawn.
@@ -179,8 +188,26 @@ impl Window {
         }
     }
 
-    /// A key while the menus have the keyboard.
+    /// A key while the menus have the keyboard; the items it lights are
+    /// scrolled into view.
     pub(super) fn menu_key(&mut self, key: Key, modifiers: Modifiers) -> Vec<Effect> {
+        let before = self.menu.map(|m| (m.index, m.sub.map(|(s, _)| s)));
+        let effects = self.menu_key_moved(key, modifiers);
+        if let Some(state) = self.menu {
+            // Another menu or submenu opens at its top.
+            if before != Some((state.index, state.sub.map(|(s, _)| s))) {
+                if before.map(|(i, _)| i) != Some(state.index) {
+                    self.scroll_list(super::List::Menu, 0);
+                }
+                self.scroll_list(super::List::Submenu, 0);
+            }
+            self.reveal_row(super::List::Menu, state.lit);
+            self.reveal_row(super::List::Submenu, state.sub.and_then(|(_, l)| l));
+        }
+        effects
+    }
+
+    fn menu_key_moved(&mut self, key: Key, modifiers: Modifiers) -> Vec<Effect> {
         let bar = self.menu_bar();
         let Some(mut state) = self.menu else {
             return Vec::new();
@@ -341,6 +368,7 @@ impl Window {
                     lit: None,
                     sub: None,
                     keyboard: state.keyboard,
+                    scroll: (0, 0),
                 };
             }
             return;
@@ -356,6 +384,10 @@ impl Window {
         if let Some(Some(row)) = main.hit(x, y) {
             state.lit = Some(row);
             let items = &bar.menus[state.index].items;
+            // Another submenu opens at its top.
+            if state.sub.is_some_and(|(s, _)| s != row) {
+                state.scroll.1 = 0;
+            }
             state.sub = match items.get(row) {
                 Some(MenuItem::Submenu { items, .. }) if !items.is_empty() => Some((
                     row,

@@ -366,6 +366,35 @@ pub(crate) fn style_face() -> Page {
     window.view()
 }
 
+/// The Text face's list of families open in a window 480 pixels high
+/// (M2's exit, review 7fnfdhb5): taller than the room below its field or
+/// above it, it takes the larger, above, and scrolls, opened on the family
+/// chosen, Source Serif 4, the last, with its scroll bar.
+pub(crate) fn list_scrolled() -> Page {
+    let mut window = sample("A walking skeleton", false);
+    window.update(Event::Resize {
+        width: SIZE.0,
+        height: 480.0,
+    });
+    open_style_tab(&mut window);
+    let text = part(&window, doc::StyleKind::Face, "Text");
+    run(&mut window, "style-kind", vec![Arg::Text("face".into())]);
+    run(&mut window, "style-show", vec![id(text)]);
+    // The Family field: the face's section's second row.
+    for event in [
+        Event::Press {
+            x: 1160.0,
+            y: 304.0,
+            shift: false,
+            count: 1,
+        },
+        Event::Release,
+    ] {
+        window.update(event);
+    }
+    window.view()
+}
+
 /// The sample with the Style tab showing its Link colour, its value as
 /// `#rrggbb` beside its swatch, and what uses it.
 pub(crate) fn style_colour() -> Page {
