@@ -112,6 +112,25 @@ fn recent_documents_open_again() {
     assert_eq!(res.recent.paths()[1], path);
 }
 
+/// The settings and the documents opened lately are files outside input
+/// may have damaged: one that doesn't read gives the defaults, and the
+/// next change writes it whole again.
+#[test]
+fn damaged_settings_and_recent_documents_give_the_defaults() {
+    let dir = testkit::scratch_dir("app-damaged-settings").expect("a folder");
+    let (settings_file, recent_file) = (dir.join("settings.ron"), dir.join("recent.ron"));
+    std::fs::write(&settings_file, b"\xff not RON (units: Pica").expect("written");
+    std::fs::write(&recent_file, "[\"unclosed").expect("written");
+    let settings = app::Settings::load(settings_file.clone(), chrome::Unit::Inch);
+    assert_eq!(settings.units(), chrome::Unit::Inch);
+    assert_eq!(settings.ruler_from(), app::RulerFrom::default());
+    let recent = app::Recent::load(recent_file);
+    assert!(recent.paths().is_empty());
+    settings.set_units(chrome::Unit::Pica);
+    let again = app::Settings::load(settings_file, chrome::Unit::Inch);
+    assert_eq!(again.units(), chrome::Unit::Pica);
+}
+
 /// What falls in the document's area reaches the editor through the
 /// canvas contract, moved into its own coordinates; what's in the chrome
 /// doesn't.
