@@ -396,3 +396,102 @@ fn paragraphs_set_their_own_spacing_indents_line_height_and_tabs() {
         sheet.tabs(&sheet.paragraph[0])
     );
 }
+
+/// A value past its limits, as a damaged file or a careless importer might
+/// hold, is taken as unset: the paragraph is laid out as its style says.
+#[test]
+fn values_past_their_limits_take_the_styles() {
+    use text::units::INCH;
+    let text = "Text with values no style would set, long enough for two lines.";
+    let plain = story::document(&neutral(), &[("Body", vec![(text, props(&[]))])]);
+    let mut odd = story::document(
+        &neutral(),
+        &[(
+            "Body",
+            vec![(
+                text,
+                props(&[
+                    (keys::SIZE, Value::Int(2000 * POINT)),
+                    (keys::FONT, Value::Text(String::new())),
+                ]),
+            )],
+        )],
+    );
+    let id = odd.paragraphs()[0];
+    for (key, value) in [
+        (keys::SPACE_BEFORE, 11 * INCH),
+        (keys::SPACE_AFTER, -POINT),
+        (keys::INDENT_START, 11 * INCH),
+        (keys::INDENT_FIRST, -11 * INCH),
+        (keys::LINE_HEIGHT, 20_000),
+    ] {
+        odd.apply(&doc::Op::SetParaProp {
+            paragraph: id,
+            key: key.to_string(),
+            value: Some(Value::Int(value)),
+        })
+        .expect("it applies");
+    }
+    let sheet = sheet();
+    let width = 200 * POINT;
+    let (a, b) = (
+        &story::lay_out(&plain, &sheet, fonts(), width)[0],
+        &story::lay_out(&odd, &sheet, fonts(), width)[0],
+    );
+    assert_eq!(
+        (b.space_before, b.space_after, b.x()),
+        (a.space_before, a.space_after, a.x())
+    );
+    let lines = |p: &story::ParagraphLayout| -> Vec<(i64, i64, i64)> {
+        p.layout
+            .lines
+            .iter()
+            .map(|l| (l.x, l.width, l.height))
+            .collect()
+    };
+    assert_eq!(lines(b), lines(a));
+    let spans = story::spans(odd.paragraph(id).unwrap(), &sheet);
+    assert_eq!(
+        spans[0].style,
+        style("Source Serif 4", 110, 400, false, "und")
+    );
+}
+
+/// A paragraph's layout depends only on it, its style and its place:
+/// typing in one paragraph leaves every other's layout as it was.
+#[test]
+fn editing_a_paragraph_leaves_the_others_layouts() {
+    let mut document = story::document(
+        &neutral(),
+        &[
+            ("Heading 1", vec![("A heading", props(&[]))]),
+            (
+                "Body",
+                vec![("The first paragraph of the body.", props(&[]))],
+            ),
+            ("Body", vec![("The second, which is typed in.", props(&[]))]),
+            ("Body", vec![("And a third, after it.", props(&[]))]),
+        ],
+    );
+    let sheet = sheet();
+    let width = 200 * POINT;
+    let before = story::lay_out(&document, &sheet, fonts(), width);
+    let typed = document.paragraphs()[2];
+    document
+        .apply(&doc::Op::InsertText {
+            paragraph: typed,
+            offset: 3,
+            text: " longer, so it runs on to a line of its own".to_string(),
+            runs: vec![doc::Run::new(43, doc::Props::new())],
+        })
+        .expect("it applies");
+    let after = story::lay_out(&document, &sheet, fonts(), width);
+    assert_eq!(before.len(), after.len());
+    for (a, b) in before.iter().zip(&after) {
+        if a.id == typed {
+            assert_ne!(format!("{a:?}"), format!("{b:?}"), "the typed one changed");
+        } else {
+            assert_eq!(format!("{a:?}"), format!("{b:?}"), "{:?} changed", a.id);
+        }
+    }
+}

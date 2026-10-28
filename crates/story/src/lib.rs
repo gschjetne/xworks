@@ -1,7 +1,10 @@
 //! The story substrate: a tree of blocks with styles, and its outline and
-//! draft views (docs/ARCHITECTURE.md, section 4). M2 has its tree: lists
-//! of items, quotes, code blocks and tables around paragraphs, with the
-//! marks Markdown needs on their text, laid out with `text`.
+//! draft views (docs/ARCHITECTURE.md, section 4). It gives `doc`'s objects
+//! their meaning as text: what a paragraph's and a run's properties say,
+//! how styles resolve along their chains, where each paragraph sits in
+//! the tree, and how it's laid out with `text`. M2 has its tree: lists of
+//! items, quotes, code blocks and tables around paragraphs, with the marks
+//! Markdown needs on their text.
 //!
 //! - A document's own stylesheet (M2's stage 9): [`SheetSpec`], a
 //!   stylesheet as a file gives it, made the document's own by
@@ -42,16 +45,73 @@
 //!   `doc`'s operations, as importers and tests make them.
 //! - [`outline`]: a document's tree as indented lines, for tests.
 //!
-//! Invariants:
+//! # What a caller may rely on
 //!
-//! - A paragraph's layout depends only on that paragraph, its style and
-//!   its place: editing one paragraph leaves every other's layout as it
-//!   was, unless it moves others in the tree or changes the stylesheet.
-//! - A property that's unset, or set to a value of the wrong kind or past
-//!   its limits, takes its style's value; a style that isn't in the sheet
-//!   is the default one; a value the sheet lacks is the program's.
-//! - Neutral, the sheet new documents take unless the person chooses, lays
-//!   a story out as M2 did before documents held their own styles.
+//! - **Pure.** No I/O, threads, clocks or environment (Clippy's
+//!   `crates/clippy.toml`), and it builds for WebAssembly (CI): fonts,
+//!   patterns and stylesheet files are what the caller read. Lengths are
+//!   layout units, 914 400 to the inch.
+//! - **A paragraph's layout depends only on it, its style and its place:**
+//!   editing one paragraph leaves every other's layout as it was, unless
+//!   it moves others in the tree or changes the stylesheet (`tests/story.rs`,
+//!   `editing_a_paragraph_leaves_the_others_layouts`; `app`'s
+//!   `tests/sessions.rs`, `layout_kept_through_edits_is_layout_made_afresh`).
+//! - **Every value resolves:** a property that's unset, or set to a value
+//!   of the wrong kind or past its limits, takes its style's; a style
+//!   that isn't in the sheet is the default one; a value the sheet lacks
+//!   is the program's; every chain of styles ends in the sheet's
+//!   defaults, and a change to a base or a part reaches every style that
+//!   takes it (`tests/story.rs`, `unknown_styles_and_odd_values_fall_back`
+//!   and `values_past_their_limits_take_the_styles`; `tests/sheets.rs`,
+//!   `a_change_to_a_base_reaches_every_style_up_the_chain`,
+//!   `a_part_changes_every_style_that_names_it` and
+//!   `each_value_says_where_it_comes_from`).
+//! - **Marks are character styles,** and containers lend geometry only:
+//!   a list or a quote gives indents and markers, never fonts
+//!   (`tests/sheets.rs`, `marks_are_character_styles` and
+//!   `containers_lend_their_geometry`).
+//! - **The tree reads in order:** [`flow`] gives every paragraph once, in
+//!   reading order, at its place, numbers counted and never stored, and
+//!   nesting past [`DEEPEST`] lays out as if it stopped there
+//!   (`tests/blocks.rs`, `the_tree_reads_in_order_with_its_places` and
+//!   `nesting_past_the_deepest_lays_out_as_if_it_stopped`; `tests/sheets.rs`,
+//!   `numbered_headings_are_counted_by_level`).
+//! - **Stylesheet files are outside input:** one that doesn't hold
+//!   together, or is past a limit, is a [`SheetError`], never a panic, a
+//!   hang or unbounded memory; one that reads makes a document that holds
+//!   together and writes back as itself (`tests/sheets.rs`,
+//!   `a_bad_stylesheet_is_refused` and `a_stylesheet_written_reads_back_the_same`;
+//!   the `stylesheet_file` fuzz target). A paragraph's own tab stops read
+//!   from text in order, or not at all (the `paragraph_settings` fuzz
+//!   target).
+//! - **The sheets that come with xWorks** each read and have what
+//!   documents need, every style and part with a role of its own, and
+//!   every kept version is older and updates to the current one
+//!   (`tests/sheets.rs`, `every_stylesheet_reads_and_has_what_documents_need`,
+//!   `every_style_and_part_has_a_role_of_its_own` and
+//!   `every_earlier_version_is_kept_and_older`; `tests/update.rs`,
+//!   `every_kept_version_updates_to_the_current_one`).
+//! - **Merging and updating are operations:** [`merge`], [`merge_used`]
+//!   and [`update`] give `doc`'s operations, so Undo takes them back whole;
+//!   the destination's styles win, matched by role and then name, and
+//!   nothing is renamed; an update keeps the person's own changes
+//!   (`tests/sheets.rs`,
+//!   `merging_matches_by_role_and_name_and_brings_what_is_missing` and
+//!   `pasting_brings_only_the_styles_used`; `tests/update.rs`; the
+//!   `stylesheet_update` fuzz target).
+//! - **Pictures** are scaled down to their paragraph's width, their size
+//!   kept within bounds (`tests/pictures.rs`).
+//! - **Neutral** lays a story out as M2 did before documents held their
+//!   own styles (`tools/shot/tests/golden.rs`, every M2 scene's golden).
+//!
+//! # What it doesn't promise
+//!
+//! - Pages: the story lays out paragraphs to a width, and `canvas` pours
+//!   them into pages.
+//! - That a document it's given was made by it: any document `doc` holds
+//!   lays out, but a story it didn't make may look plain.
+//! - The outline view as a view: [`outline`] is text for tests.
+//! - Columns, which the page style's model settles and Write (T1) builds.
 
 mod flow;
 mod merge;
