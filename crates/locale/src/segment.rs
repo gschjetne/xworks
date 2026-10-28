@@ -1,10 +1,15 @@
+use std::cell::RefCell;
 use std::ops::Range;
+use std::sync::OnceLock;
 
 use icu_segmenter::options::{
     LineBreakOptions, LineBreakStrictness, SentenceBreakOptions, WordBreakInvariantOptions,
     WordBreakOptions,
 };
-use icu_segmenter::{GraphemeClusterSegmenter, LineSegmenter, SentenceSegmenter, WordSegmenter};
+use icu_segmenter::{
+    GraphemeClusterSegmenter, LineSegmenter, LineSegmenterBorrowed, SentenceSegmenter,
+    WordSegmenter,
+};
 
 use crate::Language;
 
@@ -38,7 +43,7 @@ pub fn line_breaks(text: &str, languages: &[(Range<usize>, Language)]) -> Vec<Br
             .find(|(range, _)| range.start < offset && offset <= range.end)
             .map(|(_, language)| language)
     };
-    let mut offsets: Vec<usize> = segment_lines(text, LineBreakOptions::default())
+    let mut offsets: Vec<usize> = default_lines(text)
         .into_iter()
         .filter(|&b| !language_before(b).is_some_and(tailored))
         .collect();
@@ -83,6 +88,18 @@ fn segment_lines(text: &str, options: LineBreakOptions<'_>) -> Vec<usize> {
     LineSegmenter::new_auto(options).segment_str(text).collect()
 }
 
+/// The line segmenter for text of no tailored language, made once: making
+/// one finds the models for Thai, Lao, Khmer and Burmese, which is most of
+/// what breaking a short paragraph's lines takes. It's compiled data, the
+/// same whenever it's made.
+fn default_lines(text: &str) -> Vec<usize> {
+    static LINES: OnceLock<LineSegmenterBorrowed<'static>> = OnceLock::new();
+    LINES
+        .get_or_init(|| LineSegmenter::new_auto(LineBreakOptions::default()))
+        .segment_str(text)
+        .collect()
+}
+
 /// The boundaries of `text`'s grapheme clusters, the characters a reader
 /// sees (UAX #29), from 0 to the text's length.
 pub fn graphemes(text: &str) -> Vec<usize> {
@@ -113,24 +130,22 @@ pub struct Word {
 pub fn words(text: &str, languages: &[(Range<usize>, Language)]) -> Vec<Word> {
     let mut out = Vec::new();
     for (range, language) in stretches(text, languages) {
-        let mut options = WordBreakOptions::default();
-        options.content_locale = language.as_ref().map(Language::identifier);
-        // Compiled data has every language, so this only falls back if
-        // that ever changes.
-        let owned = WordSegmenter::try_new_auto(options);
-        let boundaries: Vec<(usize, bool)> = match &owned {
-            Ok(s) => s
-                .as_borrowed()
-                .segment_str(&text[range.clone()])
-                .iter_with_word_type()
-                .map(|(offset, kind)| (offset, kind.is_word_like()))
-                .collect(),
-            Err(_) => WordSegmenter::new_auto(WordBreakInvariantOptions::default())
-                .segment_str(&text[range.clone()])
-                .iter_with_word_type()
-                .map(|(offset, kind)| (offset, kind.is_word_like()))
-                .collect(),
-        };
+        let boundaries: Vec<(usize, bool)> = with_word_segmenter(&language, |segmenter| {
+            let stretch = &text[range.clone()];
+            match segmenter {
+                Some(s) => s
+                    .as_borrowed()
+                    .segment_str(stretch)
+                    .iter_with_word_type()
+                    .map(|(offset, kind)| (offset, kind.is_word_like()))
+                    .collect(),
+                None => WordSegmenter::new_auto(WordBreakInvariantOptions::default())
+                    .segment_str(stretch)
+                    .iter_with_word_type()
+                    .map(|(offset, kind)| (offset, kind.is_word_like()))
+                    .collect(),
+            }
+        });
         let mut start = range.start;
         for (offset, word_like) in boundaries {
             let end = range.start + offset;
@@ -144,6 +159,39 @@ pub fn words(text: &str, languages: &[(Range<usize>, Language)]) -> Vec<Word> {
         }
     }
     out
+}
+
+/// Calls `f` with the word segmenter for `language`, none if compiled data
+/// has none for it: one for each language on each thread, made the first
+/// time it's needed and kept, as making one finds its language's data and
+/// the models for Thai, Lao, Khmer and Burmese, and the dictionary for
+/// Chinese and Japanese, which is most of what dividing a short paragraph
+/// takes. Kept on the thread, as a segmenter can't be shared between
+/// threads; made from compiled data, it divides text the same wherever
+/// it's made.
+fn with_word_segmenter<T>(
+    language: &Option<Language>,
+    f: impl FnOnce(Option<&WordSegmenter>) -> T,
+) -> T {
+    type Kept = Vec<(Option<Language>, Option<WordSegmenter>)>;
+    thread_local! {
+        static SEGMENTERS: RefCell<Kept> = const { RefCell::new(Vec::new()) };
+    }
+    SEGMENTERS.with(|kept| {
+        let mut kept = kept.borrow_mut();
+        let k = match kept.iter().position(|(l, _)| l == language) {
+            Some(k) => k,
+            None => {
+                let mut options = WordBreakOptions::default();
+                options.content_locale = language.as_ref().map(Language::identifier);
+                // Compiled data has every language, so this is only none if
+                // that ever changes.
+                kept.push((language.clone(), WordSegmenter::try_new_auto(options).ok()));
+                kept.len() - 1
+            }
+        };
+        f(kept[k].1.as_ref())
+    })
 }
 
 /// How many words `text` has: stretches of letters, numbers or
@@ -243,6 +291,55 @@ mod tests {
 
     fn tagged(text: &str, tag: &str) -> Vec<(Range<usize>, Language)> {
         vec![(0..text.len(), Language::parse(tag).unwrap())]
+    }
+
+    /// The segmenters kept, used again and again, divide text as ones
+    /// made for the call do, in each language, and in none.
+    #[test]
+    fn kept_segmenters_divide_as_ones_made_afresh() {
+        let cases = [
+            (
+                "und",
+                "Hello, world. It's 3.14 — fine-tuned!\u{2028}Next line",
+            ),
+            (
+                "en-GB",
+                "Hello, world. It's 3.14 — fine-tuned!\u{2028}Next line",
+            ),
+            ("sv", "Det är 10:30, sa hon. Godmorgon!"),
+            ("ja", "日本語の文章です。カタカナも、ひらがなも。"),
+            ("zh", "这是一个中文句子，没有空格。"),
+            ("th", "ทุกสองสัปดาห์ฉันไปตลาด"),
+            ("ar", "مرحبا بالعالم، كيف حالك؟"),
+        ];
+        for (tag, text) in cases {
+            let language = Language::parse(tag).unwrap();
+            let mut options = WordBreakOptions::default();
+            options.content_locale = (language != Language::und()).then(|| language.identifier());
+            let made = WordSegmenter::try_new_auto(options).expect("compiled data");
+            let mut start = 0;
+            let fresh: Vec<Word> = made
+                .as_borrowed()
+                .segment_str(text)
+                .iter_with_word_type()
+                .filter(|&(offset, _)| offset > 0)
+                .map(|(offset, kind)| {
+                    let word = Word {
+                        range: start..offset,
+                        word_like: kind.is_word_like(),
+                    };
+                    start = offset;
+                    word
+                })
+                .collect();
+            let lines: Vec<usize> = LineSegmenter::new_auto(LineBreakOptions::default())
+                .segment_str(text)
+                .collect();
+            for _ in 0..3 {
+                assert_eq!(words(text, &tagged(text, tag)), fresh, "{tag}");
+                assert_eq!(default_lines(text), lines, "{tag}");
+            }
+        }
     }
 
     #[test]
