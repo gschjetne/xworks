@@ -86,9 +86,9 @@
 //!
 //! # What it doesn't promise
 //!
-//! - That a damaged JPEG can't panic: zune-jpeg's AVX2 code can, and
-//!   xWorks takes the release that fixes it (project owner, 2026-10-28,
-//!   review 7fnfdhb5).
+//! - That a damaged JPEG can't panic: zune-jpeg 0.5.15's AVX2 code can,
+//!   and xWorks takes 0.5.16, which decodes what the fuzzing found, when
+//!   it's released (project owner, 2026-10-28, review 7fnfdhb5).
 //! - Threads: a [`Window`] and its [`Editor`] are the shell's UI thread's;
 //!   the app's own workers take snapshots.
 //! - The budgets: `tools/budgets` measures them, not the tests.

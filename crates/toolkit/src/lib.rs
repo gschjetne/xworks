@@ -42,11 +42,18 @@
 //!   (`tests/chrome.rs`, `both_looks_read_and_differ`), and the chrome draws
 //!   as its approved goldens (`tools/shot/tests/golden.rs`, the `chrome-*`,
 //!   `ruler-*` and `mockup-*` scenes).
-//! - **Popups stay in the window,** and the inspector scrolls what doesn't
-//!   fit, a change to one control changing only its row's items
-//!   (`tests/chrome.rs`, `popups_hit_their_rows_and_stay_in_the_window`,
+//! - **Popups stay in the window,** and one taller than its room scrolls,
+//!   what's drawn and what's hit following the scroll; the inspector
+//!   scrolls what doesn't fit, a change to one control changing only its
+//!   row's items (`tests/chrome.rs`,
+//!   `popups_hit_their_rows_and_stay_in_the_window`,
+//!   `popups_taller_than_their_room_scroll`,
 //!   `the_inspector_scrolls_what_doesnt_fit` and
 //!   `a_change_to_a_control_changes_only_its_row`).
+//! - **The ruler** shows each stop's leader before its mark, and hits as
+//!   it would without them (`tests/chrome.rs`,
+//!   `the_ruler_hits_its_stops_and_indents` and
+//!   `the_ruler_shows_each_stops_leader`).
 //! - **Labels fit:** notes take the room their words need, and what still
 //!   doesn't fit its field ends in an ellipsis (`tests/chrome.rs`,
 //!   `notes_take_their_room_and_labels_fit_their_fields`); a label kept
