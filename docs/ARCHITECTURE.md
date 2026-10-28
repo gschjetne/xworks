@@ -93,7 +93,7 @@ flowchart TD
     substrates["story, canvas, grid, records, cube"]
     products["write, slides, sheet, model, base, chart"]
   end
-  subgraph foundations["Foundations (pure)"]
+  subgraph foundations["Foundations (pure, but store and render-gpu)"]
     doc["doc: objects, operations, undo"]
     store["store: file format"]
     calc["calc: formulas"]
@@ -111,15 +111,168 @@ Arrows point from a layer to the layers it depends on.
 
 **Three layers, and code only depends downwards.**
 
-- **Foundations and track models are pure.** They do no I/O, open no
-  threads, read no clocks and draw nothing to a screen. Bytes come in and
-  data structures come out. That makes them testable without a display,
-  identical in WebAssembly, and safe to run on any thread.
+- **Foundations and track models are pure,** but for the two foundations
+  that reach outside: `store`, which reads and writes files, and
+  `render-gpu`, which drives the GPU (CLAUDE.md, "Pure crates"). The pure
+  ones do no I/O, open no threads, read no clocks and draw nothing to a
+  screen. Bytes come in and data structures come out. That makes them
+  testable without a display, identical in WebAssembly, and safe to run
+  on any thread. `crates/clippy.toml` forbids the calls that would break
+  that, and CI builds every pure crate for WebAssembly.
 - **Track views** turn a model into layout and a display list, and turn input
   events into commands. They are also pure: given the same model, size and
   events, they give the same output.
 - **The app and the shells** own everything impure: windows, files, threads,
   timers, the clipboard, the GPU and the platform's widgets.
+
+### The crates and their contracts
+
+Each crate's contract is the doc comment at the head of its `lib.rs`
+(M2's stage 8; review 7fnfdhb5): what it's for, what a caller may rely on,
+each invariant with the test that holds it, and what it doesn't promise,
+so no one leans on it. What follows sums each one up; the `lib.rs` is the
+contract. Arrows point from a crate to the crates it depends on; dashed
+crates are impure.
+
+```mermaid
+flowchart TD
+  xworks["shells/generic (xworks)"]
+  app
+  toolkit
+  part
+  chrome
+  markdown
+  canvas
+  story
+  store
+  text
+  locale
+  scene
+  doc
+  rcpu["render-cpu"]
+  rgpu["render-gpu"]
+  rpdf["render-pdf"]
+  calc
+  testkit
+
+  xworks --> app & chrome & rcpu & rgpu & scene & text
+  app --> canvas & chrome & doc & locale & markdown & part & rpdf & scene & store & story & text & toolkit
+  toolkit --> chrome & scene & text
+  part --> chrome & scene
+  markdown --> doc & story
+  canvas --> doc & scene & story & text
+  story --> doc & locale & text
+  store --> doc
+  text --> locale & scene
+  rcpu --> scene
+  rgpu --> scene
+  rpdf --> scene
+
+  classDef impure stroke-dasharray: 5 5
+  class xworks,app,store,rgpu,testkit impure
+```
+
+`calc` waits for the grid, which nothing has yet, and `testkit` is for
+tests and tools alone. The tools build on the crates above: `shot` and
+`budgets` on `app` and the renderers, `xworks-dump` on `store`, and
+`fetch-fonts` on `testkit`.
+
+What every contract shares: lengths are layout units, 914 400 to the
+inch, with y growing down from a page's top left; the same input gives
+the same output every run, and on every platform where the crate says
+so; and outside input, files, fonts, pictures, Markdown, sessions and
+what's typed, gives errors, never panics, each reader with its fuzz
+target.
+
+- **`doc`** (F1): a document is objects with stable IDs, changed only by
+  operations. A document is always valid: the story is a tree of blocks
+  of kinds that hold each other, always with a paragraph, runs covering
+  their text, and styles based on their own kind without loops; a
+  snapshot that isn't valid is refused, saying why. An operation that
+  fails changes nothing; inverses restore exactly; IDs are never reused;
+  clones are O(1) snapshots that never change; rebasing converges; and
+  nothing walks the tree by recursion. It doesn't say what properties
+  mean: `story` does.
+- **`store`** (F2): the `.xw` file. A file under a document's name is
+  always whole and opens at a committed transaction, whenever its writer
+  stops; reopening gives the same document, dump and undo history; one
+  program writes a document at a time, by its lock; a newer schema's file
+  is never written to, an older one's upgraded all at once or not at
+  all; and nothing read is trusted. It doesn't promise to survive a power
+  cut whole, only a crash.
+- **`calc`** (F6): so far decimal128's arithmetic, exact where results fit
+  in 34 digits and rounded once, half to even, otherwise, in integers, so
+  the same everywhere; every result in range, equality exact, and text
+  read as a number or none. Values, formulas and recalculation come in
+  M3.
+- **`locale`** (F3): Unicode's divisions of text by its languages, from
+  ICU4X's compiled-in data: graphemes, line breaks, words, sentences,
+  scripts and bidi levels, at byte offsets on character boundaries,
+  covering the text. A line break may fall inside a grapheme; `text`
+  keeps lines from ending there.
+- **`text`** (F3): fonts, shaping, paragraph layout and the caret, in
+  integers, so a paragraph lays out the same everywhere. Lines cover the
+  text and fit their room but for one grapheme too wide; justified lines
+  fill it; a hyphen layout adds isn't text; the caret stands between
+  graphemes and is found where it's drawn; fonts and patterns that don't
+  read are errors. Callers make the spans; spans that don't cover the
+  text panic.
+- **`scene`** (F4): the display list, data that owns what it holds and
+  goes to any thread. An item's bounds hold all it draws, damage
+  rectangles are enough to redraw a frame, and images are resampled the
+  same everywhere.
+- **`render-cpu`** (F4): the reference renderer. At its portable level
+  the same page draws the same pixels on every platform, whatever it drew
+  before, which the goldens check on Linux, Windows and macOS; its
+  fastest level is within a few of 255. A run whose font isn't one panics
+  inside glifo; `text` only makes runs of fonts it loaded.
+- **`render-gpu`** (F4): the GPU renderer for the shells, within a few
+  levels of render-cpu, its canvas drawing only what changed. Its tests
+  need a GPU and run by hand on Windows.
+- **`render-pdf`** (F4): tagged PDF, the same bytes each time, text kept
+  as text in reading order, images as figures, a kept sRGB JPEG as its
+  file; a page or font PDF can't hold is an error.
+- **`chrome`** (F5): commands and the chrome model, described, never
+  drawn. A spec whose IDs, menu items, shortcuts, arguments or access keys
+  don't hold together is refused; shortcuts match without Shift, Primary
+  being Command on a Mac; lengths read as typed and show as they read.
+- **`part`** (F5): the canvas contract, an interface. Positions are the
+  surface's layout units, a part describes and its host draws, and the
+  same input gives the same frames, accessibility tree and requests.
+  Embedding comes with the canvas track.
+- **`toolkit`** (F5): the generic shell's widgets, drawing the chrome model
+  from one layout that both draws and hits, so what a click lands on is
+  what's drawn there; it reads the model and never changes it.
+- **`app`** (F5): documents in windows, Elm-style. Every edit is a
+  transaction written as it's committed; what's drawn is the document as
+  it stands, laid out afresh only where it changed; the same events give
+  the same document and frames, so sessions play headless; a Markdown file
+  stays Markdown, asking before it can't; a document is open once. A
+  damaged JPEG can still panic inside zune-jpeg (review 7fnfdhb5).
+- **`testkit`** (F7): images, golden hashes the same on every platform,
+  and the workspace's files for tests and tools.
+- **`story`** (S1): the story substrate: what `doc`'s properties mean, the
+  stylesheet resolved along its chains, the tree's reading order, and
+  paragraphs laid out at their places. Every value resolves: unset, of
+  the wrong kind or past its limits, a property takes its style's; a
+  paragraph's layout depends only on it, its style and its place; and
+  stylesheet files are refused, never trusted. Merging and updating
+  sheets are operations, undone whole.
+- **`canvas`** (S2): automatic pages. Every line is placed once, in
+  order; a page breaks by the rules of orphans, widows and keeping with
+  what follows; and where a page breaks depends only on what's before it,
+  so an edit leaves the pages before it. Masters, frames and floats come
+  with Write (T1).
+- **`markdown`** (S1): Markdown files as themselves. A file untouched is
+  written back byte for byte, an edit changes only what it edited, what's
+  written reads back as the same story, and what Markdown can't hold is
+  refused rather than lost. Nothing walks the story by recursion, but
+  reading takes time in the square or cube of how deep blocks nest, a
+  fault stage 8 found.
+
+The generic shell and the tools are programs, not crates to build on;
+each has a short doc at the head of its `main.rs` saying what it does and
+how it's run.
 
 ## 4. Substrates, views and parts
 
@@ -1342,8 +1495,11 @@ model is a gap in the model, to be filled there, not in one shell.
 every shell, because it must look identical everywhere. A shell gives each
 part a surface and passes it input events (pointer, keys, IME composition,
 scrolling, gestures). The part returns frames (a display list) and an
-accessibility tree (AccessKit), and asks for a caret, IME placement, cursor
-shape or redraw.
+accessibility tree (AccessKit), says where its caret is, for the input
+method, and what the pointer looks like over it, and asks its host for what
+only the host can do, such as the clipboard and files (`part`). It doesn't
+ask to be drawn again: the host draws again where its frames differ
+(section 10).
 
 **The generic shell** uses winit for windows and input, wgpu for drawing,
 AccessKit for accessibility, and the xWorks toolkit for the chrome: a small,
@@ -1355,10 +1511,13 @@ a model, an `update(command)` and a `view` that returns the chrome model. It
 avoids webs of shared mutable callbacks, and app logic can be tested without a
 display.
 
-**Threads.** The UI thread handles input, applies transactions, and draws
-frames. A worker pool (rayon) does layout, recalculation, pagination,
-spelling, import and saving, against snapshots; results are tagged with the
-version they were computed for. There is no async runtime.
+**Threads.** The UI thread handles input, applies transactions, appends
+each to the document's file, paginates and draws frames. A worker pool
+(rayon) lays paragraphs out and decodes pictures, against snapshots, within
+the step that needs them, and a Markdown file is written by a thread of its
+own (section 6). Work that outlasts a frame, such as recalculation, spelling
+and import, is to run on the pool too, its results tagged with the version
+they were computed for. There is no async runtime.
 
 ### The interaction model
 
@@ -1575,9 +1734,11 @@ layout and editing, on the same pure-Rust stack Fauré uses:
   divisible by points (12 700), millimetres (36 000) and 96-dpi pixels
   (9 525). With integer layout, line and page breaks are identical on
   every platform and in WebAssembly, where float behavior can differ.
-- **Editing:** carets, selections, IME composition and bidi caret movement
-  are part of `text`, so the word processor, text boxes on slides, sheet
-  cells and database fields all edit text the same way.
+- **Editing:** carets, selections and bidi caret movement are part of
+  `text`, so the word processor, text boxes on slides, sheet cells and
+  database fields all edit text the same way. An input method's
+  composition is the editor's for now (`app::Editor`), which lays it out
+  in the text it's typed into.
 
 **How a paragraph is laid out.** Its text is divided into items of one
 style, one face, one bidi level and one script, and each item is shaped on
@@ -1834,8 +1995,9 @@ a fuzz target.
   Malformed input gives an error, never a panic, a hang or unbounded memory.
 - **Limits are explicit:** nesting depth, formula length, table sizes, image
   dimensions. Each limit is documented, and tested at the limit.
-- **Unsafe Rust is confined** to the shells and renderer backends, and each
-  use is justified in a comment.
+- **Unsafe Rust is forbidden** in every crate. A shell or renderer backend
+  that comes to need it is listed in CLAUDE.md first, with the owner's
+  approval, and each use is justified in a comment; none is listed.
 
 ## 12. Performance budgets
 
@@ -1955,19 +2117,19 @@ M1's measurements (project owner, 2026-10-19; section 10). This remains:
 | Windows and input (generic shell) | winit |
 | GPU | wgpu |
 | 2D rendering | our `scene` display list, drawn by `vello_cpu` and `vello_gpu` (D7) |
-| PDF | krilla or pdf-writer |
+| PDF | krilla |
 | Text | skrifa, HarfRust; our own layout and editing; TeX hyphenation patterns |
 | Unicode and locale | ICU4X |
 | Accessibility | AccessKit |
 | File dialogs (generic shell) | rfd: portals on Linux, the common dialogs on Windows (review a23vvez8) |
 | Storage | SQLite through rusqlite (bundled) |
 | Decimal arithmetic | our own decimal128, `calc::decimal` (review h6nsn9xm) |
-| Persistent data | imbl, or our own chunked structures for tables |
+| Persistent data | our own: `doc`'s map of objects, a trie of shared nodes; chunked structures for tables, with the grid |
 | Parallelism | rayon; no async runtime |
 | macOS port (later) | objc2 bindings to AppKit |
 | Fauré port (later) | Fauré's toolkit, menu protocol and scripting broker |
 | Errors, logging, data | thiserror (libraries), anyhow (tools only), tracing, serde + RON |
-| Tests | cargo-nextest, our image-diff harness, insta, proptest, cargo-fuzz, criterion for budgets |
+| Tests | cargo-nextest, golden hashes of renders (`testkit`), proptest, cargo-fuzz; the budgets measured by `tools/budgets` |
 
 ## 16. Repository layout (planned)
 
@@ -1987,15 +2149,18 @@ crates/
   story/  canvas/  grid/  records/  cube/    substrates: model and views
   markdown/     Markdown files read into stories and written back as they were
   write/  slides/  sheet/  model/  base/  chart/   product features over them
-  testkit/      golden images, scripted sessions, document dumps
+  testkit/      images, golden hashes, the workspace's files for tests
 shells/
   generic/      winit + wgpu
   macos/  faure/  web/     later
 tools/
   shot/         render a document, part or session to PNG
   xworks-dump/  canonical text form of a document
+  budgets/      the performance budgets, measured
+  fetch-fonts/  the fonts, patterns and examples fetched by hash
 spec/
-  format/  commands/  functions/  styles/  limits/  golden/  sessions/
+  format/  commands/  documents/  golden/  markdown/  sessions/  styles/  text/  themes/
+  functions/  limits/    later
 docs/
-  ARCHITECTURE.md  TRACKS.md
+  ARCHITECTURE.md  TRACKS.md  ROADMAP.md
 ```
