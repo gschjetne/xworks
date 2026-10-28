@@ -10,6 +10,8 @@
 //! - a snapshot is unchanged by later edits;
 //! - a transaction applies all or nothing, and undo and redo are exact;
 //! - documents and operations survive serialization;
+//! - IDs are never reused;
+//! - what changed since an earlier version covers every difference;
 //! - styles are never based on themselves, through any chain, whatever
 //!   bases are set, alone or concurrently (M2 stage 9).
 //!
@@ -23,6 +25,7 @@ use doc::{
     Style, StyleKind, Value, conflict, rebase,
 };
 use proptest::prelude::*;
+use std::collections::{BTreeMap, BTreeSet};
 
 /// Characters of one to four bytes, so character offsets and byte offsets
 /// differ.
@@ -798,6 +801,75 @@ proptest! {
         let text = ron::to_string(&op).unwrap();
         prop_assert_eq!(ron::from_str::<Op>(&text).unwrap(), op);
     }
+
+    /// IDs are never reused: whatever a document goes through, edits and
+    /// their undoing, and storing as a snapshot, an ID it gives out is
+    /// none it ever held, deleted ones included.
+    #[test]
+    fn new_ids_are_never_ones_the_document_held(values in choices()) {
+        let c = &mut Choices { values: &values, at: 0 };
+        let mut ids = 1000;
+        let mut doc = document(c, &mut ids);
+        let mut held = BTreeSet::new();
+        let note = |doc: &Document, held: &mut BTreeSet<ObjectId>| {
+            held.extend(doc.to_snapshot().objects.into_iter().map(|(id, _)| id));
+        };
+        note(&doc, &mut held);
+        let mut inverses = Vec::new();
+        for _ in 0..1 + c.below(8) {
+            let op = op(&doc, &mut ids, c);
+            inverses.push(doc.apply(&op).expect("a generated operation applies"));
+            note(&doc, &mut held);
+        }
+        for inverse in inverses.iter().rev().take(c.below(8) as usize) {
+            doc.apply_all(inverse).expect("an inverse applies");
+            note(&doc, &mut held);
+        }
+        let mut stored = Document::from_snapshot(doc.to_snapshot()).expect("it holds together");
+        for doc in [&mut doc, &mut stored] {
+            for _ in 0..4 {
+                let id = doc.new_id();
+                prop_assert!(!held.contains(&id), "{} was held", id);
+            }
+        }
+    }
+
+    /// What a document says changed since an earlier version of it covers
+    /// every object that differs, as the Markdown writer relies on to find
+    /// what was edited; nothing changed since itself.
+    #[test]
+    fn changes_since_cover_every_difference(values in choices()) {
+        let c = &mut Choices { values: &values, at: 0 };
+        let mut ids = 1000;
+        let before = document(c, &mut ids);
+        let mut doc = before.clone();
+        for _ in 0..1 + c.below(8) {
+            let op = op(&doc, &mut ids, c);
+            doc.apply(&op).expect("a generated operation applies");
+        }
+        let changed: BTreeSet<ObjectId> = doc.changed_since(&before).into_iter().collect();
+        let old: BTreeMap<ObjectId, Object> = before.to_snapshot().objects.into_iter().collect();
+        let new: BTreeMap<ObjectId, Object> = doc.to_snapshot().objects.into_iter().collect();
+        for id in old.keys().chain(new.keys()) {
+            if old.get(id) != new.get(id) {
+                prop_assert!(changed.contains(id), "{} differs", id);
+            }
+        }
+        prop_assert!(before.changed_since(&before).is_empty());
+    }
+}
+
+/// Documents and what changes them go between threads, as layout, saving
+/// and drawing take snapshots to workers (docs/ARCHITECTURE.md, section
+/// 5); the compiler checks it.
+#[test]
+fn documents_go_between_threads() {
+    fn shared<T: Send + Sync + 'static>() {}
+    shared::<Document>();
+    shared::<Snapshot>();
+    shared::<Op>();
+    shared::<doc::Transaction>();
+    shared::<History>();
 }
 
 #[test]

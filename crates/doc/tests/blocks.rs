@@ -1,5 +1,6 @@
 //! The block tree (docs/ROADMAP.md, M2 stage 2): what operations on blocks
-//! refuse, how snapshots of trees are checked, and the tie rules of
+//! refuse, how snapshots of trees are checked, that no depth of nesting
+//! exhausts the stack, and the tie rules of
 //! rebasing blocks (`doc::rebase`'s module comment), which convergence
 //! alone can't tell from their mirror images.
 
@@ -441,6 +442,72 @@ fn snapshots_of_trees_are_checked() {
     s.objects.push((ObjectId(1), para(ObjectId(2), "")));
     s.objects[1].1 = container(Kind::Quote, root, &[1]);
     assert!(Document::from_snapshot(s).is_ok());
+}
+
+/// Nothing walks the tree by recursion, so no file can nest blocks deep
+/// enough to exhaust the stack: quotes in quotes, 100 000 deep, on a
+/// test's own small stack, are read from a snapshot, checked, written
+/// back, edited, rebased and undone.
+#[test]
+fn a_story_nested_deep_is_walked_without_recursion() {
+    const DEPTH: u64 = 100_000;
+    let root = ObjectId(0);
+    // #1 is a paragraph in the story, #2 the outermost quote, each quote
+    // holds the next, and the innermost holds the paragraph `deepest`.
+    let mut objects = vec![
+        (
+            root,
+            Object::Story(doc::Story {
+                blocks: vec![ObjectId(1), ObjectId(2)],
+            }),
+        ),
+        (ObjectId(1), para(root, "top")),
+    ];
+    for id in 2..2 + DEPTH {
+        let parent = if id == 2 { root } else { ObjectId(id - 1) };
+        objects.push((ObjectId(id), container(Kind::Quote, parent, &[id + 1])));
+    }
+    let deepest = ObjectId(2 + DEPTH);
+    objects.push((deepest, para(ObjectId(1 + DEPTH), "deep")));
+    let snapshot = doc::Snapshot {
+        root,
+        next_id: 3 + DEPTH,
+        objects,
+    };
+    let mut doc = Document::from_snapshot(snapshot.clone()).expect("a deep tree holds together");
+    assert_eq!(doc.to_snapshot(), snapshot);
+    assert_eq!(texts(&doc), ["top", "deep"]);
+    assert!(doc.contains(ObjectId(2), deepest));
+    assert_eq!(doc.subtree(ObjectId(2)).len() as u64, DEPTH + 1);
+    assert!(doc.dump().lines().count() as u64 > DEPTH);
+
+    // Typing in the deepest paragraph while the outermost quote goes.
+    let typing = Op::InsertText {
+        paragraph: deepest,
+        offset: 4,
+        text: "er".into(),
+        runs: vec![Run::new(2, Props::new())],
+    };
+    let delete = Op::DeleteBlock { block: ObjectId(2) };
+    assert_eq!(texts(&both(&doc, &typing, &delete)), ["top"]);
+
+    // Moving the deepest paragraph out, and deleting the outermost quote,
+    // each undone exactly.
+    let before = doc.clone();
+    let inverse = doc
+        .apply(&Op::MoveBlock {
+            block: deepest,
+            parent: root,
+            after: None,
+        })
+        .unwrap();
+    assert_eq!(texts(&doc), ["deep", "top"]);
+    doc.apply_all(&inverse).unwrap();
+    assert_eq!(doc, before);
+    let inverse = doc.apply(&delete).unwrap();
+    assert_eq!(texts(&doc), ["top"]);
+    doc.apply_all(&inverse).unwrap();
+    assert_eq!(doc, before);
 }
 
 mod ties {
