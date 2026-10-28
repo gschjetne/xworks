@@ -147,6 +147,73 @@ fn the_editor_gets_what_falls_in_its_area() {
     assert!(!effects.iter().any(|e| matches!(e, Effect::Pointer(_))));
 }
 
+/// The canvas contract's promise (`part`): the same input gives the same
+/// frames, the same accessibility tree and the same requests. Two editors
+/// of new documents, in folders of their own, are given the same input
+/// through the contract alone.
+#[test]
+fn the_same_input_gives_the_same_frames_and_tree() {
+    use part::{Input, Part, Surface};
+    let editor = |folder: &str| {
+        let mut res = resources().clone();
+        res.documents = testkit::scratch_dir(folder).expect("a folder");
+        app::Editor::create(Arc::new(res)).expect("a document")
+    };
+    let (mut a, mut b) = (editor("app-part-same-a"), editor("app-part-same-b"));
+    let inputs = [
+        Input::Text("The same input, given twice.".to_string()),
+        Input::Key {
+            key: Key::Enter,
+            modifiers: Modifiers::default(),
+        },
+        Input::Text("A second paragraph".to_string()),
+        Input::Press {
+            x: 120 * text::units::PIXEL,
+            y: 60 * text::units::PIXEL,
+            shift: false,
+            count: 2,
+        },
+        Input::Release,
+        Input::Command("bold".to_string()),
+        Input::Scroll(40 * text::units::PIXEL),
+        Input::Command("copy".to_string()),
+    ];
+    let look = |editor: &app::Editor| -> String {
+        let surroundings = part::Look {
+            desk: scene::Color::rgb(240, 240, 238),
+            page: scene::Color::WHITE,
+            page_ink: scene::Color::BLACK,
+            ink: scene::Color::BLACK,
+            selection: scene::Color::rgb(180, 200, 255),
+            formatting: scene::Color::rgb(250, 200, 100),
+            shadow: scene::Color::rgb(200, 200, 200),
+            line: scene::Color::rgb(160, 160, 160),
+            tint: scene::Color::rgb(230, 230, 230),
+            accent: scene::Color::rgb(30, 90, 200),
+            caret: true,
+        };
+        format!(
+            "{:?}\n{:?}\n{:?}\n{:?}\n{:?}",
+            editor.frame(&surroundings),
+            editor.access(100),
+            editor.caret(),
+            editor.ruler(),
+            editor.status()
+        )
+    };
+    for editor in [&mut a, &mut b] {
+        editor.resize(Surface {
+            width: 800 * text::units::PIXEL,
+            height: 600 * text::units::PIXEL,
+        });
+    }
+    for input in inputs {
+        let requests = a.input(input.clone());
+        assert_eq!(requests, b.input(input.clone()), "after {input:?}");
+        assert_eq!(look(&a), look(&b), "after {input:?}");
+    }
+}
+
 /// File, Versions lists the named versions over the document, and one
 /// chosen from the keyboard asks for a window on it.
 #[test]

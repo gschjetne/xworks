@@ -1,6 +1,7 @@
 //! Parts and the canvas contract (docs/ARCHITECTURE.md, section 4, "Parts",
 //! and section 8): what every kind of document's view offers whatever
-//! holds it, a window or, later, another part it's embedded in.
+//! holds it, a window or, later, another part it's embedded in, so a
+//! platform's port replaces the chrome and keeps the documents.
 //!
 //! A host gives a part a [`Surface`] and passes it [`Input`]: pointer,
 //! keys, input-method composition, scrolling, and commands with their
@@ -17,13 +18,30 @@
 //! window does. The text editor (`app::Editor`) is the first part; parts
 //! edited in place within others come with the canvas track.
 //!
-//! Invariants:
+//! # What a caller may rely on
 //!
-//! - Positions are layout units from the surface's top left: the host
-//!   moves input into them and frames out of them.
-//! - A part never touches the host's chrome: it describes, and the host
-//!   draws.
-//! - The same input gives the same frames and the same tree.
+//! - **Pure.** No I/O, threads, clocks or environment (Clippy's
+//!   `crates/clippy.toml`), and it builds for WebAssembly (CI). It's an
+//!   interface: [`Part`] and the data that crosses it.
+//! - **Positions are layout units** from the surface's top left: the host
+//!   moves input into them and frames out of them, and what falls outside
+//!   the surface isn't the part's (`app`'s `tests/window.rs`,
+//!   `the_editor_gets_what_falls_in_its_area`).
+//! - **A part describes and the host draws:** it never touches the host's
+//!   chrome, and asks for what only the host can do as [`Request`]s rather
+//!   than doing it.
+//! - **The same input gives the same frames,** the same accessibility tree
+//!   and the same requests (`app`'s `tests/window.rs`,
+//!   `the_same_input_gives_the_same_frames_and_tree`), so a session played
+//!   headless draws what it drew live (`tools/shot/tests/golden.rs`, the
+//!   `editor` and `editor-lists` scenes).
+//!
+//! # What it doesn't promise
+//!
+//! - Embedding: no part holds another yet, and how one hands input to
+//!   another it holds is still to be settled with the canvas track.
+//! - That the trait is stable: it grows with the parts that implement it.
+//! - Pixels: frames are display lists, which renderers draw.
 
 use std::path::PathBuf;
 
