@@ -20,22 +20,53 @@
 //! - [`Ruler`]: a text column with its indents and tab stops.
 //! - [`Length`] and [`Unit`]: lengths shown and typed with their units.
 //!
-//! Invariants:
+//! # What a caller may rely on
 //!
-//! - Command IDs are unique, every menu item names a command, and no two
-//!   commands share a shortcut on one platform.
-//! - A command that takes an argument has no shortcut and is no plain
-//!   menu item: it's run with its argument, from the inspector, the ruler,
-//!   a submenu the app fills, or a script.
-//! - "Primary" is Command on a Mac and Ctrl elsewhere; shortcuts match the
-//!   key as it is without Shift, so they don't depend on the keyboard
-//!   layout's shifted characters.
-//! - A shortcut that differs on a Mac, beyond Primary, is given for the
-//!   Mac on its own: moving by words is Ctrl and an arrow on Windows and
-//!   Linux, Option and an arrow on a Mac.
-//! - Titles mark their access key with `&` before it, as Windows does, and
-//!   `&&` for an ampersand; menus show the title without it. A Mac has no
-//!   access keys.
+//! - **Pure.** No I/O, threads, clocks or environment (Clippy's
+//!   `crates/clippy.toml`), and it builds for WebAssembly (CI). It
+//!   describes; it draws nothing and runs no command.
+//! - **A spec that holds together:** [`Commands::from_spec`] refuses one
+//!   whose command IDs repeat, whose menu items name no command, whose
+//!   shortcut can't be read or is two commands' on one platform, whose
+//!   command taking an argument has a shortcut or is a plain menu item,
+//!   or whose menu has two items, or the bar two menus, with one access
+//!   key; it says which ([`Error`]) (unit tests
+//!   `specs_that_dont_hold_together_are_refused`,
+//!   `submenus_are_filled_by_the_app` and
+//!   `submenus_can_be_given_by_the_spec`). xWorks' own spec holds
+//!   together, and its menus hold every command that runs without an
+//!   argument (`tests/spec.rs`, `the_commands_hold_together` and
+//!   `the_menus_hold_every_command`).
+//! - **Shortcuts:** "Primary" is Command on a Mac and Ctrl elsewhere;
+//!   shortcuts match the key as it is without Shift, so they don't depend
+//!   on the keyboard layout's shifted characters; and one that differs on
+//!   a Mac beyond Primary is given for the Mac on its own, as moving by
+//!   words is Ctrl and an arrow on Windows and Linux and Option and an
+//!   arrow on a Mac (unit tests `shortcuts_read_match_and_label`,
+//!   `keys_find_their_commands` and `a_mac_can_have_its_own_shortcut`).
+//! - **Access keys:** titles mark theirs with `&` before it, as Windows
+//!   does, and `&&` for an ampersand; menus show the title without it, and
+//!   a Mac has none (unit test `access_keys_are_marked_with_ampersands`).
+//! - **The palette** finds every command by a title's start, a word's
+//!   start, the letters anywhere, then in order from a word's start (unit
+//!   test `the_palette_finds_commands_by_name`).
+//! - **Lengths:** a unit is a whole number of layout units, 914 400 to the
+//!   inch; a length shows to the hundredth (inches to the thousandth),
+//!   picas as typographers write them, "3p6"; and any text typed reads as
+//!   a length within bounds, or none, never panicking, and what a length
+//!   shows reads back as it (`length`'s unit tests; the
+//!   `paragraph_settings` fuzz target).
+//! - **The ruler** marks each unit at its own steps: centimetres to their
+//!   quarters, inches to their eighths, picas every six, three and one
+//!   point (`ruler`'s unit test `each_unit_marks_its_own_ruler`).
+//!
+//! # What it doesn't promise
+//!
+//! - What a command does, or whether it's enabled: that's the app's.
+//! - That an inspector or a ruler makes sense: a part describes them, and
+//!   the toolkit draws what it's given.
+//! - Pixels: positions in a [`Ruler`] are layout units, and how anything
+//!   looks is the toolkit's and its theme's.
 
 pub mod inspector;
 mod length;
