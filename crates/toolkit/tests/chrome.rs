@@ -214,6 +214,116 @@ fn popups_hit_their_rows_and_stay_in_the_window() {
     assert!(late.rect().right() <= px(800) && late.rect().bottom() <= px(600));
 }
 
+/// A list taller than the room it has scrolls (M2's exit, review
+/// 7fnfdhb5): a field's list goes under its field where it fits, over it
+/// where only that fits, and otherwise takes the larger room and scrolls,
+/// with a bar whose thumb drags and whose track pages; what's drawn and
+/// what a point hits follow the scroll, and a row can be scrolled into
+/// view or to the middle.
+#[test]
+fn popups_taller_than_their_room_scroll() {
+    let theme = theme("light");
+    let labels = Labels::new();
+    let kit = Kit {
+        fonts: fonts(),
+        theme: &theme,
+        icons: icons(),
+        labels: &labels,
+        caret: true,
+    };
+    let rows: Vec<PopupRow> = (1..=40)
+        .map(|n| PopupRow::choice(&format!("Choice {n}"), n == 30))
+        .collect();
+    let window = (px(800), px(400));
+    let row_h = theme.sizes.menu_item.units();
+    // A few fit under a field near the top.
+    let few = &rows[..5];
+    let field = toolkit::Rect::new(px(500), px(60), px(200), px(28));
+    let under = Popup::by_field(&kit, few, field, window);
+    assert!(under.rect().y >= field.bottom());
+    assert_eq!(under.most(), 0);
+    assert!(under.bar().is_none());
+    // Near the foot, they go over it.
+    let low = toolkit::Rect::new(px(500), px(330), px(200), px(28));
+    let over = Popup::by_field(&kit, few, low, window);
+    assert!(over.rect().bottom() <= low.y);
+    assert_eq!(over.most(), 0);
+    // Forty fit neither: under the field, in the larger room, scrolling.
+    let popup = Popup::by_field(&kit, &rows, field, window);
+    assert!(popup.rect().y >= field.bottom());
+    assert!(popup.rect().bottom() <= window.1);
+    assert!(popup.most() > 0);
+    let (track, thumb) = popup.bar().expect("a scroll bar");
+    assert!(track.right() <= popup.rect().right());
+    assert!(thumb.height < track.height);
+    // Rows don't reach under the bar.
+    assert!(popup.row(0).unwrap().right() <= track.x);
+    // A point hits the row drawn there, as scrolled.
+    let (x, y) = popup.row(2).unwrap().centre();
+    assert_eq!(popup.hit(x, y), Some(Some(2)));
+    let scrolled = popup.clone().scrolled(3 * row_h);
+    assert_eq!(scrolled.scroll(), 3 * row_h);
+    assert_eq!(scrolled.hit(x, y), Some(Some(5)));
+    assert!(!scrolled.shows(0) && scrolled.shows(5));
+    // Rows out of sight aren't hit: on the frame's padding, nothing.
+    let body = scrolled.body();
+    assert_eq!(scrolled.hit(x, body.y - PIXEL), Some(None));
+    // As far as it goes, no further.
+    assert_eq!(popup.clone().scrolled(i64::MAX / 2).scroll(), popup.most());
+    assert_eq!(popup.clone().scrolled(-5).scroll(), 0);
+    // A row scrolled into view, whole; and to the middle, as a list opens
+    // on its choice.
+    let last = popup.reveal(39);
+    assert_eq!(last, popup.most());
+    let shown = popup.clone().scrolled(popup.reveal(29));
+    let r = shown.row(29).unwrap();
+    assert!(r.y >= shown.body().y && r.bottom() <= shown.body().bottom());
+    let middle = popup.clone().scrolled(popup.centred(29));
+    let (_, at) = middle.row(29).unwrap().centre();
+    let (_, mid) = middle.body().centre();
+    assert!((at - mid).abs() <= row_h / 2, "{at} {mid}");
+    assert!(popup.page() >= 3);
+    // The bar: its thumb drags, its track pages.
+    let (track, thumb) = middle.bar().unwrap();
+    assert_eq!(
+        middle.bar_hit(thumb.x + PIXEL, thumb.y + PIXEL),
+        Some(toolkit::BarHit::Thumb)
+    );
+    assert_eq!(
+        middle.bar_hit(track.x + PIXEL, track.bottom() - PIXEL),
+        Some(toolkit::BarHit::After)
+    );
+    assert_eq!(
+        middle.bar_hit(track.x + PIXEL, track.y + PIXEL),
+        Some(toolkit::BarHit::Before)
+    );
+    assert_eq!(popup.dragged(0, track.height), popup.most());
+    assert_eq!(popup.hit(thumb.x + PIXEL, thumb.y + PIXEL), Some(None));
+    // What's drawn: the rows in sight, those partly in it cut at the
+    // body's edge, and the thumb.
+    let drawn = middle.draw(&kit, &rows, Some(29), false);
+    let titles: Vec<String> = flat(&drawn)
+        .iter()
+        .filter_map(|i| match i {
+            scene::Item::Glyphs(g) => Some(g.text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert!(titles.iter().any(|t| t == "Choice 30"));
+    assert!(!titles.iter().any(|t| t == "Choice 1"));
+    assert!(
+        drawn
+            .iter()
+            .any(|i| matches!(i, scene::Item::Group(g) if g.clip.is_some()))
+            || (middle.scroll() % row_h == 0),
+        "a row cut at the edge, unless none is"
+    );
+    // A list taller than the window, from the bar, is as tall as it.
+    let menu = Popup::new(&kit, &rows, (px(10), px(40)), 0, window);
+    assert_eq!(menu.rect().height, window.1);
+    assert!(menu.bar().is_some());
+}
+
 #[test]
 fn the_ruler_hits_its_stops_and_indents() {
     let theme = theme("light");

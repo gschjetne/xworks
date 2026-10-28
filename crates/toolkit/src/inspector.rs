@@ -77,8 +77,8 @@ pub struct InspectorView {
 
 /// How wide the strip at the panel's edge is where the scroll bar takes
 /// the pointer, and the bar drawn in it.
-const BAR_REACH: f64 = 14.0;
-const BAR_WIDTH: f64 = 6.0;
+pub(crate) const BAR_REACH: f64 = 14.0;
+pub(crate) const BAR_WIDTH: f64 = 6.0;
 
 impl InspectorView {
     /// `model`'s tab `tab` laid out in a panel from `top` to `bottom`
