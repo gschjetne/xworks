@@ -776,3 +776,84 @@ fn a_lists_own_list_definition_isnt_held() {
     let written = read.file.clone().write(&read.document, &sheet);
     assert_eq!(written.expect("it writes"), b"- one\n- two\n");
 }
+
+/// A file's pictures are found as it's read and placed at their sizes
+/// once they're measured, the file read once (`read_unsized`): its links
+/// are those its story shows, each once, in order, as `links` finds them
+/// but for a picture in another's description; each picture whose size is
+/// known has it; and the story is otherwise as it is with no sizes known,
+/// pictures side by side in one run as they were.
+#[test]
+fn pictures_are_placed_at_their_sizes_once_theyre_measured() {
+    let text = "# ![Logo](logo.png) Larkspur\n\n\
+        ![A](a.png)![A](a.png) and ![B](b.png \"Bee\") in *![A](a.png)*.\n\n\
+        [![Badge](badge.svg)](https://example.org) ![Gone](gone.png)\n\n\
+        - ![Item](b.png)\n\n\
+        | Pic |\n|-----|\n| ![Cell](c.png) |\n\n\
+        ![Outer ![Inner](inner.png)](outer.png)\n";
+    let sizes = |link: &str| match link {
+        "logo.png" => Some((100, 50)),
+        "a.png" => Some((10, 20)),
+        "b.png" => Some((30, 40)),
+        "c.png" => Some((5, 5)),
+        "outer.png" => Some((7, 8)),
+        "badge.svg" => Some((1, 1)),
+        _ => None,
+    };
+    let begun =
+        markdown::read_unsized(text.as_bytes(), objects(), Some("en-US"), 1).expect("it reads");
+    let links = [
+        "logo.png",
+        "a.png",
+        "b.png",
+        "badge.svg",
+        "gone.png",
+        "c.png",
+        "outer.png",
+    ];
+    assert_eq!(begun.links(), links);
+    let mut found = markdown::links(text.as_bytes());
+    found.retain(|l| l != "inner.png");
+    assert_eq!(found, links);
+    let sized = begun.finish(&sizes).expect("it reads").document;
+    let plain = markdown::read_unsized(text.as_bytes(), objects(), Some("en-US"), 1)
+        .expect("it reads")
+        .finish(&|_| None)
+        .expect("it reads")
+        .document;
+    let size_of = |props: &Props| {
+        (
+            props.get(keys::PICTURE_WIDTH).cloned(),
+            props.get(keys::PICTURE_HEIGHT).cloned(),
+        )
+    };
+    let mut pictures = 0;
+    assert_eq!(sized.paragraphs(), plain.paragraphs());
+    for id in sized.paragraphs() {
+        let (a, b) = (sized.paragraph(id).unwrap(), plain.paragraph(id).unwrap());
+        assert_eq!(a.text, b.text);
+        assert_eq!(a.runs.len(), b.runs.len(), "{:?}", a.text);
+        for (ra, rb) in a.runs.iter().zip(&b.runs) {
+            assert_eq!(ra.len, rb.len);
+            let mut stripped = (*ra.props).clone();
+            stripped.remove(keys::PICTURE_WIDTH);
+            stripped.remove(keys::PICTURE_HEIGHT);
+            assert_eq!(&stripped, &*rb.props);
+            assert_eq!(size_of(&rb.props), (None, None));
+            let want = match ra.props.get(keys::PICTURE_SRC) {
+                Some(Value::Text(src)) => {
+                    pictures += 1;
+                    sizes(src).map_or((None, None), |(w, h)| {
+                        (Some(Value::Int(w)), Some(Value::Int(h)))
+                    })
+                }
+                _ => (None, None),
+            };
+            assert_eq!(size_of(&ra.props), want, "{:?}", a.text);
+        }
+    }
+    // The two of A side by side are one run.
+    assert_eq!(pictures, 9);
+    let (id, at) = find(&sized, "\u{fffc}\u{fffc} and");
+    assert_eq!((at, sized.paragraph(id).unwrap().runs[0].len), (0, 2));
+}

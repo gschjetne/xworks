@@ -100,7 +100,7 @@ use std::ops::Range;
 use doc::{Document, ObjectId};
 
 pub use autolink::{Autolink, AutolinkKind, address, autolinks};
-pub use read::{ReadError, Settings, links, read, read_from};
+pub use read::{ReadError, Settings, Unsized, links, read, read_from, read_unsized};
 pub use shape::{Form, Node, shape};
 pub use write::{Unheld, What};
 

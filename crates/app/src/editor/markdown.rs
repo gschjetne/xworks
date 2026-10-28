@@ -231,36 +231,41 @@ impl Editor {
             source,
         })?;
         let folder = path.parent().map(Path::to_path_buf).unwrap_or_default();
-        let decoded = decode_links(&res, &folder, &markdown::links(&bytes));
-        let sizes: HashMap<String, (i64, i64)> = decoded
-            .iter()
-            .map(|(link, p)| {
-                (
-                    link.clone(),
-                    placed_size(&res.program.page, p.width, p.height),
-                )
-            })
-            .collect();
         let language = language(&res);
         // A Markdown file can't hold a stylesheet: it takes the program's.
         let sheet = res.stylesheets[0].objects(story::SHEET_AT);
-        let settings = markdown::Settings {
-            sheet: &sheet,
-            language: language.as_deref(),
-            sizes: &|link| sizes.get(link).copied(),
-        };
         let stamp = store::stamp(path);
         let mut read_only = None;
-        let read = match markdown::read(&bytes, &settings) {
-            Ok(read) => read,
+        // Its pictures are found as it's read, and decoded, on the worker
+        // pool, to be placed at their sizes once they're known.
+        let (read, decoded) = match markdown::read_unsized(&bytes, &sheet, language.as_deref(), 1) {
+            Ok(begun) => {
+                let decoded = decode_links(&res, &folder, begun.links());
+                let sizes: HashMap<String, (i64, i64)> = decoded
+                    .iter()
+                    .map(|(link, p)| {
+                        (
+                            link.clone(),
+                            placed_size(&res.program.page, p.width, p.height),
+                        )
+                    })
+                    .collect();
+                (begun.finish(&|link| sizes.get(link).copied()), decoded)
+            }
             Err(markdown::ReadError::NotUtf8(_)) => {
                 read_only = Some("it isn't UTF-8 text".to_string());
                 let text = String::from_utf8_lossy(&bytes).into_owned();
-                markdown::read(text.as_bytes(), &settings)
-                    .map_err(|e| store::Error::Damaged(e.to_string()))?
+                // Its pictures go unmeasured, as their links can't be read.
+                let settings = markdown::Settings {
+                    sheet: &sheet,
+                    language: language.as_deref(),
+                    sizes: &|_| None,
+                };
+                (markdown::read(text.as_bytes(), &settings), Vec::new())
             }
             Err(e) => return Err(store::Error::Damaged(e.to_string()).into()),
         };
+        let read = read.map_err(|e| store::Error::Damaged(e.to_string()))?;
         let lock = match store::acquire_at(&lock_of(&res, path)) {
             store::Acquired::Held(lock) => Some(lock),
             store::Acquired::Unavailable => None,

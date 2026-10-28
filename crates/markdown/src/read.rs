@@ -2,8 +2,9 @@
 //! with its place in the file, made into `doc`'s objects as one snapshot,
 //! with what writing them back needs of each.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::ops::Range;
+use std::sync::Arc;
 
 use doc::{Block, Document, Kind, Object, ObjectId, Paragraph, Props, Run, Snapshot, Value};
 use pulldown_cmark::{Alignment, CodeBlockKind, Event, LinkType, Parser, Tag, TagEnd};
@@ -68,6 +69,20 @@ pub fn read(bytes: &[u8], settings: &Settings<'_>) -> Result<Read, ReadError> {
 /// story's 0: so a file read again can go into the document read before,
 /// its objects beside that one's.
 pub fn read_from(bytes: &[u8], settings: &Settings<'_>, first: u64) -> Result<Read, ReadError> {
+    read_unsized(bytes, settings.sheet, settings.language, first)?.finish(settings.sizes)
+}
+
+/// Reads the Markdown file `bytes` as [`read_from`] does, but for the
+/// sizes its pictures are placed at, which [`Unsized::finish`] takes: so
+/// the pictures can be found and measured without reading the file twice,
+/// as [`links`] and [`read_from`] would. `sheet` and `language` are as
+/// [`Settings`] has them.
+pub fn read_unsized<'a>(
+    bytes: &'a [u8],
+    sheet: &'a [(ObjectId, Object)],
+    language: Option<&str>,
+    first: u64,
+) -> Result<Unsized<'a>, ReadError> {
     let (bom, body) = match bytes.strip_prefix(b"\xef\xbb\xbf") {
         Some(rest) => (true, rest),
         None => (false, bytes),
@@ -78,49 +93,80 @@ pub fn read_from(bytes: &[u8], settings: &Settings<'_>, first: u64) -> Result<Re
     let language = front
         .clone()
         .and_then(|r| lang(&text[r]))
-        .or_else(|| settings.language.map(str::to_string));
+        .or_else(|| language.map(str::to_string));
     let start = front.as_ref().map_or(0, |r| r.end);
-    let mut builder = Builder::new(text, settings, language.clone(), start);
+    let mut builder = Builder::new(text, sheet, language.clone(), start);
     builder.next = builder.next.max(first);
     for (event, range) in Parser::new_ext(&text[start..], OPTIONS).into_offset_iter() {
         builder.event(event, range.start + start..range.end + start);
     }
-    let Built {
-        document,
-        sources,
-        inline,
-        habits,
-    } = builder.finish()?;
-    // The line ending the file's first line has.
-    let ending = match text.find(['\n', '\r']) {
-        Some(i) if text[i..].starts_with("\r\n") => "\r\n",
-        Some(i) if text[i..].starts_with('\r') => "\r",
-        _ => "\n",
-    };
-    let definitions = document
-        .paragraphs()
-        .into_iter()
-        .filter(|&id| {
-            document
-                .paragraph(id)
-                .is_some_and(crate::write::is_definition)
-        })
-        .collect();
-    let file = File {
-        text: text.to_string(),
+    builder.end_file();
+    Ok(Unsized {
+        text,
         bom,
-        ending,
-        final_newline: text.is_empty() || text.ends_with(['\n', '\r']),
         front,
         language,
-        habits,
-        baseline: document.clone(),
-        sources,
-        inline,
-        definitions,
-        cache: None,
-    };
-    Ok(Read { document, file })
+        builder,
+    })
+}
+
+/// A Markdown file read but for the sizes its pictures are placed at
+/// ([`read_unsized`]): the links of its pictures, to find and measure, and
+/// the rest of what it read, for [`Unsized::finish`] to make its story of.
+pub struct Unsized<'a> {
+    text: &'a str,
+    bom: bool,
+    front: Option<Range<usize>>,
+    language: Option<String>,
+    builder: Builder<'a>,
+}
+
+impl Unsized<'_> {
+    /// The links of the pictures its story shows, each once, in the order
+    /// they come.
+    pub fn links(&self) -> &[String] {
+        &self.builder.links
+    }
+
+    /// The file read, each picture placed at the size `sizes` gives its
+    /// link, where it gives one, in layout units ([`Settings::sizes`]).
+    pub fn finish(self, sizes: &dyn Fn(&str) -> Option<(i64, i64)>) -> Result<Read, ReadError> {
+        let Unsized {
+            text,
+            bom,
+            front,
+            language,
+            builder,
+        } = self;
+        let Built {
+            document,
+            sources,
+            inline,
+            habits,
+            definitions,
+        } = builder.finish(sizes)?;
+        // The line ending the file's first line has.
+        let ending = match text.find(['\n', '\r']) {
+            Some(i) if text[i..].starts_with("\r\n") => "\r\n",
+            Some(i) if text[i..].starts_with('\r') => "\r",
+            _ => "\n",
+        };
+        let file = File {
+            text: text.to_string(),
+            bom,
+            ending,
+            final_newline: text.is_empty() || text.ends_with(['\n', '\r']),
+            front,
+            language,
+            habits,
+            baseline: document.clone(),
+            sources,
+            inline,
+            definitions,
+            cache: None,
+        };
+        Ok(Read { document, file })
+    }
 }
 
 /// The front matter at the start of `text`, if it has some: YAML between
@@ -226,6 +272,9 @@ struct Built {
     sources: HashMap<ObjectId, Source>,
     inline: HashMap<ObjectId, InlineHabits>,
     habits: Habits,
+    /// The paragraphs that keep link reference definitions and footnotes,
+    /// in reading order.
+    definitions: Vec<ObjectId>,
 }
 
 /// What a container being read is.
@@ -373,7 +422,6 @@ struct Builder<'a> {
     code: Option<ObjectId>,
     headings: [Option<ObjectId>; 6],
     table_header: Option<ObjectId>,
-    sizes: &'a dyn Fn(&str) -> Option<(i64, i64)>,
     language: Option<String>,
     next: u64,
     objects: Vec<(ObjectId, Object)>,
@@ -385,46 +433,59 @@ struct Builder<'a> {
     /// deep, and the block.
     skip: Option<(usize, ObjectId, Range<usize>)>,
     counts: Counts,
+    /// The paragraphs pictures were placed in, which their sizes go into
+    /// once they're known ([`Unsized::finish`]), and the pictures' links,
+    /// each once, in order.
+    pictured: Vec<ObjectId>,
+    links: Vec<String>,
+    linked: HashSet<String>,
+    /// The paragraphs kept as written that are link reference definitions
+    /// or footnotes, in the order they're read, which is reading order.
+    definitions: Vec<ObjectId>,
+    /// What the plain text of the last paragraph read held, emptied, for
+    /// the next to fill without making it again.
+    spare: Plain,
 }
 
 impl<'a> Builder<'a> {
     fn new(
         text: &'a str,
-        settings: &'a Settings<'a>,
+        sheet: &'a [(ObjectId, Object)],
         language: Option<String>,
         start: usize,
     ) -> Builder<'a> {
+        // Room for about as many objects as the file has lines, so their
+        // lists rarely grow as they're read.
+        let lines = text.bytes().filter(|&b| b == b'\n').count() + 1;
         Builder {
             text,
-            sheet: settings.sheet,
-            body: story::default_style_id(settings.sheet),
-            code: style_by(settings.sheet, "code", keys::CODE, Value::Bool(true)),
+            sheet,
+            body: story::default_style_id(sheet),
+            code: style_by(sheet, "code", keys::CODE, Value::Bool(true)),
             headings: std::array::from_fn(|k| {
                 let level = k as i64 + 1;
                 style_by(
-                    settings.sheet,
+                    sheet,
                     &format!("heading-{level}"),
                     keys::HEADING,
                     Value::Int(level),
                 )
             }),
             table_header: style_by(
-                settings.sheet,
+                sheet,
                 story::TABLE_HEADER,
                 keys::ROLE,
                 Value::Text(story::TABLE_HEADER.to_string()),
             ),
-            sizes: settings.sizes,
             language,
-            next: settings
-                .sheet
+            next: sheet
                 .iter()
                 .map(|(id, _)| id.0 + 1)
                 .max()
                 .unwrap_or(1)
                 .max(1),
-            objects: Vec::new(),
-            sources: HashMap::new(),
+            objects: Vec::with_capacity(lines),
+            sources: HashMap::with_capacity(lines),
             inline: HashMap::new(),
             stack: vec![Frame {
                 id: ObjectId(0),
@@ -444,6 +505,11 @@ impl<'a> Builder<'a> {
             para: None,
             skip: None,
             counts: Counts::default(),
+            pictured: Vec::new(),
+            links: Vec::new(),
+            linked: HashSet::new(),
+            definitions: Vec::new(),
+            spare: Plain::default(),
         }
     }
 
@@ -555,7 +621,7 @@ impl<'a> Builder<'a> {
             id,
             kind,
             props,
-            text: String::new(),
+            text: String::with_capacity(range.len()),
             runs: Vec::new(),
             chars: 0,
             marks: Marks::default(),
@@ -567,7 +633,7 @@ impl<'a> Builder<'a> {
             first_of,
             syntax: Syntax::Paragraph(Vec::new()),
             habits: InlineHabits::default(),
-            plain: Plain::default(),
+            plain: std::mem::take(&mut self.spare),
         });
     }
 
@@ -606,6 +672,10 @@ impl<'a> Builder<'a> {
     /// whole lines, with `text` as the story shows it.
     fn raw(&mut self, kind: &str, text: String, lines: Range<usize>) {
         let id = self.id();
+        // As `write::is_definition` tells them.
+        if kind == "definition" || kind == "footnote" {
+            self.definitions.push(id);
+        }
         let first_of = self.first_of(lines.start);
         let mut props = self.para_props(self.code_style());
         props.insert(keys::SOURCE.to_string(), Value::Text(kind.to_string()));
@@ -831,15 +901,23 @@ impl<'a> Builder<'a> {
         let Some(p) = &mut self.para else {
             return;
         };
-        let plain = std::mem::take(&mut p.plain);
-        if plain.chars.is_empty() {
+        if p.plain.chars.is_empty() {
             return;
         }
-        for link in crate::autolink::find(&plain.chars, &plain.clean, plain.before) {
+        let plain = &mut p.plain;
+        let links = crate::autolink::find(&plain.chars, &plain.clean, plain.before);
+        let start = plain.start;
+        // Emptied as new, but for the room it took.
+        plain.chars.clear();
+        plain.clean.clear();
+        plain.start = 0;
+        plain.before = None;
+        plain.end = 0;
+        for link in links {
             p.runs = with_prop(
                 &p.runs,
-                plain.start + link.start as u32,
-                plain.start + link.end as u32,
+                start + link.start as u32,
+                start + link.end as u32,
                 keys::LINK,
                 Value::Text(link.url),
             );
@@ -871,6 +949,7 @@ impl<'a> Builder<'a> {
         let Some(mut p) = self.para.take() else {
             return;
         };
+        self.spare = std::mem::take(&mut p.plain);
         match p.kind {
             ParaKind::Code | ParaKind::Html => {
                 let mut text = p.text.replace("\r\n", "\n").replace('\r', "\n");
@@ -1547,9 +1626,15 @@ impl<'a> Builder<'a> {
         if !image.title.is_empty() {
             props.insert(keys::PICTURE_TITLE.to_string(), Value::Text(image.title));
         }
-        if let Some((w, h)) = (self.sizes)(&image.src) {
-            props.insert(keys::PICTURE_WIDTH.to_string(), Value::Int(w));
-            props.insert(keys::PICTURE_HEIGHT.to_string(), Value::Int(h));
+        // Its size goes in once it's known (`Builder::finish`): runs of the
+        // same picture side by side are one run either way.
+        if let Some(p) = &self.para
+            && self.pictured.last() != Some(&p.id)
+        {
+            self.pictured.push(p.id);
+        }
+        if self.linked.insert(image.src.clone()) {
+            self.links.push(image.src);
         }
         self.push(&OBJECT.to_string(), props);
     }
@@ -1574,7 +1659,8 @@ impl<'a> Builder<'a> {
         self.raw(kind, text.join("\n"), lines);
     }
 
-    fn finish(mut self) -> Result<Built, ReadError> {
+    /// Ends what's open at the file's end.
+    fn end_file(&mut self) {
         if self.skip.is_some() {
             let (_, id, range) = self.skip.take().expect("checked");
             self.end_kept(id, range.start..self.text.len());
@@ -1618,6 +1704,10 @@ impl<'a> Builder<'a> {
             );
             self.stack[0].children.push(id);
         }
+    }
+
+    /// The story read, each picture at the size `sizes` gives its link.
+    fn finish(mut self, sizes: &dyn Fn(&str) -> Option<(i64, i64)>) -> Result<Built, ReadError> {
         let root = self.stack.pop().expect("the story");
         let mut objects = self.objects;
         objects.extend(self.sheet.iter().cloned());
@@ -1628,6 +1718,25 @@ impl<'a> Builder<'a> {
             }),
         ));
         objects.sort_by_key(|(id, _)| *id);
+        for id in &self.pictured {
+            let Ok(k) = objects.binary_search_by_key(id, |(id, _)| *id) else {
+                continue;
+            };
+            let Object::Paragraph(p) = &mut objects[k].1 else {
+                continue;
+            };
+            for run in &mut p.runs {
+                let size = match run.props.get(keys::PICTURE_SRC) {
+                    Some(Value::Text(src)) => sizes(src),
+                    _ => None,
+                };
+                if let Some((w, h)) = size {
+                    let props = Arc::make_mut(&mut run.props);
+                    props.insert(keys::PICTURE_WIDTH.to_string(), Value::Int(w));
+                    props.insert(keys::PICTURE_HEIGHT.to_string(), Value::Int(h));
+                }
+            }
+        }
         let document = Document::from_snapshot(Snapshot {
             root: ObjectId(0),
             next_id: self.next,
@@ -1661,6 +1770,7 @@ impl<'a> Builder<'a> {
             sources: self.sources,
             inline: self.inline,
             habits,
+            definitions: self.definitions,
         })
     }
 }
@@ -1808,5 +1918,35 @@ mod tests {
         assert_eq!(item_marker("  12. x", 0), 2..5);
         assert_eq!(item_marker("- x", 0), 0..1);
         assert_eq!(item_content("-   x", 0), 4);
+    }
+
+    /// The definitions noted as they're read are the story's paragraphs
+    /// that are definitions, in reading order: in the story, in quotes, in
+    /// lists' items, and footnotes, before and after other blocks.
+    #[test]
+    fn definitions_are_noted_in_reading_order() {
+        let text = "[a]: https://a.example\n\n# Title [a] [b] [c] [^1]\n\n\
+            > [b]: https://b.example\n> Quoted.\n>\n> [c]: <https://c.example> \"C\"\n\n\
+            - item\n\n  [d]: /d\n- [e]: /e\n\n\
+            [^1]: A footnote.\n\n\
+            Text [d] [e].\n\n[f]: /f\n";
+        let settings = Settings {
+            sheet: &[],
+            language: None,
+            sizes: &|_| None,
+        };
+        let read = read(text.as_bytes(), &settings).expect("it reads");
+        let document = &read.document;
+        let walked: Vec<ObjectId> = document
+            .paragraphs()
+            .into_iter()
+            .filter(|&id| {
+                document
+                    .paragraph(id)
+                    .is_some_and(crate::write::is_definition)
+            })
+            .collect();
+        assert_eq!(walked.len(), 7, "{}", document.dump());
+        assert_eq!(read.file.definitions, walked);
     }
 }
