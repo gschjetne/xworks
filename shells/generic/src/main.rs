@@ -24,6 +24,11 @@
 //! edges, minimised, maximised and closed, and the shell asks winit. Its
 //! look is light or dark as the system's is.
 //!
+//! What goes wrong that no window says, such as a frame the GPU failed or
+//! a clipboard out of reach, is logged with `tracing`, the app's events
+//! too, and written to standard error (review p7yct3zf). Standard output
+//! is for `XWORKS_MEASURE_STARTUP`'s lines alone.
+//!
 //! - `XWORKS_ROOT`: where `spec/` and `fonts/` are; otherwise the nearest
 //!   folder holding them, up from the program or the current folder.
 //! - `XWORKS_DOCUMENTS`: where new documents go and Open looks first;
@@ -37,11 +42,14 @@
 //!   standard input closes.
 //! - `WGPU_BACKEND`: vulkan, dx12, metal or gl, to pick a GPU backend;
 //!   otherwise Vulkan, Metal or DirectX 12, whichever the system has.
+//! - `RUST_LOG`: what's logged, such as `debug`, `warn` or
+//!   `xworks=debug,info`; otherwise `info` and worse.
 
 mod system;
 
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
+use std::process::ExitCode;
 use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -49,6 +57,9 @@ use std::time::{Duration, Instant};
 use anyhow::{Context, bail};
 use app::recorder::{self, Recorder, Recordings};
 use app::{Choice, Effect, Event, Resources};
+use tracing::level_filters::LevelFilter;
+use tracing::{error, warn};
+use tracing_subscriber::EnvFilter;
 use winit::application::ApplicationHandler;
 use winit::dpi::{LogicalPosition, LogicalSize};
 use winit::event::{ElementState, Ime, MouseButton, MouseScrollDelta, WindowEvent};
@@ -223,7 +234,7 @@ impl Clipboard {
             self.opened = true;
             match arboard::Clipboard::new() {
                 Ok(system) => self.system = Some(system),
-                Err(e) => eprintln!("xworks: the system clipboard: {e}"),
+                Err(e) => warn!("the system clipboard: {e}"),
             }
         }
         self.system.as_mut()
@@ -240,7 +251,7 @@ impl Clipboard {
         if let Some(system) = self.system()
             && let Err(e) = system.set_text(lines)
         {
-            eprintln!("xworks: copying to the system clipboard: {e}");
+            warn!("copying to the system clipboard: {e}");
         }
         self.own = text;
     }
@@ -255,7 +266,7 @@ impl Clipboard {
             Ok(text) => Some(text),
             Err(arboard::Error::ContentNotAvailable) => None,
             Err(e) => {
-                eprintln!("xworks: pasting from the system clipboard: {e}");
+                warn!("pasting from the system clipboard: {e}");
                 Some(self.own.clone())
             }
         }
@@ -294,8 +305,32 @@ fn mark(measuring: &mut Option<Measuring>, phase: &'static str) {
     }
 }
 
-fn main() -> anyhow::Result<()> {
+fn main() -> ExitCode {
     let started = Instant::now();
+    log();
+    match run(started) {
+        Ok(()) => ExitCode::SUCCESS,
+        Err(e) => {
+            error!("{e:#}");
+            ExitCode::FAILURE
+        }
+    }
+}
+
+/// Writes what's logged to standard error, at the level `RUST_LOG` says,
+/// or `info`.
+fn log() {
+    let filter = EnvFilter::builder()
+        .with_default_directive(LevelFilter::INFO.into())
+        .from_env_lossy();
+    tracing_subscriber::fmt()
+        .with_env_filter(filter)
+        .with_writer(std::io::stderr)
+        .init();
+}
+
+/// xWorks, from `started`, until its last window closes.
+fn run(started: Instant) -> anyhow::Result<()> {
     let mut measuring = std::env::var_os("XWORKS_MEASURE_STARTUP").map(|_| Measuring {
         started,
         last: started,
@@ -385,8 +420,8 @@ fn write_when_failing(recordings: Recordings, folder: PathBuf, recent: Arc<app::
         previous(info);
         recent.flush();
         for path in recordings.write_all(&folder, &format!("xWorks failed: {info}")) {
-            eprintln!(
-                "xworks: what was done in the last few minutes is in {}",
+            error!(
+                "what was done in the last few minutes is in {}",
                 path.display()
             );
         }
@@ -850,7 +885,7 @@ impl Shell {
             }
         };
         if let Err(e) = drawn {
-            eprintln!("xworks: drawing the window: {e}");
+            error!(window = %win.title, "drawing the window: {e}");
         }
         win.window.pre_present_notify();
         gpu.queue.present(frame);
@@ -913,12 +948,12 @@ impl Shell {
                 Effect::OpenVersion(path, seq) => opening.push((Some(path), Some(seq))),
                 Effect::OpenExternally(path) => {
                     if let Err(e) = open_externally(&path) {
-                        eprintln!("xworks: opening {}: {e}", path.display());
+                        error!("opening {}: {e}", path.display());
                     }
                 }
                 Effect::Reveal(path) => {
                     if let Err(e) = reveal(&path) {
-                        eprintln!("xworks: showing {}: {e}", path.display());
+                        error!("showing {}: {e}", path.display());
                     }
                 }
                 Effect::Choose(choice) => {
@@ -1004,7 +1039,7 @@ impl Shell {
         }
         for (path, version) in opening {
             if let Err(e) = self.open(event_loop, path, version) {
-                eprintln!("xworks: {e:#}");
+                error!("{e:#}");
             }
         }
     }
@@ -1026,7 +1061,7 @@ impl ApplicationHandler<UserEvent> for Shell {
         if let Some(start) = self.start.take()
             && let Err(e) = self.open(event_loop, start, None)
         {
-            eprintln!("xworks: {e:#}");
+            error!("{e:#}");
             event_loop.exit();
         }
     }

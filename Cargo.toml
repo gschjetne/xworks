@@ -66,6 +66,8 @@ sha2 = { version = "0.11.0", default-features = false }  # golden images are rec
 skrifa = "0.48.0"       # reading fonts: tables, metrics, character maps and outlines (docs/ARCHITECTURE.md, section 9)
 sys-locale = "0.3.2"    # the system's language, which new documents are in (review pysc65hp), on Linux, Windows and macOS, for the generic shell
 thiserror = "2.0.21"    # error types in libraries
+tracing = { version = "0.1.44", default-features = false, features = ["std"] }  # logging in the impure crates and the shell (CLAUDE.md, rule 9; review p7yct3zf); MIT, already in the build through winit; without its defaults it brings no #[instrument] macro
+tracing-subscriber = { version = "0.3.23", default-features = false, features = ["std", "fmt", "env-filter"] }  # writes the shell's log to standard error, at the level RUST_LOG says (review p7yct3zf); MIT, and without its defaults it brings no colours and no bridge from the log crate; it brings sharded-slab, thread_local, matchers and lazy_static
 vello_cpu = { version = "=0.3.0", default-features = false, features = ["std", "text", "u8_pipeline"] }  # the CPU renderer (D7, docs/ARCHITECTURE.md, section 10); single-threaded, so render-cpu stays pure
 winit = "0.30.13"       # the generic shell's windows and input (docs/ARCHITECTURE.md, section 8)
 winapi-util = "=0.1.11"  # which file a Markdown file is on Windows, its volume and file index, to see another program put a file in its place (review jy4a2tx5): a safe API over GetFileInformationByHandle, which std has only on nightly; Unlicense OR MIT, already in the build through walkdir and termcolor
