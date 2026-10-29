@@ -1174,7 +1174,8 @@ review; ★ marks those the owner should decide.
   section each, a field for its place, read from the ruler's zero in its
   unit as the Text tab reads a paragraph's (a layout has no paragraph,
   so as one straight in the story), and lists for its alignment and
-  leader. A list definition shows at least three levels, each its marker,
+  leader; since M2's exit review the Text tab shows a paragraph's stops
+  alike, from the same code. A list definition shows at least three levels, each its marker,
   a bullet or a numbering, its bullet or how its number reads and where
   it starts, its indent and its marker's gap. A part's screen says what
   uses it.
@@ -1335,7 +1336,8 @@ marks those that need the owner's decision.
   leader of another character than a dash or a line shows as dots.
   What a point hits is as before.
 - **The Text tab sets a stop's leader** from a list beside its
-  alignment, none, dots, dashes or a line, the tab layout's screen's,
+  alignment (since M2's exit review, each stop is a section of its own,
+  below), none, dots, dashes or a line, the tab layout's screen's,
   from the same code (`tab-stop-leader`); one edit, "Leader", Undo takes
   back. An edit that leaves a paragraph's stops as they were now leaves
   the paragraph alone, so a leader where there's no stop makes no edit.
@@ -1416,6 +1418,27 @@ marks those that need the owner's decision.
   - the shell and app log with `tracing`, written to standard error by
     `tracing-subscriber`;
   - `render-gpu`'s errors are `thiserror` types.
+
+**What M2's exit review built: the Text tab's tab stops** (review
+p7yct3zf). The choices below are its own, open to the owner's review.
+- **Each stop is a section,** "Tab stop 1" and on, as a tab layout's
+  screen has them: its Position, a field read from the ruler's zero in
+  its unit, with the button that removes the stop beside it; its
+  Alignment, a list; and its Leader, a list. "Add a tab stop" is under
+  the last; with none, a section "Tab stops" says "None yet" over it, as
+  a layout's screen does.
+- **One piece of code builds both** (`app`'s `format::stop_sections`),
+  given what to run, `tab-stop-place` on the selection's paragraphs or
+  `layout-stop-place` on a layout, and so on; a test holds that the
+  two give the same rows for the same stops. The commands, each edit one
+  step for Undo, and Markdown asking where it can't hold a stop are as
+  they were.
+- **Screen readers** get each stop as a group named for its section, its
+  field and lists named Position, Alignment and Leader, which had no
+  names before.
+- **The tab grows** by a section a stop, so with more than two stops it
+  scrolls in a window 800 pixels high: `chrome-pages` shows its top, as
+  the mockup does, and `chrome-leaders` shows it scrolled to its stops.
 
 **Container: SQLite** (project owner, 2026-10-18). A document is an SQLite
 database with a fixed, versioned schema: objects, the transaction log, embedded
