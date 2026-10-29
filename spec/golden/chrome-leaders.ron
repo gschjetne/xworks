@@ -2,6 +2,6 @@
 Golden(
     name: "chrome-leaders",
     size: (1280, 800),
-    sha256: "d3a47f05501b87e72622842f86006bc8f2516f8cca022e49ae6eeab4fd3e707a",
+    sha256: "944798f3756a10fd3dc55db094bab94292cfe1b5e052242074f63f7fd7a51f04",
     approved_by: "Grim Schjetne",
 )
