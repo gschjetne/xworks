@@ -209,11 +209,17 @@ fn leaders(dark: bool) -> Window {
     window
 }
 
-/// The seed order with the inspector open on its Text tab: each stop's
+/// The seed order with the inspector open on its Text tab, scrolled to its
+/// end: each stop a section, as a tab layout's (review p7yct3zf), of its
 /// place, kind and leader.
 pub(crate) fn leaders_light() -> Page {
     let mut window = leaders(false);
     window.update(Event::Command("toggle-inspector".to_string()));
+    window.update(Event::Move {
+        x: 1100.0,
+        y: 400.0,
+    });
+    window.update(Event::Scroll(10_000.0));
     window.view()
 }
 

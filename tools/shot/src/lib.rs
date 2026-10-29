@@ -134,7 +134,7 @@ pub fn scenes() -> &'static [Scene] {
         },
         Scene {
             name: "chrome-pages",
-            description: "M2's chrome, built: the sample on pages, with the ruler and the inspector, as mockup-pages shows it",
+            description: "M2's chrome, built: the sample on pages, with the ruler and the inspector, as mockup-pages shows it, but for the Text tab's tab stops, each a section as a tab layout's (review p7yct3zf)",
             ppi: 96.0,
             page: chrome::pages_light,
             pages: None,
@@ -253,7 +253,7 @@ pub fn scenes() -> &'static [Scene] {
         },
         Scene {
             name: "chrome-leaders",
-            description: "a seed order whose tab stops have leaders, dashes, a line and dots, set from the Text tab, each shown on the ruler before its stop (M2's exit)",
+            description: "a seed order whose tab stops have leaders, dashes, a line and dots, set from the Text tab, each shown on the ruler before its stop (M2's exit), and the Text tab scrolled to its stops, each a section as a tab layout's (review p7yct3zf)",
             ppi: 96.0,
             page: chrome::leaders_light,
             pages: None,
