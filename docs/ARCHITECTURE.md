@@ -2147,6 +2147,23 @@ harness of ten each. Windows is measured by the owner.
 | Open a 500-page Markdown file, first page shown | 149 ms | 99 ms |
 | Keystroke in a Markdown file to the glyph on screen | 6.1 ms | 5.7 ms |
 
+On the owner's workstation, Windows with render-gpu on Vulkan, the 95th
+percentile's range over three runs. Before is from just after stage 9's
+follow-up (2026-10-27); after is at M2's exit (2026-10-29). The first
+run after the programs were copied there started cold in 369 ms, as a
+first run after copying has before; the two after it are in the table.
+
+| Interaction | Before | After |
+|---|---|---|
+| Cold start to an editable blank document | 223-236 ms | 231-238 ms |
+| Keystroke to the glyph on screen | 4.2-4.8 ms | 4.1-4.7 ms |
+| Open a 500-page report, first page shown | 183-192 ms | 120-130 ms |
+| Scroll any document | 8.5-8.9 ms | 8.4-8.6 ms |
+| Save after a small edit, any document size | 0.1-0.2 ms | 0.1 ms |
+| Memory for an empty document window | 71 MB | 70-72 MB |
+| Open a 500-page Markdown file, first page shown | 196-210 ms | 123-133 ms |
+| Keystroke in a Markdown file to the glyph on screen | 5.9-6.2 ms | 6.0-6.1 ms |
+
 ## 13. Engineering approach
 
 As with Fauré, most code will be written by agents, so checking it, not
