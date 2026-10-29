@@ -1333,10 +1333,10 @@ marks those that need the owner's decision.
   whose name became a list of the document's definitions, its label
   still the link to the one taken (`list-definition`, one edit, named
   after the definition). The lists the selection is in each take it.
-  - ★ The definition a list's kind takes anyway is named by none: the
+  - The definition a list's kind takes anyway is named by none: the
     list's `list` is unset, so Markdown holds it, and the list follows
     its kind's after a stylesheet is replaced, as before.
-  - ★ A definition of the other kind turns the list that kind: given
+  - A definition of the other kind turns the list that kind: given
     one that numbers, a bulleted list is numbered, and the status bar
     says "Numbered the list, as Roman numbers its items", rather than
     keeping its kind and showing numbers Markdown would write as
@@ -1349,7 +1349,7 @@ marks those that need the owner's decision.
     as styles are, and an update keeps it, three-way, as tests show.
 - **Lists that pop up scroll** (`toolkit::Popup`): a menu, its
   submenu, the editor's panel, and an inspector's choices.
-  - ★ A field's list goes under its field where it fits, over it where
+  - A field's list goes under its field where it fits, over it where
     only that fits, and otherwise in the larger of the two rooms, as
     tall as it, scrolling; over the field, it may cover the title bar's
     buttons, as a menu covers what's under it. A menu or the panel stays
@@ -1358,7 +1358,7 @@ marks those that need the owner's decision.
     inspector's, its thumb lit under the pointer, its list wider by the
     bar so no row is under it; rows out of sight aren't drawn or hit,
     and those partly out are cut at its edge.
-  - ★ A field's list opens with the row chosen in its middle, as far as
+  - A field's list opens with the row chosen in its middle, as far as
     the rows go, as macOS opens a pop-up on its choice; the arrows, Page
     Up and Down, Home and End then light another and scroll only as far
     as shows it whole. A menu's keys scroll what they light into view,
@@ -1375,7 +1375,7 @@ marks those that need the owner's decision.
   started without a file does, which stays, empty; a document open in a
   window behind comes forward rather than opening twice, as the shell
   has it; and a session played keeps the windows behind its last.
-  - ★ It prints by Export as PDF, which writes beside each document the
+  - It prints by Export as PDF, which writes beside each document the
     PDF Print writes to the system's folder for temporary files and
     hands to the system to print, which a headless session can't follow.
   - Its pictures are the app's test pictures, 32 by 24 pixels, placed at
@@ -1387,6 +1387,23 @@ marks those that need the owner's decision.
     now measures every line's tabs from the paragraph's start edge
     (`tests/tabs.rs`). The session still sets its costs in First
     Paragraph, as a list of costs reads better without the indent.
+
+**From M2's exit review** (project owner, 2026-10-29, review p7yct3zf):
+- **Stage 8's choices stand as built:**
+  - choosing the definition a list's kind takes anyway stores nothing;
+  - a definition of the other kind turns the list that kind;
+  - a field's list opens with the chosen row in its middle;
+  - the exit session prints with Export as PDF;
+  - `locale` keeps its segmenters and `text` each face's shaping plans,
+    caches inside pure crates, as no rule forbids.
+- **A list that pops up opens under its field,** or over it where there's
+  more room, over the title bar too, as the system's own lists do.
+- **The Text tab's tab stops look as the Style tab's tab layout does:** a
+  field for the place, and lists for the alignment and the leader.
+- **The code keeps rule 9 before M2's exit:**
+  - the shell and app log with `tracing`, written to standard error by
+    `tracing-subscriber`;
+  - `render-gpu`'s errors are `thiserror` types.
 
 **Container: SQLite** (project owner, 2026-10-18). A document is an SQLite
 database with a fixed, versioned schema: objects, the transaction log, embedded
