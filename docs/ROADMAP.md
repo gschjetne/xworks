@@ -562,7 +562,42 @@ owner approved in review a23vvez8.
   - It also fixed what the owner found trying it: pasting keeps
     paragraphs' styles and the quotes, lists and tables they're in.
 
-Stage 8, the exit, is left.
+**Stage 8 is done (2026-10-29),** on the plan the owner settled (review
+7fnfdhb5):
+- **Contracts:** every foundation crate's contract is written down, and
+  those of `story`, `canvas` and `markdown`, each promise naming the test
+  that holds it; ARCHITECTURE.md section 3 sums them up.
+- **Speed:** opening a 500-page Markdown file takes 123-133 ms on the
+  owner's workstation, within the 180 ms the owner set, and a 500-page
+  report 120-130 ms.
+- **Stage 9's follow-up is finished:**
+  - leaders on the ruler and in the Text tab;
+  - a list's own definition;
+  - lists that pop up scroll.
+- **Exit session:** M2's exit session writes, quits, reopens and prints a
+  Markdown file and a document with pictures, as the golden
+  `exit-m2-pages`.
+- **Fixed on the way:**
+  - reading deeply nested Markdown is linear;
+  - pictures put where others just left the GPU's atlas show;
+  - tab stops hold under a first-line indent;
+  - a Markdown file changed just before its window closes keeps
+    xWorks' edits as a copy.
+- **From the exit's review (p7yct3zf):**
+  - the Text tab's tab stops look as a tab layout's do;
+  - the code keeps rule 9, logging with `tracing` and `render-gpu`'s
+    errors typed with `thiserror`.
+
+**M2 is done (2026-10-29),** accepted by the owner in review p7yct3zf. Every
+exit criterion holds:
+- Markdown round trips, and CommonMark's examples read and write back.
+- 46 goldens draw the same on Linux, Windows and macOS.
+- 52 sessions drive the chrome.
+- Operations invert and rebase, and M1's and M2's files open.
+- The budgets hold on the owner's workstation, Markdown's included.
+- The owner used it live on Windows and on Linux under WSL. Native Linux,
+  and the budgets in CI on a self-hosted runner, wait for the owner's
+  workstation to run Linux (Later).
 
 ### Exit criteria
 

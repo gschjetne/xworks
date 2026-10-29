@@ -14,11 +14,10 @@ office suite built from scratch to be usable, fast and correct.
 
 ## Status and checks
 
-M0 (architecture) and M1 (the walking skeleton) are done: `calc`'s
-decimal numbers, `doc`, `locale`, `text`, `scene`, `render-cpu`,
-`render-pdf`, `story`, `canvas`, `store`, `chrome`, `toolkit`, `app`,
-`render-gpu`, the generic shell and the budgets harness are in place. M2,
-the foundation tracks, is next ([docs/ROADMAP.md](docs/ROADMAP.md)).
+M0 (architecture), M1 (the walking skeleton) and M2 (foundations for
+documents) are done. Each crate's `lib.rs` states its contract, and
+ARCHITECTURE.md section 3 sums them up. M3 is being planned
+([docs/ROADMAP.md](docs/ROADMAP.md)).
 
 The tests lay text out in the bundled fonts, which aren't committed. Fetch
 them once, and again when `spec/text/fonts.ron` changes:
