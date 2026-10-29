@@ -410,6 +410,7 @@ pub fn layout_with(fonts: &Fonts, paragraph: &Paragraph<'_>, setting: &Setting<'
         items,
         position,
         tabs: setting.tabs.unwrap_or(&no_tabs),
+        indent: setting.indent,
         tab_offsets: text
             .char_indices()
             .filter(|&(_, c)| c == '\t')
@@ -508,6 +509,9 @@ struct Shaping<'a> {
     tabs: &'a Tabs,
     /// Where the text's tabs are.
     tab_offsets: Vec<usize>,
+    /// How far the first line starts in from the paragraph's start edge,
+    /// which its tabs are measured from ([`Setting::indent`]).
+    indent: i64,
     glue: Glue,
     /// The inline objects, by offset.
     objects: Vec<Inline>,
@@ -711,7 +715,8 @@ impl Shaping<'_> {
     /// How far each tab on a line from `start`, whose text ends at `end`,
     /// moves the pen, where the cluster at each offset is `advance` wide:
     /// each tab's offset, advance and the leader that fills it, in order.
-    /// Tabs are measured from the line's start edge.
+    /// Tabs are measured from the paragraph's start edge, so the first
+    /// line's are measured from where its indent puts its start.
     fn tab_advances(
         &self,
         start: usize,
@@ -722,7 +727,7 @@ impl Shaping<'_> {
         let tabbed = self.tabs_in(start, end);
         let width = |a: usize, b: usize| (a..b).map(&advance).sum::<i64>();
         let mut out = Vec::with_capacity(tabbed.len());
-        let mut pen = 0;
+        let mut pen = if start == 0 { self.indent } else { 0 };
         let mut from = start;
         for (k, &t) in tabbed.iter().enumerate() {
             pen += width(from, t);

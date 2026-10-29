@@ -1380,12 +1380,13 @@ marks those that need the owner's decision.
     hands to the system to print, which a headless session can't follow.
   - Its pictures are the app's test pictures, 32 by 24 pixels, placed at
     96 to the inch, so a third of an inch wide.
-  - ★ Found doing it: a first-line indent moves the stops on a
-    paragraph's first line by its width, as the text measures them from
+  - Found doing it, and fixed after: a first-line indent moved the stops
+    on a paragraph's first line by its width, as `text` measured them from
     where that line starts, and the story moves them by the start indent
-    alone. Book's indented Body puts "12.40" past the column's end, so
-    the session sets its costs in First Paragraph. It isn't fixed here:
-    it's in `text`, which stage 8's other part changes.
+    alone. Book's indented Body put "12.40" past the column's end. `text`
+    now measures every line's tabs from the paragraph's start edge
+    (`tests/tabs.rs`). The session still sets its costs in First
+    Paragraph, as a list of costs reads better without the indent.
 
 **Container: SQLite** (project owner, 2026-10-18). A document is an SQLite
 database with a fixed, versioned schema: objects, the transaction log, embedded
