@@ -2,7 +2,9 @@
 //! 7fnfdhb5): a paragraph's own tab stops take leaders, as a tab layout's
 //! do, each shown on the ruler; and a list chooses its list definition,
 //! which survives pasting and stylesheet updates. Each is one edit Undo
-//! takes back, and a Markdown file asks before what it can't hold.
+//! takes back, and a Markdown file asks before what it can't hold. And
+//! since M2's exit review (p7yct3zf), a paragraph's stops show as a tab
+//! layout's do, a section each, for people and screen readers alike.
 
 use std::sync::{Arc, OnceLock};
 
@@ -94,6 +96,18 @@ fn text_section(window: &Window, title: &str) -> chrome::Section {
         .clone()
 }
 
+/// The Text tab's control that runs `command` in the section of its `n`th
+/// tab stop, "Tab stop `n`".
+fn stop_control(window: &Window, n: usize, command: &str) -> chrome::Control {
+    text_section(window, &format!("Tab stop {n}"))
+        .rows
+        .iter()
+        .flat_map(|r| &r.controls)
+        .find(|c| c.command == command)
+        .unwrap_or_else(|| panic!("no {command} in tab stop {n}"))
+        .clone()
+}
+
 /// The choices of a list control, and the label of the one chosen.
 fn choices(control: &chrome::Control) -> (Vec<String>, Option<String>) {
     let ControlKind::Choice {
@@ -122,14 +136,8 @@ fn a_paragraphs_own_stops_take_leaders_from_the_text_tab() {
         "tab-stop-add",
         vec![Arg::Int(at), text("decimal:.")],
     );
-    // Beside the stop, a list of its leaders: none yet.
-    let row = text_section(&window, "Tab stops").rows[0].clone();
-    let leader = row
-        .controls
-        .iter()
-        .find(|c| c.command == "tab-stop-leader")
-        .expect("a list of leaders")
-        .clone();
+    // In the stop's section, a list of its leaders: none yet.
+    let leader = stop_control(&window, 1, "tab-stop-leader");
     assert_eq!(leader.args, vec![Arg::Int(at)]);
     let (labels, chosen) = choices(&leader);
     assert_eq!(labels, ["No leader", "Dots", "Dashes", "Line"]);
@@ -144,14 +152,7 @@ fn a_paragraphs_own_stops_take_leaders_from_the_text_tab() {
     assert_eq!(stops(&window)[0].leader, Some('.'));
     let ruler = Part::ruler(window.editor()).expect("a ruler");
     assert_eq!(ruler.stops[0].leader, Some('.'));
-    let (_, chosen) = choices(
-        &text_section(&window, "Tab stops").rows[0]
-            .controls
-            .iter()
-            .find(|c| c.command == "tab-stop-leader")
-            .unwrap()
-            .clone(),
-    );
+    let (_, chosen) = choices(&stop_control(&window, 1, "tab-stop-leader"));
     assert_eq!(chosen.as_deref(), Some("Dots"));
     // A leader is glyphs without text, no part of the line's.
     let leaders = |window: &Window| {
@@ -245,6 +246,210 @@ fn a_markdown_file_asks_before_a_stop_and_its_leader() {
     );
     assert_eq!(stops(&window)[0].leader, Some('.'));
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "Beans and peas\n");
+}
+
+/// The sections inspector tab `tab` shows of a set of tab stops: "Tab
+/// stop 1" and on, or "Tab stops" where there's none. Each control's
+/// command is named without `prefix`, what it edits, so "place" for
+/// `tab-stop-place` and `layout-stop-place`, and runs without `before`,
+/// what comes ahead of a stop's place: what the Text tab and a tab
+/// layout's screen share.
+fn stop_sections(window: &Window, tab: &str, prefix: &str, before: &[Arg]) -> Vec<chrome::Section> {
+    let mut sections: Vec<chrome::Section> = window
+        .editor()
+        .inspector()
+        .tabs
+        .into_iter()
+        .find(|t| t.title == tab)
+        .unwrap_or_else(|| panic!("no {tab} tab"))
+        .sections
+        .into_iter()
+        .filter(|s| s.title.starts_with("Tab stop"))
+        .collect();
+    let controls = sections
+        .iter_mut()
+        .flat_map(|s| &mut s.rows)
+        .flat_map(|r| &mut r.controls);
+    for control in controls {
+        if let Some(what) = control.command.strip_prefix(prefix) {
+            control.command = what.to_string();
+        }
+        if let Some(rest) = control.args.strip_prefix(before) {
+            control.args = rest.to_vec();
+        }
+    }
+    sections
+}
+
+/// The Text tab shows a paragraph's tab stops as the Style tab shows a tab
+/// layout's (project owner, 2026-10-29, review p7yct3zf): for the same
+/// stops, the same sections of the same rows, each control showing the
+/// same, but for the commands they run, on the paragraph or the layout.
+#[test]
+fn a_paragraphs_stops_show_as_a_tab_layouts_do() {
+    let res = res("app-text-tab-as-layout");
+    let editor = Editor::create(res.clone()).expect("a document");
+    let mut window = window_on(res, editor);
+    window.update(Event::Text("Beans\tBroad\t3.40".to_string()));
+    with(&mut window, "style-new", vec![text("tabs"), Arg::Int(0)]);
+    let layout = named(&window, StyleKind::Tabs, "New Tab Layout");
+    let same = |window: &Window| {
+        let text_tab = stop_sections(window, "Text", "tab-stop-", &[]);
+        let screen = stop_sections(window, "Style", "layout-stop-", &[id(layout)]);
+        assert_eq!(text_tab, screen);
+        text_tab
+    };
+    // None yet: each says so, over the button that adds one.
+    let none = same(&window);
+    assert_eq!(none.len(), 1);
+    assert_eq!(none[0].title, "Tab stops");
+    assert_eq!(none[0].rows.len(), 2);
+    assert_eq!(none[0].rows[1].controls[0].command, "add");
+    // The same three stops, each added and set by its own commands: a
+    // start stop with dashes, an end stop with a line, and one on a colon,
+    // which isn't a kind offered, with a leader that isn't one either. The
+    // layout's is added at the next default stop and placed.
+    let layout_stops = |window: &Window| {
+        let part = window.editor().sheet().part(layout).expect("the layout");
+        story::parse_tabs(&part.value).expect("its stops")
+    };
+    for (at, kind, leader) in [
+        (40, "start", "-"),
+        (110, "end", "_"),
+        (150, "decimal::", "="),
+    ] {
+        let at = at * MILLIMETRE;
+        with(&mut window, "tab-stop-add", vec![Arg::Int(at), text(kind)]);
+        with(
+            &mut window,
+            "tab-stop-leader",
+            vec![Arg::Int(at), text(leader)],
+        );
+        with(&mut window, "layout-stop-add", vec![id(layout)]);
+        let added = layout_stops(&window).last().expect("a stop").position;
+        let on = |rest: Vec<Arg>| [vec![id(layout), Arg::Int(added)], rest].concat();
+        with(&mut window, "layout-stop-place", on(vec![Arg::Int(at)]));
+        let at_ = |rest: Vec<Arg>| [vec![id(layout), Arg::Int(at)], rest].concat();
+        with(&mut window, "layout-stop-kind", at_(vec![text(kind)]));
+        with(&mut window, "layout-stop-leader", at_(vec![text(leader)]));
+    }
+    assert_eq!(stops(&window), layout_stops(&window));
+    let three = same(&window);
+    let titles: Vec<&str> = three.iter().map(|s| s.title.as_str()).collect();
+    assert_eq!(titles, ["Tab stop 1", "Tab stop 2", "Tab stop 3"]);
+    for (k, section) in three.iter().enumerate() {
+        let labels: Vec<&str> = section.rows.iter().map(|r| r.label.as_str()).collect();
+        let expected: &[&str] = if k == 2 {
+            &["Position", "Alignment", "Leader", ""]
+        } else {
+            &["Position", "Alignment", "Leader"]
+        };
+        assert_eq!(labels, expected);
+    }
+    // Each reads as it is: where, from the ruler's zero, how it aligns,
+    // and its leader.
+    let shown: Vec<(String, String, String)> = three
+        .iter()
+        .map(|s| {
+            let ControlKind::Length { value, plain, .. } = &s.rows[0].controls[0].kind else {
+                panic!("a length: {:?}", s.rows[0]);
+            };
+            assert!(!plain, "a field");
+            assert_eq!(s.rows[0].controls[1].command, "remove");
+            let (_, kind) = choices(&s.rows[1].controls[0]);
+            let (_, leader) = choices(&s.rows[2].controls[0]);
+            (
+                value.expect("a place").to_string(),
+                kind.expect("a kind"),
+                leader.expect("a leader"),
+            )
+        })
+        .collect();
+    let s = |a: &str, b: &str, c: &str| (a.to_string(), b.to_string(), c.to_string());
+    assert_eq!(
+        shown,
+        [
+            s("4 cm", "Left", "Dashes"),
+            s("11 cm", "Right", "Line"),
+            s("15 cm", "Decimal (:)", "Leader ="),
+        ]
+    );
+}
+
+/// Screen readers get each stop's section as a group, "Tab stop 1" and
+/// on, of its fields and lists, each labelled as its row is, Position,
+/// Alignment and Leader, with its value; and its button to remove it.
+#[test]
+fn screen_readers_get_each_stops_fields_by_their_labels() {
+    use part::accesskit::Role;
+    let res = res("app-text-tab-access");
+    let editor = Editor::create(res.clone()).expect("a document");
+    let mut window = window_on(res, editor);
+    window.update(Event::Text("Beans\t3.40".to_string()));
+    for (at, kind, leader) in [(40, "start", "-"), (110, "end", ".")] {
+        let at = at * MILLIMETRE;
+        with(&mut window, "tab-stop-add", vec![Arg::Int(at), text(kind)]);
+        with(
+            &mut window,
+            "tab-stop-leader",
+            vec![Arg::Int(at), text(leader)],
+        );
+    }
+    let tree = window.access();
+    let node =
+        |id: part::accesskit::NodeId| &tree.nodes.iter().find(|(n, _)| *n == id).expect("a node").1;
+    let members = |title: &str| -> Vec<(Role, String, Option<String>)> {
+        let (_, group) = tree
+            .nodes
+            .iter()
+            .find(|(_, n)| n.role() == Role::Group && n.label() == Some(title))
+            .unwrap_or_else(|| panic!("no group {title}"));
+        group
+            .children()
+            .iter()
+            .map(|&id| {
+                let n = node(id);
+                assert!(!n.is_hidden(), "{title} is in sight");
+                (
+                    n.role(),
+                    n.label().unwrap_or_default().to_string(),
+                    n.value().map(str::to_string),
+                )
+            })
+            .collect()
+    };
+    for (title, place, kind, leader) in [
+        ("Tab stop 1", "4 cm", "Left", "Dashes"),
+        ("Tab stop 2", "11 cm", "Right", "Dots"),
+    ] {
+        let members = members(title);
+        let fields: Vec<(Role, &str, Option<&str>)> = members
+            .iter()
+            .filter(|(role, ..)| *role != Role::Button)
+            .map(|(role, label, value)| (*role, label.as_str(), value.as_deref()))
+            .collect();
+        assert_eq!(
+            fields,
+            [
+                (Role::TextInput, "Position", Some(place)),
+                (Role::ComboBox, "Alignment", Some(kind)),
+                (Role::ComboBox, "Leader", Some(leader)),
+            ],
+            "{title}"
+        );
+        assert!(
+            members
+                .iter()
+                .any(|(role, label, _)| *role == Role::Button && label.contains("Remove")),
+            "{title}: {members:?}"
+        );
+    }
+    // Add, under the last.
+    assert!(
+        members("Tab stop 2")
+            .iter()
+            .any(|(role, label, _)| *role == Role::Button && label == "Add a tab stop")
+    );
 }
 
 /// Each list item's marker, in reading order.

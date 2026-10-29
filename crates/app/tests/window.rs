@@ -542,9 +542,23 @@ fn lengths_show_in_the_unit_chosen() {
             .cloned()
     };
     let before = tabs_of(&window);
+    // Its Position field, in the Text tab's section "Tab stop 1", where
+    // screen readers have it.
+    let (x, y) = (1150.0, 454.0);
+    let tree = window.access();
+    let field = tree
+        .nodes
+        .iter()
+        .find(|(_, n)| n.role() == Role::TextInput && n.label() == Some("Position"))
+        .and_then(|(_, n)| n.bounds())
+        .expect("the stop's Position field");
+    assert!(
+        (field.x0..field.x1).contains(&x) && (field.y0..field.y1).contains(&y),
+        "{field:?}"
+    );
     window.update(Event::Press {
-        x: 1010.0,
-        y: 452.0,
+        x,
+        y,
         shift: false,
         count: 1,
     });

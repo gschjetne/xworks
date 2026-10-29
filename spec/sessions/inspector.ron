@@ -24,8 +24,8 @@
         // Line height: one and a half times the font.
         Click(1150, 238),
         Click(1100, 376),
-        // Add a tab stop: at the first default stop.
-        Click(1010, 452),
+        // Add a tab stop, under "None yet": at the first default stop.
+        Click(1010, 478),
     ],
     expect: [("Heading 2", "Inspected")],
     marks: [("Inspected", ["bold", "size"])],

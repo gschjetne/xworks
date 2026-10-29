@@ -31,8 +31,7 @@ use text::{Ligatures, TabStop};
 
 use super::Editor;
 use super::format::{
-    MOST, add_stop, leader_choices, line_height_label, move_stop, set_stop_kind, set_stop_leader,
-    stop_kind, stop_label,
+    MOST, add_stop, line_height_label, move_stop, set_stop_kind, set_stop_leader, stop_sections,
 };
 
 /// The kinds the Style tab shows, in the order its list offers them: each
@@ -1549,103 +1548,28 @@ impl Editor {
     }
 
     /// The screen of tab layout `id`: its name, what uses it, and its
-    /// stops, each a section of its own: its place on the ruler, read
-    /// from its zero in its unit, as the Text tab reads a paragraph's, its
-    /// alignment and its leader, each a field or a list as the other
-    /// screens' values are, and a button to remove it; and one more to
-    /// add.
+    /// stops, each a section of its own, as the Text tab shows a
+    /// paragraph's, from the same code (`format::stop_sections`): its
+    /// place on the ruler, read from its zero in its unit, with a button
+    /// to remove it, its alignment and its leader; and one more to add.
     fn layout_screen(&self, id: ObjectId, writable: bool) -> Vec<Section> {
         let unit = self.res.settings.units();
         let stops: Vec<TabStop> = match self.sheet.part(id) {
             Some(p) => story::parse_tabs(&p.value).unwrap_or_default(),
             None => Vec::new(),
         };
-        let shift = self.layout_shift();
-        let kinds = [
-            StopKind::Start,
-            StopKind::Center,
-            StopKind::End,
-            StopKind::Decimal('.'),
-            StopKind::Decimal(','),
-        ];
         let mut sections = vec![Section {
             title: "Tab layout".to_string(),
             rows: self.part_rows(id, writable),
         }];
-        for (k, stop) in stops.iter().enumerate() {
-            let at = vec![id_arg(id), Arg::Int(stop.position)];
-            let kind = stop_kind(stop.align);
-            let mut options = kinds.to_vec();
-            if !options.contains(&kind) {
-                options.push(kind);
-            }
-            let (leaders, leader) = leader_choices(stop.leader);
-            sections.push(Section {
-                title: format!("Tab stop {}", k + 1),
-                rows: vec![
-                    row(
-                        "Position",
-                        vec![
-                            control(
-                                "layout-stop-place",
-                                at.clone(),
-                                writable,
-                                length(stop.position + shift, unit),
-                            ),
-                            button(
-                                "layout-stop-remove",
-                                at.clone(),
-                                writable,
-                                "Remove",
-                                Some("x"),
-                            ),
-                        ],
-                    ),
-                    row(
-                        "Alignment",
-                        vec![control(
-                            "layout-stop-kind",
-                            at.clone(),
-                            writable,
-                            choice(
-                                options
-                                    .iter()
-                                    .map(|k| Choice::new(Arg::Text(k.id()), stop_label(*k)))
-                                    .collect(),
-                                options.iter().position(|k| *k == kind),
-                            ),
-                        )],
-                    ),
-                    row(
-                        "Leader",
-                        vec![control(
-                            "layout-stop-leader",
-                            at,
-                            writable,
-                            choice(leaders, leader),
-                        )],
-                    ),
-                ],
-            });
-        }
-        let add = row(
-            "",
-            vec![button(
-                "layout-stop-add",
-                vec![id_arg(id)],
-                writable,
-                "Add a tab stop",
-                None,
-            )],
-        );
-        // Add, under the last stop, or alone, where there's none yet.
-        match sections.last_mut().filter(|_| !stops.is_empty()) {
-            Some(last) => last.rows.push(add),
-            None => sections.push(Section {
-                title: "Tab stops".to_string(),
-                rows: vec![row("", vec![note("None yet")]), add],
-            }),
-        }
+        sections.extend(stop_sections(
+            &stops,
+            self.layout_shift(),
+            unit,
+            writable,
+            "layout-stop",
+            &[id_arg(id)],
+        ));
         sections
     }
 

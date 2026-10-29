@@ -36,7 +36,7 @@ pub(super) fn line_height_label(per_mille: i64) -> String {
 
 /// What a kind of tab stop is called in the inspector: "Decimal (,)" for
 /// one on a comma.
-pub(super) fn stop_label(kind: StopKind) -> String {
+fn stop_label(kind: StopKind) -> String {
     match kind {
         StopKind::Decimal(c) if c != '.' => format!("Decimal ({c})"),
         _ => kind.name().to_string(),
@@ -44,7 +44,7 @@ pub(super) fn stop_label(kind: StopKind) -> String {
 }
 
 /// The ruler's kind of tab stop, as text's.
-pub(super) fn stop_kind(align: TabAlign) -> StopKind {
+fn stop_kind(align: TabAlign) -> StopKind {
     match align {
         TabAlign::Start => StopKind::Start,
         TabAlign::Center => StopKind::Center,
@@ -113,7 +113,7 @@ const LEADERS: [(&str, &str); 4] = [
 
 /// The choices of a stop's leader, which is `leader`: none, dots, dashes
 /// or a line, and another character it has, as itself; and which it is.
-pub(super) fn leader_choices(leader: Option<char>) -> (Vec<Choice>, Option<usize>) {
+fn leader_choices(leader: Option<char>) -> (Vec<Choice>, Option<usize>) {
     let mut leaders: Vec<(String, String)> = LEADERS
         .iter()
         .map(|(c, l)| (c.to_string(), l.to_string()))
@@ -139,6 +139,148 @@ pub(super) fn set_stop_leader(stops: &mut [TabStop], at: i64, typed: &str) {
     for stop in stops.iter_mut().filter(|s| s.position == at) {
         stop.leader = leader;
     }
+}
+
+/// The kinds of tab stop the inspector offers, a paragraph's and a tab
+/// layout's alike; a stop of another, as on another decimal character,
+/// adds its own.
+const STOP_KINDS: [StopKind; 5] = [
+    StopKind::Start,
+    StopKind::Center,
+    StopKind::End,
+    StopKind::Decimal('.'),
+    StopKind::Decimal(','),
+];
+
+/// The sections of a set of tab stops, as the inspector shows them: a
+/// paragraph's in the Text tab and a tab layout's in the Style tab, from
+/// this one place so they can't drift apart (project owner, 2026-10-29,
+/// review p7yct3zf). Each stop is a section, "Tab stop 1" and on:
+/// - its Position, a field, read `shift` further along the ruler than
+///   it's kept, from the ruler's zero, in `unit`; with a button beside it
+///   that removes the stop;
+/// - its Alignment, a list;
+/// - its Leader, a list.
+///
+/// Under the last, a button adds one more; where there's none yet, a
+/// section says so, with that button. Each control runs `commands`' own,
+/// `tab-stop-place` and so on for `tab-stop`, with `before` and then the
+/// stop's place as kept; adding runs with `before` alone.
+pub(super) fn stop_sections(
+    stops: &[TabStop],
+    shift: i64,
+    unit: Unit,
+    writable: bool,
+    commands: &str,
+    before: &[Arg],
+) -> Vec<Section> {
+    let command = |what: &str| format!("{commands}-{what}");
+    let mut sections: Vec<Section> = stops
+        .iter()
+        .enumerate()
+        .map(|(k, stop)| {
+            let mut at = before.to_vec();
+            at.push(Arg::Int(stop.position));
+            let kind = stop_kind(stop.align);
+            let mut kinds = STOP_KINDS.to_vec();
+            if !kinds.contains(&kind) {
+                kinds.push(kind);
+            }
+            let (leaders, leader) = leader_choices(stop.leader);
+            Section {
+                title: format!("Tab stop {}", k + 1),
+                rows: vec![
+                    Row {
+                        label: "Position".to_string(),
+                        controls: vec![
+                            control(
+                                &command("place"),
+                                at.clone(),
+                                writable,
+                                ControlKind::Length {
+                                    value: length(stop.position + shift, unit),
+                                    prefix: String::new(),
+                                    plain: false,
+                                },
+                            ),
+                            control(
+                                &command("remove"),
+                                at.clone(),
+                                writable,
+                                ControlKind::Button {
+                                    label: "Remove".to_string(),
+                                    icon: Some("x".to_string()),
+                                },
+                            ),
+                        ],
+                    },
+                    Row {
+                        label: "Alignment".to_string(),
+                        controls: vec![control(
+                            &command("kind"),
+                            at.clone(),
+                            writable,
+                            ControlKind::Choice {
+                                selected: kinds.iter().position(|k| *k == kind),
+                                choices: kinds
+                                    .iter()
+                                    .map(|k| Choice::new(Arg::Text(k.id()), stop_label(*k)))
+                                    .collect(),
+                                plain: false,
+                            },
+                        )],
+                    },
+                    Row {
+                        label: "Leader".to_string(),
+                        controls: vec![control(
+                            &command("leader"),
+                            at,
+                            writable,
+                            ControlKind::Choice {
+                                choices: leaders,
+                                selected: leader,
+                                plain: false,
+                            },
+                        )],
+                    },
+                ],
+            }
+        })
+        .collect();
+    let add = Row {
+        label: String::new(),
+        controls: vec![control(
+            &command("add"),
+            before.to_vec(),
+            writable,
+            ControlKind::Button {
+                label: "Add a tab stop".to_string(),
+                icon: None,
+            },
+        )],
+    };
+    // Add, under the last stop, or alone, where there's none yet.
+    match sections.last_mut() {
+        Some(last) => last.rows.push(add),
+        None => sections.push(Section {
+            title: "Tab stops".to_string(),
+            rows: vec![
+                Row {
+                    label: String::new(),
+                    controls: vec![control(
+                        "",
+                        Vec::new(),
+                        true,
+                        ControlKind::Note {
+                            text: "None yet".to_string(),
+                        },
+                    )],
+                },
+                add,
+            ],
+        }),
+    }
+    sections
 }
 
 fn control(command: &str, args: Vec<Arg>, enabled: bool, kind: ControlKind) -> Control {
@@ -611,86 +753,11 @@ impl Editor {
             )],
         };
 
-        // The tab stops, each with its kind, and one more to add.
-        let kinds = [
-            StopKind::Start,
-            StopKind::Center,
-            StopKind::End,
-            StopKind::Decimal('.'),
-            StopKind::Decimal(','),
-        ];
+        // The tab stops, each a section as a tab layout's are, and one
+        // more to add.
         let stops = story::paragraph_tabs(paragraph, sheet).stops;
-        let shift = self.stops_shift();
-        let mut tab_rows: Vec<Row> = stops
-            .iter()
-            .map(|stop| {
-                let kind = stop_kind(stop.align);
-                let leader = leader_choices(stop.leader);
-                let mut options: Vec<StopKind> = kinds.to_vec();
-                if !options.contains(&kind) {
-                    options.push(kind);
-                }
-                Row {
-                    label: String::new(),
-                    controls: vec![
-                        control(
-                            "tab-stop-place",
-                            vec![Arg::Int(stop.position)],
-                            writable,
-                            ControlKind::Length {
-                                value: length(stop.position + shift, unit),
-                                prefix: String::new(),
-                                plain: true,
-                            },
-                        ),
-                        control(
-                            "tab-stop-kind",
-                            vec![Arg::Int(stop.position)],
-                            writable,
-                            ControlKind::Choice {
-                                selected: options.iter().position(|k| *k == kind),
-                                choices: options
-                                    .iter()
-                                    .map(|k| Choice::new(Arg::Text(k.id()), stop_label(*k)))
-                                    .collect(),
-                                plain: true,
-                            },
-                        ),
-                        control(
-                            "tab-stop-leader",
-                            vec![Arg::Int(stop.position)],
-                            writable,
-                            ControlKind::Choice {
-                                selected: leader.1,
-                                choices: leader.0,
-                                plain: true,
-                            },
-                        ),
-                        control(
-                            "tab-stop-remove",
-                            vec![Arg::Int(stop.position)],
-                            writable,
-                            ControlKind::Button {
-                                label: "Remove".to_string(),
-                                icon: Some("x".to_string()),
-                            },
-                        ),
-                    ],
-                }
-            })
-            .collect();
-        tab_rows.push(Row {
-            label: String::new(),
-            controls: vec![control(
-                "tab-stop-add",
-                Vec::new(),
-                writable,
-                ControlKind::Button {
-                    label: "Add a tab stop".to_string(),
-                    icon: None,
-                },
-            )],
-        });
+        let stop_sections =
+            stop_sections(&stops, self.stops_shift(), unit, writable, "tab-stop", &[]);
 
         // The page: the document's page style, its size and margins
         // (project owner, 2026-10-24, review 30dmn1js).
@@ -759,24 +826,22 @@ impl Editor {
         };
         let mut paragraph_rows = vec![style_row, align_row, spacing_row, line_row];
         paragraph_rows.extend(self.list_row());
+        let mut text_sections = vec![
+            Section {
+                title: "Paragraph".to_string(),
+                rows: paragraph_rows,
+            },
+            Section {
+                title: "Character".to_string(),
+                rows: vec![font_row, size_row, language_row],
+            },
+        ];
+        text_sections.extend(stop_sections);
         Inspector {
             tabs: vec![
                 InspectorTab {
                     title: "Text".to_string(),
-                    sections: vec![
-                        Section {
-                            title: "Paragraph".to_string(),
-                            rows: paragraph_rows,
-                        },
-                        Section {
-                            title: "Character".to_string(),
-                            rows: vec![font_row, size_row, language_row],
-                        },
-                        Section {
-                            title: "Tab stops".to_string(),
-                            rows: tab_rows,
-                        },
-                    ],
+                    sections: text_sections,
                 },
                 self.style_tab(),
                 page_tab,
