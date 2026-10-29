@@ -734,6 +734,59 @@ below are its own, open to the owner's review.
   making the file's bytes is about 1.6 ms, once runs of blocks as the
   file had them are copied whole.
 
+**What stage 8 built: a Markdown file opened a tenth within its budget**
+(M2's exit, review 7fnfdhb5). What's drawn and saved is as it was: every
+golden keeps its hash, and every file reads and writes back as before.
+The choices below are open to the owner's review.
+- **A file is read once.** Opening read it twice: pulldown-cmark alone,
+  to find the pictures' links to decode and measure, then again to make
+  the story, each picture placed at its size as it came. Now
+  `markdown::read_unsized` reads it once, noting each picture's paragraph
+  and link; the app decodes the pictures on the worker pool, and
+  `Unsized::finish` puts their sizes into those pictures' runs before the
+  story is made. The story is the same, as runs of one picture side by
+  side are one run either way: every CommonMark example and our own files
+  dump the same.
+- **Reading makes less:** a snapshot's IDs are checked in bits where
+  they're as dense as a document's (`doc`), the paragraphs keeping
+  definitions are noted as they're read, lists have room for about as
+  many objects as the file has lines, and plain text with no `@`, `:` or
+  `www.` isn't searched for addresses.
+- **Reading takes time in the file's size,** however deep its blocks
+  nest, where it took the square of how deep quotes nest and the cube of
+  how deep lists do: a line's start and end are found in an index of
+  lines, and each container keeps its line, the items on it, as a list
+  shared with the container around it's, and where what it puts at a
+  line's start ends, rather than each looking along its line and through
+  the containers around it again.
+- **Laying out shapes with plans kept:** a face keeps a HarfRust plan for
+  each direction, script, language and set of ligatures its text is
+  shaped in, where HarfRust made one for every stretch of text, close to
+  half the time shaping took. A plan depends only on its face and its
+  key, so text shapes the same.
+- **Laying out makes less:** ICU4X's line segmenter for untailored text
+  is made once, and a word segmenter once for each language on each
+  thread, as one can't be shared; a face is chosen from its family's
+  faces alone; a line's cells, where the caret stands, go straight into
+  the line; and a story laid out afresh keeps its layouts where they're
+  made, with no copy for each paragraph, and takes the hyphenation
+  patterns once for each pass on the worker pool.
+- **Not done:** the first page laid out before the rest. A draft shows
+  its height and the status bar its words and pages from the first
+  frame, so laying out the rest after would need the window to grow and
+  the shell to wake it, which the budget doesn't need now.
+- **Measured** (under WSL, render-cpu, ten opens three times over, the
+  median of each): reading and laying out the 500-page Markdown file
+  takes 92 ms rather than 138, 34% less, and opening it 99 ms at the 95th
+  percentile rather than 149. Of the 92 ms, reading the Markdown is about
+  35 (26 for pulldown-cmark's events and the reader's work on them, 9 for
+  making the story), walking the story's tree 8, laying out on the pool
+  36, from 349 ms of a processor's time (itemizing and shaping 161, lines
+  54, finding breaks 20, counting words 20), and pouring and placing the
+  lines 4.
+  Laying out a 500-page report takes 30% less, the same code laying it
+  out, and opening it 88 ms rather than 125.
+
 **A document carries its own stylesheet and page style** (project owner,
 2026-10-24, review ydqhfds0), edited by operations like the rest of it, so
 it looks the same wherever it opens.
@@ -2076,6 +2129,22 @@ each (review 094846qg):
 
 The first start of a newly built program is slower, up to 0.8 s on
 Windows, while the GPU driver compiles and caches its shaders.
+
+**Measured at M2's stage 8** (2026-10-29), under WSL with render-cpu,
+before and after a Markdown file was opened a tenth within its budget
+(section 6): the 95th percentile, the median of three runs of the
+harness of ten each. Windows is measured by the owner.
+
+| Interaction | Before | After |
+|---|---|---|
+| Cold start to an editable blank document | 127 ms | 126 ms |
+| Keystroke to the glyph on screen | 3.3 ms | 2.9 ms |
+| Open a 500-page report, first page shown | 125 ms | 88 ms |
+| Scroll any document | 9.8 ms | 9.9 ms |
+| Save after a small edit, any document size | 0.1 ms | 0.0 ms |
+| Memory for an empty document window | 120 MB | 120 MB |
+| Open a 500-page Markdown file, first page shown | 149 ms | 99 ms |
+| Keystroke in a Markdown file to the glyph on screen | 6.1 ms | 5.7 ms |
 
 ## 13. Engineering approach
 
