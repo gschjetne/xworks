@@ -1,5 +1,6 @@
 # The pure crates' rule (docs/ARCHITECTURE.md, section 3): foundations,
-# substrates and views do no I/O, open no threads and read no clocks. Clippy
+# substrates and views do no I/O, open no threads, read no clocks, and
+# print and log nothing (review p7yct3zf): they depend on no tracing. Clippy
 # reads the nearest clippy.toml up from each crate, so every crate under
 # crates/ gets this one, except the impure crates, which have their own:
 # store, app, render-gpu and testkit (CLAUDE.md, "Pure crates").
@@ -26,6 +27,8 @@ disallowed-methods = [
     { path = "std::env::args", reason = "pure crates read no environment" },
     { path = "std::env::current_dir", reason = "pure crates read no environment" },
     { path = "std::process::exit", reason = "pure crates return errors" },
+    { path = "std::io::stdout", reason = "pure crates print nothing; they return what they'd say" },
+    { path = "std::io::stderr", reason = "pure crates print nothing; they return what they'd say" },
 ]
 disallowed-types = [
     { path = "std::fs::File", reason = "pure crates do no I/O" },
@@ -37,8 +40,8 @@ disallowed-types = [
     { path = "std::thread::Builder", reason = "pure crates open no threads; the app schedules work" },
 ]
 disallowed-macros = [
-    { path = "std::println", reason = "pure crates do no I/O; return data, or log with tracing" },
-    { path = "std::print", reason = "pure crates do no I/O; return data, or log with tracing" },
-    { path = "std::eprintln", reason = "pure crates do no I/O; return data, or log with tracing" },
-    { path = "std::eprint", reason = "pure crates do no I/O; return data, or log with tracing" },
+    { path = "std::println", reason = "pure crates print nothing, nor log; they return what they'd say" },
+    { path = "std::print", reason = "pure crates print nothing, nor log; they return what they'd say" },
+    { path = "std::eprintln", reason = "pure crates print nothing, nor log; they return what they'd say" },
+    { path = "std::eprint", reason = "pure crates print nothing, nor log; they return what they'd say" },
 ]
