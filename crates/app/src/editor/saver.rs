@@ -222,7 +222,12 @@ impl Drop for Saver {
         if let Some(thread) = self.thread.take() {
             let _ = thread.join();
         } else {
-            let _ = self.flush();
+            let mut state = self.shared.lock();
+            if let Some(job) = state.job.take() {
+                let (expected, conflict) = (state.stamp.clone(), state.conflict);
+                drop(state);
+                last(&job, expected.as_ref(), conflict);
+            }
         }
     }
 }
@@ -289,6 +294,29 @@ fn settle(state: &mut State, job: Job, result: Wrote) -> Result<(), String> {
     }
 }
 
+/// Writes `job` as the saver ends, the file expected to be as `expected`
+/// says: or, if it changed under xWorks, whether the window knew
+/// (`conflict`) or only this last look finds it, leaves the file as the
+/// other program made it and writes `job` as a copy beside it. No window
+/// is left to say what went wrong: it's logged.
+fn last(job: &Job, expected: Option<&Stamp>, conflict: bool) {
+    let changed = conflict
+        || match write(job, expected) {
+            Wrote::Failed(e) => {
+                error!("writing {}: {e}", job.path.display());
+                false
+            }
+            Wrote::Changed => true,
+            Wrote::Done(_) | Wrote::Again(_) => false,
+        };
+    if changed {
+        let copy = copy_path(&job.path);
+        if let Err(e) = store::write_whole(&copy, &job.bytes) {
+            error!("writing {}: {e}", copy.display());
+        }
+    }
+}
+
 /// The saver's thread: it waits for an edit, gathers those that come
 /// `after` the first, writes the latest, and goes on until it's told to
 /// end, when it writes what's waiting, or a copy of it if the file
@@ -298,25 +326,9 @@ fn run(shared: &Shared, after: Duration) {
     loop {
         if state.quit {
             if let Some(job) = state.job.take() {
-                let expected = state.stamp.clone();
-                let conflict = state.conflict;
+                let (expected, conflict) = (state.stamp.clone(), state.conflict);
                 drop(state);
-                // No window is left to say what went wrong: it's logged.
-                if conflict {
-                    let copy = copy_path(&job.path);
-                    if let Err(e) = store::write_whole(&copy, &job.bytes) {
-                        error!("writing {}: {e}", copy.display());
-                    }
-                } else {
-                    match write(&job, expected.as_ref()) {
-                        Wrote::Failed(e) => error!("writing {}: {e}", job.path.display()),
-                        Wrote::Changed => error!(
-                            "writing {}: another program changed it, so the last edits weren't written",
-                            job.path.display()
-                        ),
-                        Wrote::Done(_) | Wrote::Again(_) => {}
-                    }
-                }
+                last(&job, expected.as_ref(), conflict);
             }
             shared.wake.notify_all();
             return;

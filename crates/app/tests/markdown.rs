@@ -246,6 +246,32 @@ fn a_change_another_program_made_is_noticed_before_writing() {
     );
 }
 
+/// A change another program makes just before the window closes, before
+/// xWorks has noticed it, keeps xWorks' version as a copy beside the file
+/// too, whether the window is closed or dropped: nothing typed is lost.
+#[test]
+fn a_change_made_just_before_closing_keeps_xworks_version_as_a_copy() {
+    for close in [true, false] {
+        let mut res = (*resources(if close { "change-close" } else { "change-drop" })).clone();
+        res.editing.markdown_saved_after = 3_600_000;
+        let res = Arc::new(res);
+        let path = file(&res, "Plan.md", b"# Plan\n");
+        let mut window = Window::open(res, &path).expect("it opens");
+        window.update(Event::Text("Seed ".to_string()));
+        std::fs::write(&path, b"# The plan, theirs\n").expect("another program writes");
+        if close {
+            window.close();
+        }
+        drop(window);
+        assert_eq!(read(&path), "# The plan, theirs\n", "close {close}");
+        assert_eq!(
+            read(&path.with_file_name("Plan (xWorks).md")),
+            "# Seed Plan\n",
+            "close {close}"
+        );
+    }
+}
+
 /// A Markdown file renamed while it's open takes its lock along, to the
 /// lock its new name has in xWorks' folder.
 #[test]
