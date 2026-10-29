@@ -158,7 +158,7 @@ const STOP_KINDS: [StopKind; 5] = [
 /// review p7yct3zf). Each stop is a section, "Tab stop 1" and on:
 /// - its Position, a field, read `shift` further along the ruler than
 ///   it's kept, from the ruler's zero, in `unit`; with a button beside it
-///   that removes the stop;
+///   that removes the stop, "Remove tab stop 1" to screen readers;
 /// - its Alignment, a list;
 /// - its Leader, a list.
 ///
@@ -203,15 +203,20 @@ pub(super) fn stop_sections(
                                     plain: false,
                                 },
                             ),
-                            control(
-                                &command("remove"),
-                                at.clone(),
-                                writable,
-                                ControlKind::Button {
-                                    label: "Remove".to_string(),
-                                    icon: Some("x".to_string()),
-                                },
-                            ),
+                            // Named for screen readers by its section,
+                            // not "Position: Remove".
+                            Control {
+                                name: Some(format!("Remove tab stop {}", k + 1)),
+                                ..control(
+                                    &command("remove"),
+                                    at.clone(),
+                                    writable,
+                                    ControlKind::Button {
+                                        label: "Remove".to_string(),
+                                        icon: Some("x".to_string()),
+                                    },
+                                )
+                            },
                         ],
                     },
                     Row {
@@ -288,6 +293,7 @@ fn control(command: &str, args: Vec<Arg>, enabled: bool, kind: ControlKind) -> C
         command: command.to_string(),
         args,
         enabled,
+        name: None,
         kind,
     }
 }

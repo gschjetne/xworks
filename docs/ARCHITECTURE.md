@@ -1435,7 +1435,10 @@ p7yct3zf). The choices below are its own, open to the owner's review.
   they were.
 - **Screen readers** get each stop as a group named for its section, its
   field and lists named Position, Alignment and Leader, which had no
-  names before.
+  names before, and its button "Remove tab stop 1" and so on, rather
+  than "Position: Remove". For that a control may carry a name of its
+  own (`chrome::Control`'s `name`), which screen readers get in place of
+  the one its row's label and its words make.
 - **The tab grows** by a section a stop, so with more than two stops it
   scrolls in a window 800 pixels high: `chrome-pages` shows its top, as
   the mockup does, and `chrome-leaders` shows it scrolled to its stops.

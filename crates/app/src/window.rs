@@ -426,6 +426,7 @@ impl Window {
                 command: "toggle-inspector".to_string(),
                 args: Vec::new(),
                 enabled: true,
+                name: None,
                 kind: ControlKind::Toggle {
                     icon: "panel-right".to_string(),
                     label: "Inspector".to_string(),
@@ -436,6 +437,7 @@ impl Window {
                 command: String::new(),
                 args: Vec::new(),
                 enabled: true,
+                name: None,
                 kind: ControlKind::Segments {
                     segments: vec![segment("view-draft"), segment("view-pages")],
                     selected: Some(match self.editor.view_mode() {
@@ -1774,6 +1776,11 @@ impl Window {
                             n
                         }
                     };
+                    // A control that carries its own name is called by it,
+                    // in place of what its row's label and its words make.
+                    if let Some(name) = &control.name {
+                        node.set_label(name.clone());
+                    }
                     node.set_bounds(bounds(r));
                     if !control.enabled {
                         node.set_disabled();

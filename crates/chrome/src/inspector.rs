@@ -51,6 +51,10 @@ pub struct Control {
     pub args: Vec<Arg>,
     /// Whether it can be used.
     pub enabled: bool,
+    /// What screen readers call it, where its row's label and its own
+    /// words don't say it, as "Remove tab stop 1" for a button that shows
+    /// a cross beside a stop's Position; `None` for one they name.
+    pub name: Option<String>,
     /// What kind it is, and what it shows.
     pub kind: ControlKind,
 }

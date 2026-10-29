@@ -96,6 +96,7 @@ fn control(command: &str, args: Vec<Arg>, enabled: bool, kind: ControlKind) -> C
         command: command.to_string(),
         args,
         enabled,
+        name: None,
         kind,
     }
 }

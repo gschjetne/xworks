@@ -378,7 +378,9 @@ fn a_paragraphs_stops_show_as_a_tab_layouts_do() {
 
 /// Screen readers get each stop's section as a group, "Tab stop 1" and
 /// on, of its fields and lists, each labelled as its row is, Position,
-/// Alignment and Leader, with its value; and its button to remove it.
+/// Alignment and Leader, with its value; and its button to remove it,
+/// named for its section, "Remove tab stop 1", in the Text tab and a tab
+/// layout's screen alike.
 #[test]
 fn screen_readers_get_each_stops_fields_by_their_labels() {
     use part::accesskit::Role;
@@ -395,10 +397,10 @@ fn screen_readers_get_each_stops_fields_by_their_labels() {
             vec![Arg::Int(at), text(leader)],
         );
     }
-    let tree = window.access();
-    let node =
-        |id: part::accesskit::NodeId| &tree.nodes.iter().find(|(n, _)| *n == id).expect("a node").1;
-    let members = |title: &str| -> Vec<(Role, String, Option<String>)> {
+    // The members of the group titled `title`, in order: each one's role,
+    // name and value.
+    let members = |window: &Window, title: &str| -> Vec<(Role, String, Option<String>)> {
+        let tree = window.access();
         let (_, group) = tree
             .nodes
             .iter()
@@ -407,8 +409,8 @@ fn screen_readers_get_each_stops_fields_by_their_labels() {
         group
             .children()
             .iter()
-            .map(|&id| {
-                let n = node(id);
+            .map(|id| {
+                let (_, n) = tree.nodes.iter().find(|(n, _)| n == id).expect("a node");
                 assert!(!n.is_hidden(), "{title} is in sight");
                 (
                     n.role(),
@@ -418,38 +420,37 @@ fn screen_readers_get_each_stops_fields_by_their_labels() {
             })
             .collect()
     };
-    for (title, place, kind, leader) in [
-        ("Tab stop 1", "4 cm", "Left", "Dashes"),
-        ("Tab stop 2", "11 cm", "Right", "Dots"),
-    ] {
-        let members = members(title);
-        let fields: Vec<(Role, &str, Option<&str>)> = members
-            .iter()
-            .filter(|(role, ..)| *role != Role::Button)
-            .map(|(role, label, value)| (*role, label.as_str(), value.as_deref()))
-            .collect();
-        assert_eq!(
-            fields,
-            [
-                (Role::TextInput, "Position", Some(place)),
-                (Role::ComboBox, "Alignment", Some(kind)),
-                (Role::ComboBox, "Leader", Some(leader)),
-            ],
-            "{title}"
-        );
-        assert!(
-            members
-                .iter()
-                .any(|(role, label, _)| *role == Role::Button && label.contains("Remove")),
-            "{title}: {members:?}"
-        );
+    let member = |role: Role, label: &str, value: Option<&str>| {
+        (role, label.to_string(), value.map(str::to_string))
+    };
+    for (n, place, kind, leader) in [(1, "4 cm", "Left", "Dashes"), (2, "11 cm", "Right", "Dots")] {
+        let mut expected = vec![
+            member(Role::TextInput, "Position", Some(place)),
+            member(Role::Button, &format!("Remove tab stop {n}"), None),
+            member(Role::ComboBox, "Alignment", Some(kind)),
+            member(Role::ComboBox, "Leader", Some(leader)),
+        ];
+        // Add, under the last.
+        if n == 2 {
+            expected.push(member(Role::Button, "Add a tab stop", None));
+        }
+        assert_eq!(members(&window, &format!("Tab stop {n}")), expected);
     }
-    // Add, under the last.
-    assert!(
-        members("Tab stop 2")
-            .iter()
-            .any(|(role, label, _)| *role == Role::Button && label == "Add a tab stop")
-    );
+    // A tab layout's screen, in the Style tab, names its stop's button
+    // alike, from the same code.
+    window.update(Event::Press {
+        x: 1130.0,
+        y: 66.0,
+        shift: false,
+        count: 1,
+    });
+    window.update(Event::Release);
+    with(&mut window, "style-new", vec![text("tabs"), Arg::Int(0)]);
+    let layout = named(&window, StyleKind::Tabs, "New Tab Layout");
+    with(&mut window, "layout-stop-add", vec![id(layout)]);
+    let members = members(&window, "Tab stop 1");
+    assert_eq!(members[1], member(Role::Button, "Remove tab stop 1", None));
+    assert_eq!(members[0].1, "Position");
 }
 
 /// Each list item's marker, in reading order.

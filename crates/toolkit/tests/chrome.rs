@@ -111,6 +111,7 @@ fn the_title_bar_hits_what_it_draws() {
             command: "toggle-inspector".to_string(),
             args: Vec::new(),
             enabled: true,
+            name: None,
             kind: ControlKind::Toggle {
                 icon: "panel-right".to_string(),
                 label: "Inspector".to_string(),
@@ -121,6 +122,7 @@ fn the_title_bar_hits_what_it_draws() {
             command: String::new(),
             args: Vec::new(),
             enabled: true,
+            name: None,
             kind: ControlKind::Segments {
                 segments: ["Draft", "Pages"]
                     .iter()
@@ -612,6 +614,7 @@ fn inspector() -> Inspector {
         command: command.to_string(),
         args: Vec::new(),
         enabled: true,
+        name: None,
         kind: ControlKind::Length {
             value: Some(Length {
                 value,
@@ -625,6 +628,7 @@ fn inspector() -> Inspector {
         command: command.to_string(),
         args: Vec::new(),
         enabled: true,
+        name: None,
         kind: ControlKind::Toggle {
             icon: icon.to_string(),
             label: command.to_string(),
@@ -635,6 +639,7 @@ fn inspector() -> Inspector {
         command: "paragraph-style".to_string(),
         args: Vec::new(),
         enabled: true,
+        name: None,
         kind: ControlKind::Choice {
             choices: ["Body", "Heading 1"]
                 .iter()
@@ -648,6 +653,7 @@ fn inspector() -> Inspector {
         command: "tab-stop-remove".to_string(),
         args: vec![Arg::Int(5)],
         enabled: true,
+        name: None,
         kind: ControlKind::Button {
             label: "Remove".to_string(),
             icon: Some("x".to_string()),
@@ -767,6 +773,7 @@ fn tall(rows: usize) -> Inspector {
                 command: "space-before".to_string(),
                 args: vec![Arg::Int(k as i64)],
                 enabled: true,
+                name: None,
                 kind: ControlKind::Length {
                     value: Some(Length {
                         value: 12_700 * k as i64,
@@ -780,6 +787,7 @@ fn tall(rows: usize) -> Inspector {
                 command: String::new(),
                 args: Vec::new(),
                 enabled: true,
+                name: None,
                 kind: ControlKind::Note {
                     text: "defaults".to_string(),
                 },
@@ -1025,6 +1033,7 @@ fn colours_show_their_swatches_and_faces_themselves() {
         command: "style-set".to_string(),
         args: Vec::new(),
         enabled: true,
+        name: None,
         kind,
     };
     let garamond =
