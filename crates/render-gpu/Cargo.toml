@@ -11,6 +11,7 @@ publish.workspace = true
 glifo.workspace = true
 pollster.workspace = true
 scene.workspace = true
+thiserror.workspace = true
 vello_gpu.workspace = true
 wgpu.workspace = true
 

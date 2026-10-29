@@ -54,7 +54,7 @@ use std::sync::Arc;
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
-use anyhow::{Context, bail};
+use anyhow::{Context, anyhow, bail};
 use app::recorder::{self, Recorder, Recordings};
 use app::{Choice, Effect, Event, Resources};
 use tracing::level_filters::LevelFilter;
@@ -860,7 +860,9 @@ impl Shell {
             }
             let rects = canvas.damage(&page, ppi);
             let drawn = match renderer {
-                Some(renderer) => canvas.draw(gpu, renderer, page, ppi, desk, &rects),
+                Some(renderer) => canvas
+                    .draw(gpu, renderer, page, ppi, desk, &rects)
+                    .map_err(anyhow::Error::from),
                 None => {
                     for rect in &rects {
                         let level = render_cpu::Level::Fastest;
@@ -880,8 +882,10 @@ impl Shell {
                 .texture
                 .create_view(&wgpu::TextureViewDescriptor::default());
             match renderer {
-                Some(renderer) => renderer.render(gpu, &page, ppi, &view, w, h, desk),
-                None => Err("no renderer for the surface".to_string()),
+                Some(renderer) => renderer
+                    .render(gpu, &page, ppi, &view, w, h, desk)
+                    .map_err(anyhow::Error::from),
+                None => Err(anyhow!("no renderer for the surface")),
             }
         };
         if let Err(e) = drawn {

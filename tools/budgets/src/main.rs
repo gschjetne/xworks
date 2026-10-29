@@ -639,16 +639,14 @@ impl Frames {
         match &mut self.gpu {
             Some(gpu) => {
                 let rects = gpu.canvas.damage(&page, self.ppi);
-                gpu.canvas
-                    .draw(
-                        &gpu.device,
-                        &mut gpu.renderer,
-                        page,
-                        self.ppi,
-                        scene::Color::WHITE,
-                        &rects,
-                    )
-                    .map_err(anyhow::Error::msg)?;
+                gpu.canvas.draw(
+                    &gpu.device,
+                    &mut gpu.renderer,
+                    page,
+                    self.ppi,
+                    scene::Color::WHITE,
+                    &rects,
+                )?;
                 gpu.canvas.copy_to(&gpu.device, &gpu.frame);
                 gpu.device
                     .device

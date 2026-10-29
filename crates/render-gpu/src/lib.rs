@@ -11,6 +11,7 @@
 //!   draws into it only where the display list changed, by the GPU or by
 //!   writing render-cpu's pixels, and it's copied whole to the window, as
 //!   wgpu presents only whole frames.
+//! - [`Error`]: why the GPU failed a frame.
 //!
 //! render-gpu is an impure crate: it drives the GPU.
 //!
@@ -47,7 +48,10 @@
 //!   `an_image_put_where_another_just_left_shows` and
 //!   `images_coming_into_view_as_unseen_ones_leave_show`).
 //! - **Errors, not panics,** where the GPU fails a frame: [`Renderer::render`]
-//!   and [`Canvas::draw`] say why, and [`open`] is `None` where there's no
+//!   and [`Canvas::draw`] say why, as an [`Error`], a `thiserror` type
+//!   (CLAUDE.md, rule 9; review p7yct3zf): vello_gpu couldn't draw it.
+//!   Reading a frame back, for tests, says so too if the GPU didn't finish
+//!   it or it couldn't be mapped. [`open`] is `None` where there's no
 //!   adapter.
 //!
 //! # What it doesn't promise
@@ -56,7 +60,6 @@
 //!   gradients, and goldens are rendered on the CPU.
 //! - That it runs: a machine may have no GPU, or only a software one, as
 //!   WSL's llvmpipe is, where the shells draw with render-cpu instead.
-//! - That its errors are typed: they're messages, for the log.
 
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -70,6 +73,22 @@ use vello_gpu::{AtlasConfig, ImageId, ImageSource, RectU16};
 /// The most images the atlas holds at once. A page drawing more than this
 /// many shows the rest as grey.
 pub const MOST_IMAGES: usize = 64;
+
+/// Why the GPU failed a frame.
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+    /// vello_gpu couldn't draw it: its atlas or its intermediate textures
+    /// had no room for it, or something it was to draw wasn't there.
+    #[error("vello_gpu: {0}")]
+    Draw(#[from] vello_gpu::RenderError),
+    /// The GPU didn't finish a frame being read back.
+    #[error("waiting for the GPU: {0}")]
+    Wait(#[from] wgpu::PollError),
+    /// A frame read back couldn't be mapped to be read, as on a lost
+    /// device.
+    #[error("reading the frame back: {0}")]
+    Readback(#[from] wgpu::MapRangeError),
+}
 
 /// An open GPU.
 pub struct Device {
@@ -183,7 +202,7 @@ impl Renderer {
         width: u16,
         height: u16,
         background: Color,
-    ) -> Result<(), String> {
+    ) -> Result<(), Error> {
         self.draw(device, page, ppi, view, (width, height), background, None)
     }
 
@@ -203,7 +222,7 @@ impl Renderer {
         (width, height): (u16, u16),
         background: Color,
         rects: &[PixelRect],
-    ) -> Result<(), String> {
+    ) -> Result<(), Error> {
         if rects.is_empty() {
             return Ok(());
         }
@@ -231,7 +250,7 @@ impl Renderer {
         (width, height): (u16, u16),
         background: Color,
         rects: Option<&[PixelRect]>,
-    ) -> Result<(), String> {
+    ) -> Result<(), Error> {
         self.frames += 1;
         let scale = ppi / 914_400.0;
         // The rectangles in layout units, a couple of pixels larger, to
@@ -304,20 +323,18 @@ impl Renderer {
                 rects: &clears,
             },
         };
-        self.renderer
-            .render(
-                &scene,
-                &mut self.resources,
-                &device.device,
-                &device.queue,
-                &mut encoder,
-                &vello_gpu::RenderSize { width, height },
-                view,
-                None,
-                &vello_gpu::TextureBindings::new(),
-                vello_gpu::TargetInit::Clear(clear),
-            )
-            .map_err(|e| format!("{e:?}"))?;
+        self.renderer.render(
+            &scene,
+            &mut self.resources,
+            &device.device,
+            &device.queue,
+            &mut encoder,
+            &vello_gpu::RenderSize { width, height },
+            view,
+            None,
+            &vello_gpu::TextureBindings::new(),
+            vello_gpu::TargetInit::Clear(clear),
+        )?;
         device.queue.submit([encoder.finish()]);
         Ok(())
     }
@@ -397,7 +414,7 @@ impl Renderer {
         device: &Device,
         page: &Page,
         ppi: f64,
-    ) -> Result<(u16, u16, Vec<u8>), String> {
+    ) -> Result<(u16, u16, Vec<u8>), Error> {
         let (w, h) = (pixels(page.width, ppi), pixels(page.height, ppi));
         let texture = device.device.create_texture(&wgpu::TextureDescriptor {
             label: Some("offscreen"),
@@ -428,7 +445,7 @@ impl Renderer {
                 a: 0,
             },
         )?;
-        Ok((w, h, read(device, &texture, w, h)))
+        Ok((w, h, read(device, &texture, w, h)?))
     }
 }
 
@@ -749,7 +766,7 @@ impl Canvas {
         ppi: f64,
         background: Color,
         rects: &[PixelRect],
-    ) -> Result<(), String> {
+    ) -> Result<(), Error> {
         let size = (self.width, self.height);
         let result = renderer.render_rects(device, &page, ppi, &self.view, size, background, rects);
         self.shows = Some((page, ppi));
@@ -858,13 +875,18 @@ impl Canvas {
 
     /// Its pixels, read back: as [`Renderer::render_offscreen`] gives
     /// them, for tests.
-    pub fn read(&self, device: &Device) -> Vec<u8> {
+    pub fn read(&self, device: &Device) -> Result<Vec<u8>, Error> {
         read(device, &self.texture, self.width, self.height)
     }
 }
 
 /// `texture`'s pixels, row by row.
-fn read(device: &Device, texture: &wgpu::Texture, width: u16, height: u16) -> Vec<u8> {
+fn read(
+    device: &Device,
+    texture: &wgpu::Texture,
+    width: u16,
+    height: u16,
+) -> Result<Vec<u8>, Error> {
     let (w, h) = (u32::from(width), u32::from(height));
     let row =
         (w * 4).div_ceil(wgpu::COPY_BYTES_PER_ROW_ALIGNMENT) * wgpu::COPY_BYTES_PER_ROW_ALIGNMENT;
@@ -893,15 +915,17 @@ fn read(device: &Device, texture: &wgpu::Texture, width: u16, height: u16) -> Ve
     );
     device.queue.submit([encoder.finish()]);
     let slice = buffer.slice(..);
-    slice.map_async(wgpu::MapMode::Read, |r| r.expect("the readback maps"));
-    let _ = device.device.poll(wgpu::PollType::wait_indefinitely());
-    let data = slice.get_mapped_range().expect("the readback is mapped");
+    // A buffer that didn't map isn't mapped once the GPU is done, which
+    // reading its range then says.
+    slice.map_async(wgpu::MapMode::Read, |_| ());
+    device.device.poll(wgpu::PollType::wait_indefinitely())?;
+    let data = slice.get_mapped_range()?;
     let mut pixels = Vec::with_capacity((w * h * 4) as usize);
     for y in 0..h {
         let start = (y * row) as usize;
         pixels.extend_from_slice(&data[start..start + (w * 4) as usize]);
     }
-    pixels
+    Ok(pixels)
 }
 
 fn paint(c: Color) -> vello_gpu::color::AlphaColor<vello_gpu::color::Srgb> {

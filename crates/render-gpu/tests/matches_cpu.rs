@@ -233,7 +233,7 @@ fn a_canvas_drawn_where_it_changed_shows_the_new_page() {
             &rects,
         )
         .expect("it draws");
-    let shown = canvas.read(&device);
+    let shown = canvas.read(&device).expect("it reads back");
     let (_, _, whole) = renderer
         .render_offscreen(&device, &new, ppi)
         .expect("it renders");
@@ -316,7 +316,7 @@ fn written_as_they_are(device: &render_gpu::Device) {
                 p.swap(0, 2);
             }
         }
-        let got = canvas.read(device);
+        let got = canvas.read(device).expect("it reads back");
         let first = got.iter().zip(&expected).position(|(a, b)| a != b);
         assert!(
             first.is_none(),

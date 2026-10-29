@@ -3394,6 +3394,7 @@ dependencies = [
  "scene",
  "testkit",
  "text",
+ "thiserror 2.0.21",
  "vello_gpu",
  "wgpu",
 ]
