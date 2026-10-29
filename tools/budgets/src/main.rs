@@ -566,8 +566,14 @@ impl Frames {
             (WINDOW.0 * scale).round() as u16,
             (WINDOW.1 * scale).round() as u16,
         );
-        let instance =
-            wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle_from_env());
+        // Not OpenGL unless WGPU_BACKEND asks, as the shell does: under WSL
+        // it loads and unloads WSL's Direct3D library, which leaves a
+        // thread's destructor behind that crashes as the thread ends.
+        let mut descriptor = wgpu::InstanceDescriptor::new_without_display_handle_from_env();
+        if std::env::var_os("WGPU_BACKEND").is_none() {
+            descriptor.backends = wgpu::Backends::PRIMARY;
+        }
+        let instance = wgpu::Instance::new(descriptor);
         let gpu = render_gpu::open(&instance, None)
             .filter(|d| d.adapter.get_info().device_type != wgpu::DeviceType::Cpu);
         let gpu = gpu.map(|device| {
