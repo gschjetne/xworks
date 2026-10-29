@@ -124,6 +124,17 @@ Arrows point from a layer to the layers it depends on.
   events, they give the same output.
 - **The app and the shells** own everything impure: windows, files, threads,
   timers, the clipboard, the GPU and the platform's widgets.
+- **What goes wrong that no window says is logged.** The shell and the
+  app log with `tracing`, and the shell writes the log to standard error
+  with `tracing-subscriber`'s formatter (project owner, 2026-10-29,
+  review p7yct3zf), `info` and worse unless `RUST_LOG` says otherwise.
+  The shell logs a frame the GPU failed, a clipboard out of reach and a
+  document that wouldn't open; the app, settings or a Markdown file's
+  last edits it couldn't write. `store` and `render-gpu` return their
+  errors, for their callers to log. The pure crates print and log
+  nothing, and depend on no `tracing`: they return what they'd say, as
+  errors or data. The tools are command-line programs: they print their
+  output and install no subscriber.
 
 ### The crates and their contracts
 
@@ -227,8 +238,9 @@ target.
   fastest level is within a few of 255. A run whose font isn't one panics
   inside glifo; `text` only makes runs of fonts it loaded.
 - **`render-gpu`** (F4): the GPU renderer for the shells, within a few
-  levels of render-cpu, its canvas drawing only what changed. Its tests
-  need a GPU and run by hand on Windows.
+  levels of render-cpu, its canvas drawing only what changed. A frame the
+  GPU fails is an error, a `thiserror` type, not a panic. Its tests need
+  a GPU and run by hand on Windows.
 - **`render-pdf`** (F4): tagged PDF, the same bytes each time, text kept
   as text in reading order, images as figures, a kept sRGB JPEG as its
   file; a page or font PDF can't hold is an error.
@@ -2236,7 +2248,7 @@ M1's measurements (project owner, 2026-10-19; section 10). This remains:
 | Parallelism | rayon; no async runtime |
 | macOS port (later) | objc2 bindings to AppKit |
 | Fauré port (later) | Fauré's toolkit, menu protocol and scripting broker |
-| Errors, logging, data | thiserror (libraries), anyhow (tools only), tracing, serde + RON |
+| Errors, logging, data | thiserror (libraries), anyhow (tools only), tracing, written to standard error by tracing-subscriber (review p7yct3zf), serde + RON |
 | Tests | cargo-nextest, golden hashes of renders (`testkit`), proptest, cargo-fuzz; the budgets measured by `tools/budgets` |
 
 ## 16. Repository layout (planned)
