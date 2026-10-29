@@ -7,13 +7,14 @@
 //! The file is read the first time a setting is asked for, as the first
 //! frame draws the ruler, and written as a setting changes. Where it can't
 //! be read, the defaults hold, and where it can't be written, the choice
-//! holds for this run.
+//! holds for this run, and that's logged.
 
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
 use chrome::Unit;
 use serde::{Deserialize, Serialize};
+use tracing::warn;
 
 /// The units a person can choose for the ruler and the inspector, in the
 /// order View, Units lists them, each with its command.
@@ -151,7 +152,9 @@ impl Settings {
             if let Some(folder) = file.parent() {
                 let _ = std::fs::create_dir_all(folder);
             }
-            let _ = std::fs::write(file, text);
+            if let Err(e) = std::fs::write(file, text) {
+                warn!("writing {}: {e}", file.display());
+            }
         }
     }
 

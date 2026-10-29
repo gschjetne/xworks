@@ -14,7 +14,8 @@
 //! [`Saver::flush`] writes what's waiting at once, as closing the
 //! document and quitting do; dropped, the saver writes it too, or, if the
 //! file changed under it, writes it as a copy beside it, so nothing typed
-//! is lost.
+//! is lost. What it can't write then is logged, as no window is left to
+//! say so.
 //!
 //! It's a thread, not a task on the worker pool: it sleeps between edits
 //! and while it gathers them, which would hold one of the pool's threads.
@@ -25,6 +26,7 @@ use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
 
 use store::Stamp;
+use tracing::error;
 
 /// The bytes to write, and where.
 struct Job {
@@ -299,10 +301,21 @@ fn run(shared: &Shared, after: Duration) {
                 let expected = state.stamp.clone();
                 let conflict = state.conflict;
                 drop(state);
+                // No window is left to say what went wrong: it's logged.
                 if conflict {
-                    let _ = store::write_whole(&copy_path(&job.path), &job.bytes);
+                    let copy = copy_path(&job.path);
+                    if let Err(e) = store::write_whole(&copy, &job.bytes) {
+                        error!("writing {}: {e}", copy.display());
+                    }
                 } else {
-                    let _ = write(&job, expected.as_ref());
+                    match write(&job, expected.as_ref()) {
+                        Wrote::Failed(e) => error!("writing {}: {e}", job.path.display()),
+                        Wrote::Changed => error!(
+                            "writing {}: another program changed it, so the last edits weren't written",
+                            job.path.display()
+                        ),
+                        Wrote::Done(_) | Wrote::Again(_) => {}
+                    }
                 }
             }
             shared.wake.notify_all();

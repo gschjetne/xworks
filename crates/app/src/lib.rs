@@ -27,7 +27,10 @@
 //! app is an impure crate: it reads and writes documents, settings and
 //! sessions, and lays paragraphs out on rayon's worker pool. It opens no
 //! window, draws nothing to a screen and touches no clipboard: the shells
-//! do, as its effects ask.
+//! do, as its effects ask. What fails that no window can say, such as
+//! settings that can't be written, or a Markdown file's last edits as
+//! xWorks ends, it logs with `tracing` (review p7yct3zf), which the shell
+//! writes to standard error; it prints nothing.
 //!
 //! # What a caller may rely on
 //!

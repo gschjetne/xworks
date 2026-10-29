@@ -28,6 +28,7 @@ story.workspace = true
 text.workspace = true
 thiserror.workspace = true
 toolkit.workspace = true
+tracing.workspace = true
 zune-jpeg.workspace = true
 
 [dev-dependencies]

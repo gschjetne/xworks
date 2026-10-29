@@ -9,6 +9,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, MutexGuard, PoisonError, TryLockError};
 
+use tracing::warn;
+
 /// How many documents are kept.
 pub(crate) const KEPT: usize = 10;
 
@@ -100,8 +102,9 @@ impl Recent {
 
     /// Writes the list to its file, if it has one and it changed, what the
     /// file held kept after what's new: as xWorks ends, or fails. Where it
-    /// can't be written, it's kept for this run. It never waits for the
-    /// list: as xWorks fails, the code that failed may be holding it.
+    /// can't be written, it's kept for this run, and that's logged. It
+    /// never waits for the list: as xWorks fails, the code that failed may
+    /// be holding it.
     pub fn flush(&self) {
         let Some(file) = &self.file else {
             return;
@@ -120,8 +123,9 @@ impl Recent {
             if let Some(folder) = file.parent() {
                 let _ = std::fs::create_dir_all(folder);
             }
-            if std::fs::write(file, text).is_ok() {
-                list.changed = false;
+            match std::fs::write(file, text) {
+                Ok(()) => list.changed = false,
+                Err(e) => warn!("writing {}: {e}", file.display()),
             }
         }
     }
