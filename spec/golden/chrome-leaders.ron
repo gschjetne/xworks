@@ -1,0 +1,7 @@
+// An approved golden image (spec/golden/README.md), written by `shot --approve`.
+Golden(
+    name: "chrome-leaders",
+    size: (1280, 800),
+    sha256: "d3a47f05501b87e72622842f86006bc8f2516f8cca022e49ae6eeab4fd3e707a",
+    approved_by: "Grim Schjetne",
+)

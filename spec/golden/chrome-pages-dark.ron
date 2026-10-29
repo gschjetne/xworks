@@ -2,6 +2,6 @@
 Golden(
     name: "chrome-pages-dark",
     size: (1280, 800),
-    sha256: "da58e2142748d858fae0c49187ab487e4c08644b0a4c3d5f92e7dbfaef1bee3e",
+    sha256: "7905795a25e41322a44640e285eb34b7833befc342872bd1d5b529098b275c7e",
     approved_by: "Grim Schjetne",
 )

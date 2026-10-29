@@ -1,0 +1,7 @@
+// An approved golden image (spec/golden/README.md), written by `shot --approve`.
+Golden(
+    name: "exit-m2-pages",
+    size: (1005, 586),
+    sha256: "39c26498c557f12464ebb16fdfdc7401ad53b9093ee6aae49a831669d52edbb7",
+    approved_by: "Grim Schjetne",
+)
